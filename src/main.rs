@@ -44,6 +44,10 @@ struct Args {
     /// Include prerelease versions when selecting the latest
     #[arg(long)]
     include_prerelease: bool,
+
+    /// Output directory for crate documentation
+    #[arg(long, default_value = ".ai/docs/rust/build")]
+    output_dir: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -159,8 +163,19 @@ async fn find_best_version(
 async fn download_and_unpack_crate(
     client: &reqwest::Client,
     krate: &CrateVersion,
-    temp_dir: &Path,
+    output_path: &Path,
 ) -> Result<PathBuf> {
+    let crate_dir_name = format!("{}-{}", krate.crate_name, krate.num);
+    let target_dir = output_path.join(crate_dir_name);
+
+    if target_dir.exists() {
+        info!(
+            "Crate already downloaded and unpacked at: {}",
+            target_dir.display()
+        );
+        return Ok(target_dir);
+    }
+
     info!("Downloading {} version {}...", krate.crate_name, krate.num);
     let url = format!(
         "https://crates.io/api/v1/crates/{}/{}/download",
@@ -171,13 +186,15 @@ async fn download_and_unpack_crate(
     let content = response.bytes().await?;
     let reader = Cursor::new(content);
 
-    info!("Unpacking crate...");
+    info!("Unpacking crate to: {}", target_dir.display());
+    std::fs::create_dir_all(&target_dir)
+        .with_context(|| format!("Failed to create directory: {}", target_dir.display()))?;
+
     let tar = GzDecoder::new(reader);
     let mut archive = Archive::new(tar);
 
     // Crate files are usually inside a directory like "crate_name-version/"
     let crate_dir_prefix = format!("{}-{}/", krate.crate_name, krate.num);
-    let mut crate_root_path = None;
 
     for entry_result in archive.entries()? {
         let mut entry = entry_result?;
@@ -186,7 +203,7 @@ async fn download_and_unpack_crate(
         // Ensure we extract only files within the expected subdirectory
         if path.starts_with(&crate_dir_prefix) {
             let relative_path = path.strip_prefix(&crate_dir_prefix)?;
-            let dest_path = temp_dir.join(relative_path);
+            let dest_path = target_dir.join(relative_path);
 
             if entry.header().entry_type().is_dir() {
                 std::fs::create_dir_all(&dest_path)?;
@@ -196,21 +213,13 @@ async fn download_and_unpack_crate(
                 }
                 entry.unpack(&dest_path)?;
             }
-
-            if crate_root_path.is_none() {
-                // The first file/dir tells us the root path within temp_dir
-                crate_root_path =
-                    Some(temp_dir.join(Path::new(&crate_dir_prefix).components().next().unwrap()));
-            }
         } else {
             debug!("Skipping entry outside expected crate dir: {:?}", path);
         }
     }
 
-    let root = crate_root_path
-        .ok_or_else(|| anyhow!("Failed to find crate root directory after unpacking"))?;
-    info!("Unpacked to: {}", root.display());
-    Ok(root)
+    info!("Unpacked to: {}", target_dir.display());
+    Ok(target_dir)
 }
 
 fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
@@ -366,21 +375,21 @@ async fn main() -> Result<()> {
         target_version.num, target_version.crate_name
     );
 
-    let temp_dir = tempfile::Builder::new()
-        .prefix(&format!("{}-{}-", args.crate_name, target_version.num))
-        .tempdir()
-        .context("Failed to create temporary directory")?;
-    debug!("Created temp dir: {}", temp_dir.path().display());
+    let output_path = PathBuf::from(args.output_dir);
+    std::fs::create_dir_all(&output_path).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            output_path.display()
+        )
+    })?;
 
-    let crate_dir = download_and_unpack_crate(&client, &target_version, temp_dir.path()).await?;
+    let crate_dir = download_and_unpack_crate(&client, &target_version, &output_path).await?;
 
     // Use the *actual* crate name from the API response, as it might differ in casing
     let actual_crate_name = &target_version.crate_name;
     let json_output_path = run_rustdoc(&crate_dir, actual_crate_name)?;
 
     parse_and_print_docs(&json_output_path)?;
-
-    // temp_dir is automatically cleaned up when it goes out of scope
 
     Ok(())
 }
