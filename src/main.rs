@@ -26,13 +26,13 @@ use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
-    Abi, Constant, Crate, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef,
-    Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, Term, Type,
-    WherePredicate,
+    Abi, Constant, Crate, Enum, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef,
+    Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, StructKind,
+    Term, Trait, Type, Variant, VariantKind, WherePredicate,
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
@@ -706,31 +706,22 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                     find_generics_dependencies(&s.generics, krate, &mut item_deps);
                     // Find deps in fields (StructKind can be Plain, Tuple, Unit)
                     match &s.kind {
-                        rustdoc_types::StructKind::Plain {
-                            fields,
-                            has_stripped_fields,
-                        } => {
-                            let mut dependencies = String::new();
-                            if !fields.is_empty() || *has_stripped_fields {
-                                for field_id in fields {
-                                    if krate.index.contains_key(field_id) {
-                                        item_deps.insert(*field_id);
-                                        // Also get dependencies of the field's type
-                                        if let Some(field_item) = krate.index.get(field_id) {
-                                            if let ItemEnum::StructField(field_type) =
-                                                &field_item.inner
-                                            {
-                                                find_type_dependencies(
-                                                    field_type,
-                                                    krate,
-                                                    &mut item_deps,
-                                                );
-                                            }
+                        rustdoc_types::StructKind::Plain { fields, .. } => {
+                            // fields_stripped ignored
+                            for field_id in fields {
+                                if krate.index.contains_key(field_id) {
+                                    item_deps.insert(*field_id);
+                                    // Also get dependencies of the field's type
+                                    if let Some(field_item) = krate.index.get(field_id) {
+                                        if let ItemEnum::StructField(field_type) = &field_item.inner
+                                        {
+                                            find_type_dependencies(
+                                                field_type,
+                                                krate,
+                                                &mut item_deps,
+                                            );
                                         }
                                     }
-                                }
-                                if *has_stripped_fields {
-                                    writeln!(dependencies, "\n_[Private fields hidden]_").unwrap();
                                 }
                             }
                         }
@@ -972,16 +963,9 @@ fn format_path(path: &Path, krate: &Crate) -> String {
     let base_path = format_id_path(&path.id, krate);
     // Use as_ref() to get Option<&GenericArgs> from Option<Box<GenericArgs>>
     if let Some(args) = path.args.as_ref() {
-        let args_str = format_generic_args(args, krate);
+        let args_str = format_generic_args(args, krate, true); // Angle brackets only
         if !args_str.is_empty() {
-            // Determine brackets based on the GenericArgs variant
-            match **args {
-                GenericArgs::AngleBracketed { .. } => format!("{}<{}>", base_path, args_str),
-                GenericArgs::Parenthesized { .. } => format!("{}{}", base_path, args_str), // Parentheses are included in format_generic_args
-                GenericArgs::ReturnTypeNotation { .. } => {
-                    format!("{}::{}", base_path, args_str)
-                } // Needs context
-            }
+            format!("{}<{}>", base_path, args_str)
         } else {
             base_path
         }
@@ -1125,14 +1109,25 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
                 .as_ref()
                 .map(|t| format_path(t, krate)) // Use format_path
                 .unwrap_or("_".to_string());
-            let args_str = format_generic_args(args, krate);
+            // Args here are for the associated type, not the trait bound
+            let args_str = format_generic_args(args, krate, true); // Angle brackets only
 
-            format!("<{} as {}>::{}{}", self_type_str, trait_str, name, args_str)
+            format!(
+                "<{} as {}>::{}{}",
+                self_type_str,
+                trait_str,
+                name,
+                if args_str.is_empty() {
+                    "".to_string()
+                } else {
+                    format!("<{}>", args_str)
+                }
+            )
         }
     }
 }
 
-fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
+fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: bool) -> String {
     match args {
         // Use renamed field constraints
         GenericArgs::AngleBracketed {
@@ -1145,24 +1140,38 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
                     // Use tuple variant matching
                     rustdoc_types::AssocItemConstraint {
                         name,
-                        args: _,
+                        args: assoc_args, // these are args for the assoc item constraint itself
                         binding: rustdoc_types::AssocItemConstraintKind::Equality(term),
                     } => {
-                        format!("{} = {}", name, format_term(term, krate))
+                        let assoc_args_str = format_generic_args(assoc_args, krate, true);
+                        format!(
+                            "{}{}{} = {}",
+                            name,
+                            if assoc_args_str.is_empty() { "" } else { "<" },
+                            assoc_args_str,
+                            if assoc_args_str.is_empty() { "" } else { ">" },
+                            format_term(term, krate)
+                        )
                     }
                     rustdoc_types::AssocItemConstraint {
                         name,
-                        args: _,
+                        args: assoc_args,
                         binding: rustdoc_types::AssocItemConstraintKind::Constraint(bounds),
-                    } => format!(
-                        "{}: {}",
-                        name,
-                        bounds
-                            .iter()
-                            .map(|bnd| format_generic_bound(bnd, krate))
-                            .collect::<Vec<_>>()
-                            .join(" + ")
-                    ),
+                    } => {
+                        let assoc_args_str = format_generic_args(assoc_args, krate, true);
+                        format!(
+                            "{}{}{}: {}",
+                            name,
+                            if assoc_args_str.is_empty() { "" } else { "<" },
+                            assoc_args_str,
+                            if assoc_args_str.is_empty() { "" } else { ">" },
+                            bounds
+                                .iter()
+                                .map(|bnd| format_generic_bound(bnd, krate))
+                                .collect::<Vec<_>>()
+                                .join(" + ")
+                        )
+                    }
                 })
                 .collect();
             let mut all_strs = arg_strs;
@@ -1170,33 +1179,35 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
             all_strs.join(", ")
         }
         GenericArgs::Parenthesized { inputs, output, .. } => {
-            // Format like function signature inputs/output
-            format!(
-                "({}) -> {}",
-                inputs
-                    .iter()
-                    .map(|t| format_type(t, krate))
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                output
-                    .as_ref()
-                    .map_or("()".to_string(), |t| format_type(t, krate))
-            )
+            if angle_brackets_only {
+                "".to_string() // Don't format Fn() args when angle brackets are expected
+            } else {
+                // Format like function signature inputs/output
+                format!(
+                    "({}) -> {}",
+                    inputs
+                        .iter()
+                        .map(|t| format_type(t, krate))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    output
+                        .as_ref()
+                        .map_or("()".to_string(), |t| format_type(t, krate))
+                )
+            }
         }
         GenericArgs::ReturnTypeNotation { .. } => "".to_string(), // How to format T::method(..) args? Ignore for now.
     }
 }
 
 fn format_const_expr(constant: &Constant) -> String {
+    // Prefer `value` if present and different, otherwise use `expr`
     if let Some(v) = &constant.value {
         if v != &constant.expr {
-            return format!("{} /* {} */", constant.expr, v);
-        } else {
-            return constant.expr.clone();
+            return format!("{} /* = {} */", constant.expr, v);
         }
-    } else {
-        constant.expr.clone()
     }
+    constant.expr.clone()
 }
 
 fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
@@ -1243,7 +1254,7 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
                 args.iter()
                     .map(|a| match a {
                         rustdoc_types::PreciseCapturingArg::Lifetime(lt) => format!("'{}", lt),
-                        rustdoc_types::PreciseCapturingArg::Param(id) => id.to_string(),
+                        rustdoc_types::PreciseCapturingArg::Param(id) => id.to_string(), // TODO: This ID might need resolving? Using raw name for now.
                     })
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -1304,7 +1315,8 @@ fn format_generic_param_def(p: &GenericParamDef, krate: &Crate) -> String {
     }
 }
 
-fn format_generics(generics: &Generics, krate: &Crate) -> String {
+// Formats generics like <T: Bound> where T: OtherBound
+fn format_generics_full(generics: &Generics, krate: &Crate) -> String {
     if generics.params.is_empty() && generics.where_predicates.is_empty() {
         return String::new();
     }
@@ -1323,9 +1335,41 @@ fn format_generics(generics: &Generics, krate: &Crate) -> String {
     }
 
     if !generics.where_predicates.is_empty() {
-        s.push_str("\n  where\n    "); // Indent where clauses for readability
-        let predicates_str = generics
-            .where_predicates
+        let where_clause = format_generics_where_only(&generics.where_predicates, krate);
+        // Add newline and indent if params were also present
+        if !generics.params.is_empty() {
+            write!(s, "\n  {}", where_clause).unwrap();
+        } else {
+            write!(s, " {}", where_clause).unwrap();
+        }
+    }
+
+    s
+}
+
+// Formats generics like <T: Bound>
+fn format_generics_params_only(params: &[GenericParamDef], krate: &Crate) -> String {
+    if params.is_empty() {
+        return String::new();
+    }
+    format!(
+        "<{}>",
+        params
+            .iter()
+            .map(|p| format_generic_param_def(p, krate))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+// Formats only the where clause: "where T: Bound"
+fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> String {
+    if predicates.is_empty() {
+        return String::new();
+    }
+    format!(
+        "where\n    {}", // Indent where clause contents
+        predicates
             .iter()
             .map(|p| match p {
                 WherePredicate::BoundPredicate {
@@ -1375,157 +1419,266 @@ fn format_generics(generics: &Generics, krate: &Crate) -> String {
                 }
             })
             .collect::<Vec<_>>()
-            .join(",\n    ");
-        s.push_str(&predicates_str);
-        // If generics were present, add newline before where clause for better formatting
-        if !generics.params.is_empty() && !s.ends_with('\n') {
-            // Check if the generics part already ended with a newline (due to complex generics)
-            if let Some(last_char) = format_generics_params_only(&generics.params, krate).pop() {
-                if last_char != '\n' {
-                    s.insert(s.find("where").unwrap_or(s.len()), '\n'); // Insert newline before where if params didn't have one
-                }
-            }
-        }
-    }
-
-    s
-}
-
-// Helper to format only the <...> part for layout checks
-fn format_generics_params_only(params: &[GenericParamDef], krate: &Crate) -> String {
-    if params.is_empty() {
-        return String::new();
-    }
-    format!(
-        "<{}>",
-        params
-            .iter()
-            .map(|p| format_generic_param_def(p, krate))
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
-fn format_function_signature(func: &Function, name: &str, krate: &Crate) -> String {
-    let mut sig_str = String::new();
-    write!(sig_str, "pub ").unwrap(); // Assuming pub for now
-    if func.header.is_const {
-        write!(sig_str, "const ").unwrap();
-    }
-    if func.header.is_unsafe {
-        write!(sig_str, "unsafe ").unwrap();
-    }
-    if func.header.is_async {
-        write!(sig_str, "async ").unwrap();
-    }
-    // Add ABI if not Rust
-    if !matches!(func.header.abi, Abi::Rust) {
-        write!(sig_str, "extern \"{:?}\" ", func.header.abi).unwrap(); // Use Debug for Abi
-    }
-
-    write!(sig_str, "fn {}", name).unwrap();
-    write!(sig_str, "{}", format_generics(&func.generics, krate)).unwrap();
-
-    write!(sig_str, "(").unwrap();
-    let args_str = func
-        .sig
-        .inputs
-        .iter()
-        .map(|(arg_name, arg_type)| {
-            // TODO: Handle patterns in arg names if needed (arg_name is currently String)
-            format!("{}: {}", arg_name, format_type(arg_type, krate))
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    write!(sig_str, "{}", args_str).unwrap();
-    // Use correct field name is_c_variadic
-    if func.sig.is_c_variadic {
-        write!(sig_str, ", ...").unwrap();
-    }
-    write!(sig_str, ")").unwrap();
-
-    if let Some(output_type) = &func.sig.output {
-        write!(sig_str, " -> {}", format_type(output_type, krate)).unwrap();
-    }
-
-    // Append where clause if it wasn't already part of format_generics output
-    if !func.generics.where_predicates.is_empty() && !sig_str.contains("where") {
-        let where_clause = format_generics_where_only(&func.generics.where_predicates, krate);
-        write!(sig_str, " {}", where_clause).unwrap();
-    }
-
-    sig_str
-}
-
-// Helper to format only the where clause
-fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> String {
-    if predicates.is_empty() {
-        return String::new();
-    }
-    format!(
-        "where {}",
-        predicates
-            .iter()
-            .map(|p| match p {
-                WherePredicate::BoundPredicate {
-                    type_,
-                    bounds,
-                    generic_params,
-                    ..
-                } => {
-                    let hrtb = if generic_params.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!(
-                            "for<{}> ",
-                            generic_params
-                                .iter()
-                                .map(|gp| format_generic_param_def(gp, krate))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    };
-                    format!(
-                        "{}{}: {}",
-                        hrtb,
-                        format_type(type_, krate),
-                        bounds
-                            .iter()
-                            .map(|b| format_generic_bound(b, krate))
-                            .collect::<Vec<_>>()
-                            .join(" + ")
-                    )
-                }
-                WherePredicate::LifetimePredicate {
-                    lifetime, outlives, ..
-                } => {
-                    format!(
-                        "'{}: {}",
-                        lifetime,
-                        outlives
-                            .iter()
-                            .map(|lt| format!("'{}", lt))
-                            .collect::<Vec<_>>()
-                            .join(" + ")
-                    )
-                }
-                WherePredicate::EqPredicate { lhs, rhs, .. } => {
-                    format!("{} == {}", format_type(lhs, krate), format_term(rhs, krate))
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
+            .join(",\n    ")  // Join with comma, newline, and indent
     )
 }
 
 // --- Structured Printing Logic ---
+
+/// Generates the primary declaration string for an item (e.g., `struct Foo`, `fn bar()`).
+fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
+    let name = item.name.as_deref().unwrap_or("{unnamed}");
+    match &item.inner {
+        ItemEnum::Struct(s) => format!(
+            "struct {}{}",
+            name,
+            format_generics_params_only(&s.generics.params, krate)
+        ),
+        ItemEnum::Enum(e) => format!(
+            "enum {}{}",
+            name,
+            format_generics_params_only(&e.generics.params, krate)
+        ),
+        ItemEnum::Union(u) => format!(
+            "union {}{}",
+            name,
+            format_generics_params_only(&u.generics.params, krate)
+        ),
+        ItemEnum::Trait(t) => {
+            let unsafe_kw = if t.is_unsafe { "unsafe " } else { "" };
+            let auto = if t.is_auto { "auto " } else { "" };
+            format!("{}{}{}{}", auto, unsafe_kw, "trait ", name) // Generics handled separately if needed
+        }
+        ItemEnum::Function(f) => {
+            let mut decl = String::new();
+            if f.header.is_const {
+                decl.push_str("const ");
+            }
+            if f.header.is_async {
+                decl.push_str("async ");
+            }
+            if f.header.is_unsafe {
+                decl.push_str("unsafe ");
+            }
+            if !matches!(f.header.abi, Abi::Rust) {
+                write!(decl, "extern \"{:?}\" ", f.header.abi).unwrap();
+            }
+            write!(decl, "fn {}", name).unwrap();
+            // Include only param generics here
+            write!(
+                decl,
+                "{}",
+                format_generics_params_only(&f.generics.params, krate)
+            )
+            .unwrap();
+            write!(decl, "(").unwrap();
+            let args_str = f
+                .sig
+                .inputs
+                .iter()
+                .map(|(n, t)| format!("{}: {}", n, format_type(t, krate)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            write!(decl, "{}", args_str).unwrap();
+            if f.sig.is_c_variadic {
+                write!(decl, ", ...").unwrap();
+            }
+            write!(decl, ")").unwrap();
+            if let Some(output_type) = &f.sig.output {
+                write!(decl, " -> {}", format_type(output_type, krate)).unwrap();
+            }
+            decl
+        }
+        ItemEnum::TypeAlias(ta) => format!(
+            "type {}{}",
+            name,
+            format_generics_params_only(&ta.generics.params, krate)
+        ),
+        ItemEnum::TraitAlias(ta) => format!(
+            "trait {}{}",
+            name,
+            format_generics_params_only(&ta.generics.params, krate)
+        ),
+        ItemEnum::Constant { .. } => format!("const {}", name), // Type/value in code block
+        ItemEnum::Static(s) => format!("static {}{}", if s.is_mutable { "mut " } else { "" }, name),
+        ItemEnum::Macro(_) => format!("macro {}!", name),
+        ItemEnum::ProcMacro(pm) => {
+            let kind_str = match pm.kind {
+                rustdoc_types::MacroKind::Bang => "!",
+                rustdoc_types::MacroKind::Attr => "#[]",
+                rustdoc_types::MacroKind::Derive => "#[derive]",
+            };
+            format!("proc_macro {}{}", name, kind_str)
+        }
+        ItemEnum::Primitive(_) => format!("primitive {}", name),
+        ItemEnum::Module(_) => format!("mod {}", name),
+        ItemEnum::ExternCrate {
+            name: crate_name, ..
+        } => format!("extern crate {}", crate_name),
+        ItemEnum::Use(u) => {
+            // TODO: format Use statement better
+            format!("use {}", u.name)
+        }
+        ItemEnum::ExternType => format!("extern type {}", name),
+        ItemEnum::Variant(v) => format_variant_signature(item, v, krate), // Use helper
+        ItemEnum::StructField(_) => name.to_string(), // Field name only for header
+        ItemEnum::AssocConst { .. } => format!("const {}", name),
+        ItemEnum::AssocType { .. } => format!("type {}", name),
+        ItemEnum::Impl(_) => "impl".to_string(), // Impls handled specially
+        ItemEnum::Union(_) => format!("union {}", name), // Handled above, but keep for completeness
+    }
+}
+
+/// Generates the `struct { ... }` code block.
+fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String {
+    let name = item.name.as_deref().unwrap_or("{Unnamed}");
+    let mut code = String::new();
+    write!(code, "pub struct {}", name).unwrap();
+    write!(code, "{}", format_generics_full(&s.generics, krate)).unwrap();
+
+    match &s.kind {
+        StructKind::Plain { fields, .. } => {
+            // fields_stripped ignored
+            writeln!(code, " {{").unwrap();
+            for field_id in fields {
+                if let Some(field_item) = krate.index.get(field_id) {
+                    if let ItemEnum::StructField(field_type) = &field_item.inner {
+                        let field_name = field_item.name.as_deref().unwrap_or("_");
+                        writeln!(
+                            code,
+                            "    pub {}: {},",
+                            field_name,
+                            format_type(field_type, krate)
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            write!(code, "}}").unwrap();
+        }
+        StructKind::Tuple(fields) => {
+            // fields_stripped ignored
+            write!(code, "(").unwrap();
+            let field_types: Vec<String> = fields
+                .iter()
+                .filter_map(|opt_id| {
+                    opt_id
+                        .as_ref()
+                        .and_then(|id| krate.index.get(id))
+                        .and_then(|field_item| {
+                            if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                Some(format!("pub {}", format_type(field_type, krate)))
+                            } else {
+                                None
+                            }
+                        })
+                })
+                .collect();
+            write!(code, "{}", field_types.join(", ")).unwrap();
+            write!(code, ");").unwrap();
+        }
+        StructKind::Unit => {
+            write!(code, ";").unwrap();
+        }
+    }
+    code
+}
+
+/// Generates the `enum { ... }` code block.
+fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
+    let name = item.name.as_deref().unwrap_or("{Unnamed}");
+    let mut code = String::new();
+    write!(code, "pub enum {}", name).unwrap();
+    write!(code, "{}", format_generics_full(&e.generics, krate)).unwrap();
+    writeln!(code, " {{").unwrap();
+
+    for variant_id in &e.variants {
+        if let Some(variant_item) = krate.index.get(variant_id) {
+            if let ItemEnum::Variant(variant_data) = &variant_item.inner {
+                write!(
+                    code,
+                    "    {}",
+                    format_variant_definition(variant_item, variant_data, krate)
+                )
+                .unwrap();
+                // Add discriminant if present
+                if let Some(discr) = &variant_data.discriminant {
+                    write!(code, " = {}", format_const_expr(discr)).unwrap(); // Use format_const_expr for discriminant
+                }
+                writeln!(code, ",").unwrap();
+            }
+        }
+    }
+
+    write!(code, "}}").unwrap();
+    code
+}
+
+/// Formats a single enum variant's definition for the code block.
+fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String {
+    let name = item.name.as_deref().unwrap_or("{Unnamed}");
+    match &v.kind {
+        VariantKind::Plain => name.to_string(),
+        VariantKind::Tuple(fields) => {
+            // fields_stripped ignored
+            let types: Vec<String> = fields
+                .iter()
+                .filter_map(|opt_id| {
+                    opt_id
+                        .as_ref()
+                        .and_then(|id| krate.index.get(id))
+                        .and_then(|field_item| {
+                            if let ItemEnum::StructField(ty) = &field_item.inner {
+                                Some(format_type(ty, krate))
+                            } else {
+                                None
+                            }
+                        })
+                })
+                .collect();
+            format!("{}({})", name, types.join(", "))
+        }
+        VariantKind::Struct { fields, .. } => {
+            // fields_stripped ignored
+            let fields_str: Vec<String> = fields
+                .iter()
+                .filter_map(|id| {
+                    krate.index.get(id).and_then(|field_item| {
+                        if let ItemEnum::StructField(ty) = &field_item.inner {
+                            let field_name = field_item.name.as_deref().unwrap_or("_");
+                            Some(format!("{}: {}", field_name, format_type(ty, krate)))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            format!("{} {{ {} }}", name, fields_str.join(", "))
+        }
+    }
+}
+
+/// Formats an enum variant's signature for the `#####` header.
+fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
+    // Similar to definition but potentially simpler, without pub, maybe add discriminant visually
+    let mut sig = format_variant_definition(item, v, krate);
+    if let Some(discr) = &v.discriminant {
+        write!(sig, " = {}", format_const_expr(discr)).unwrap();
+    }
+    sig
+}
+
+/// Cleans core:: and core::marker:: prefixes from a trait path string.
+fn clean_trait_path(path_str: &str) -> String {
+    path_str.replace("core::marker::", "").replace("core::", "") // Replace core:: after marker::
+}
 
 struct DocPrinter<'a> {
     krate: &'a Crate,
     selected_ids: &'a HashSet<Id>,
     printed_ids: HashSet<Id>,
     output: String,
-    level: usize, // For markdown header levels
+    current_level: usize, // For markdown header levels
 }
 
 impl<'a> DocPrinter<'a> {
@@ -1535,512 +1688,12 @@ impl<'a> DocPrinter<'a> {
             selected_ids,
             printed_ids: HashSet::new(),
             output: String::new(),
-            level: 1,
+            current_level: 1,
         }
     }
 
     fn get_item_kind(&self, id: &Id) -> Option<ItemKind> {
         self.krate.paths.get(id).map(|summary| summary.kind)
-    }
-
-    fn print_item(&mut self, id: &Id) {
-        if !self.selected_ids.contains(id) || !self.printed_ids.insert(*id) {
-            return; // Skip unselected or already printed items
-        }
-
-        if let Some(item) = self.krate.index.get(id) {
-            let name = item.name.as_deref().unwrap_or("{unnamed}");
-            let path_str = format_id_path(id, self.krate);
-            // Get kind from ItemSummary (paths map) if possible for accuracy
-            let item_kind = self
-                .get_item_kind(id)
-                .unwrap_or_else(|| self.infer_item_kind(item)); // Fallback if not in paths
-
-            writeln!(
-                self.output,
-                "\n{} Item: {} ({:?})",
-                "#".repeat(self.level + 1),
-                path_str,
-                item_kind // Use kind from ItemSummary or inferred
-            )
-            .unwrap();
-            writeln!(
-                self.output,
-                "{}",
-                "-".repeat(path_str.len() + format!("{:?}", item_kind).len() + 8)
-            )
-            .unwrap(); // Separator
-
-            // Print signature/summary based on kind
-            match &item.inner {
-                ItemEnum::Function(func) => {
-                    writeln!(
-                        self.output,
-                        "```rust\n{}\n```",
-                        format_function_signature(func, name, self.krate)
-                    )
-                    .unwrap();
-                }
-                ItemEnum::Struct(s) => {
-                    writeln!(
-                        self.output,
-                        "```rust\nstruct {}{}; // Fields omitted\n```",
-                        name,
-                        format_generics(&s.generics, self.krate)
-                    )
-                    .unwrap();
-                }
-                ItemEnum::Enum(e) => {
-                    writeln!(
-                        self.output,
-                        "```rust\nenum {}{}; // Variants omitted\n```",
-                        name,
-                        format_generics(&e.generics, self.krate)
-                    )
-                    .unwrap();
-                }
-                ItemEnum::Trait(t) => {
-                    writeln!(
-                        self.output,
-                        "```rust\ntrait {}{}; // Items omitted\n```",
-                        name,
-                        format_generics(&t.generics, self.krate)
-                    )
-                    .unwrap();
-                }
-                ItemEnum::TypeAlias(ta) => {
-                    writeln!(
-                        self.output,
-                        "```rust\ntype {}{} = {};\n```",
-                        name,
-                        format_generics(&ta.generics, self.krate),
-                        format_type(&ta.type_, self.krate)
-                    )
-                    .unwrap();
-                }
-                // Use struct pattern matching
-                ItemEnum::Constant { type_, const_, .. } => {
-                    writeln!(
-                        self.output,
-                        "```rust\nconst {}: {} = {};\n```",
-                        name,
-                        format_type(type_, self.krate),
-                        const_.value.as_deref().unwrap_or("...") // Use expr field
-                    )
-                    .unwrap();
-                }
-                ItemEnum::Static(s) => {
-                    writeln!(
-                        self.output,
-                        "```rust\nstatic {}{}: {} = {};\n```",
-                        if s.is_mutable { "mut " } else { "" },
-                        name,
-                        format_type(&s.type_, self.krate),
-                        s.expr
-                    )
-                    .unwrap();
-                }
-                // ... other kinds ...
-                _ => {}
-            }
-
-            if let Some(docs) = &item.docs {
-                if !docs.trim().is_empty() {
-                    writeln!(self.output, "\n{}", docs.trim()).unwrap();
-                }
-            }
-
-            // Specific sections for complex items
-            match &item.inner {
-                ItemEnum::Struct(s) => self.print_struct_details(item, s),
-                ItemEnum::Enum(e) => self.print_enum_details(item, e),
-                ItemEnum::Trait(t) => self.print_trait_details(item, t),
-                _ => {}
-            }
-        }
-    }
-
-    fn print_struct_details(&mut self, item: &Item, s: &Struct) {
-        // Print Fields
-        match &s.kind {
-            rustdoc_types::StructKind::Plain {
-                fields,
-                has_stripped_fields,
-            } => {
-                if !fields.is_empty() || *has_stripped_fields {
-                    writeln!(self.output, "\n{} Fields", "#".repeat(self.level + 2)).unwrap();
-                    for field_id in fields {
-                        self.print_item(field_id); // Will print StructField item
-                    }
-                    if *has_stripped_fields {
-                        writeln!(self.output, "\n_[Private fields hidden]_").unwrap();
-                    }
-                }
-            }
-            rustdoc_types::StructKind::Tuple(fields) => {
-                // fields is Vec<Option<Id>>
-                if !fields.is_empty() {
-                    writeln!(self.output, "\n{} Fields", "#".repeat(self.level + 2)).unwrap();
-                    for field_id_opt in fields {
-                        if let Some(field_id) = field_id_opt {
-                            self.print_item(field_id);
-                        } else {
-                            writeln!(self.output, "\n_[Hidden field]_").unwrap();
-                        }
-                    }
-                }
-            }
-            rustdoc_types::StructKind::Unit => {} // No fields
-        }
-
-        // Print Implementations
-        self.print_implementations(&s.impls, item.id);
-    }
-
-    fn print_enum_details(&mut self, item: &Item, e: &rustdoc_types::Enum) {
-        // Print Variants
-        if !e.variants.is_empty() || e.has_stripped_variants {
-            writeln!(self.output, "\n{} Variants", "#".repeat(self.level + 2)).unwrap();
-            for variant_id in &e.variants {
-                self.print_item(variant_id); // Will print Variant item
-            }
-            if e.has_stripped_variants {
-                writeln!(self.output, "\n_[Private variants hidden]_").unwrap();
-            }
-        }
-
-        // Print Implementations
-        self.print_implementations(&e.impls, item.id);
-    }
-
-    fn print_trait_details(&mut self, _item: &Item, t: &rustdoc_types::Trait) {
-        // Print Associated Items
-        if !t.items.is_empty() {
-            writeln!(
-                self.output,
-                "\n{} Associated Items",
-                "#".repeat(self.level + 2)
-            )
-            .unwrap();
-            // Group associated items by kind?
-            let mut assoc_consts = vec![];
-            let mut assoc_types = vec![];
-            let mut assoc_fns = vec![];
-            for item_id in &t.items {
-                if let Some(item) = self.krate.index.get(item_id) {
-                    match &item.inner {
-                        ItemEnum::AssocConst { .. } => assoc_consts.push(item_id),
-                        ItemEnum::AssocType { .. } => assoc_types.push(item_id),
-                        ItemEnum::Function(_) => assoc_fns.push(item_id),
-                        _ => {} // Should not happen?
-                    }
-                }
-            }
-            // Print in order: consts, types, fns
-            if !assoc_consts.is_empty() {
-                writeln!(
-                    self.output,
-                    "\n{} Associated Constants",
-                    "#".repeat(self.level + 3)
-                )
-                .unwrap();
-                for id in assoc_consts {
-                    self.print_item(id);
-                }
-            }
-            if !assoc_types.is_empty() {
-                writeln!(
-                    self.output,
-                    "\n{} Associated Types",
-                    "#".repeat(self.level + 3)
-                )
-                .unwrap();
-                for id in assoc_types {
-                    self.print_item(id);
-                }
-            }
-            if !assoc_fns.is_empty() {
-                writeln!(
-                    self.output,
-                    "\n{} Associated Functions",
-                    "#".repeat(self.level + 3)
-                )
-                .unwrap();
-                for id in assoc_fns {
-                    self.print_item(id);
-                }
-            }
-        }
-        // Print Implementors? (t.implementations) - maybe too verbose
-    }
-
-    fn print_implementations(&mut self, impl_ids: &[Id], _target_id: Id) {
-        let impls: Vec<&Item> = impl_ids
-            .iter()
-            .filter_map(|impl_id| self.krate.index.get(impl_id))
-            .filter(|impl_item| self.selected_ids.contains(&impl_item.id))
-            .collect();
-
-        let (inherent_impls, trait_impls): (Vec<_>, Vec<_>) = impls.into_iter().partition(
-            |impl_item| matches!(&impl_item.inner, ItemEnum::Impl(i) if i.trait_.is_none()),
-        );
-
-        if !inherent_impls.is_empty() {
-            writeln!(
-                self.output,
-                "\n{} Implementations",
-                "#".repeat(self.level + 2)
-            )
-            .unwrap();
-            for impl_item in inherent_impls {
-                if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    self.print_impl_block(impl_item, imp);
-                }
-            }
-        }
-        if !trait_impls.is_empty() {
-            writeln!(
-                self.output,
-                "\n{} Trait Implementations",
-                "#".repeat(self.level + 2)
-            )
-            .unwrap();
-            for impl_item in trait_impls {
-                if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    self.print_impl_block(impl_item, imp);
-                }
-            }
-        }
-        // TODO: Auto Trait Implementations (might need filtering imp.is_auto)
-        // TODO: Blanket Implementations (harder to detect, maybe filter imp.is_blanket if field exists?)
-    }
-
-    fn print_impl_block(&mut self, impl_item: &Item, imp: &Impl) {
-        let header_level = self.level + 3;
-        let mut impl_header = String::new();
-        if imp.is_unsafe {
-            write!(impl_header, "unsafe ").unwrap();
-        }
-        write!(
-            impl_header,
-            "impl{}",
-            format_generics(&imp.generics, self.krate)
-        )
-        .unwrap();
-
-        if let Some(trait_path) = &imp.trait_ {
-            // Use format_path with the Path struct
-            write!(
-                impl_header,
-                " {} for",
-                format_path(trait_path, self.krate) // Format the full trait path
-            )
-            .unwrap();
-        }
-        write!(impl_header, " {}", format_type(&imp.for_, self.krate)).unwrap();
-
-        // Append where clause from impl generics if needed and not already printed
-        if !imp.generics.where_predicates.is_empty() && !impl_header.contains("where") {
-            let where_clause =
-                format_generics_where_only(&imp.generics.where_predicates, self.krate);
-            write!(impl_header, " {}", where_clause).unwrap();
-        }
-
-        writeln!(
-            self.output,
-            "\n{} `{}`",
-            "#".repeat(header_level),
-            impl_header
-        )
-        .unwrap();
-        self.printed_ids.insert(impl_item.id); // Mark the impl item itself as printed
-
-        // Group associated items
-        let mut assoc_consts = vec![];
-        let mut assoc_types = vec![];
-        let mut assoc_fns = vec![];
-        for assoc_item_id in &imp.items {
-            if !self.selected_ids.contains(assoc_item_id) {
-                continue;
-            }
-            if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
-                match &assoc_item.inner {
-                    ItemEnum::AssocConst { .. } => assoc_consts.push(assoc_item_id),
-                    ItemEnum::AssocType { .. } => assoc_types.push(assoc_item_id),
-                    ItemEnum::Function(_) => assoc_fns.push(assoc_item_id),
-                    _ => {} // Should not happen in impl block
-                }
-            }
-        }
-
-        // Print in order: consts, types, fns
-        if !assoc_consts.is_empty() {
-            writeln!(
-                self.output,
-                "\n{} Associated Constants",
-                "#".repeat(header_level + 1)
-            )
-            .unwrap();
-            for id in assoc_consts {
-                self.print_item(id); // Will print AssocConst item
-            }
-        }
-        if !assoc_types.is_empty() {
-            writeln!(
-                self.output,
-                "\n{} Associated Types",
-                "#".repeat(header_level + 1)
-            )
-            .unwrap();
-            for id in assoc_types {
-                self.print_item(id); // Will print AssocType item
-            }
-        }
-        if !assoc_fns.is_empty() {
-            writeln!(
-                self.output,
-                "\n{} Associated Functions",
-                "#".repeat(header_level + 1)
-            )
-            .unwrap();
-            for id in assoc_fns {
-                self.print_item(id); // Will print Function item
-            }
-        }
-    }
-
-    fn print_module_contents(&mut self, module: &Module) {
-        let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new();
-        for id in &module.items {
-            if !self.selected_ids.contains(id) {
-                continue;
-            }
-            // Use ItemSummary from krate.paths to get the kind if possible
-            if let Some(kind) = self.get_item_kind(id) {
-                items_by_kind.entry(kind).or_default().push(*id);
-            } else if let Some(item) = self.krate.index.get(id) {
-                // Fallback: infer kind from ItemEnum
-                let kind = self.infer_item_kind(item);
-                items_by_kind.entry(kind).or_default().push(*id);
-                warn!(
-                    "Used fallback kind detection for item ID {:?} ({:?})",
-                    id,
-                    item.name.as_deref().unwrap_or("")
-                );
-            }
-        }
-
-        // Defined printing order
-        let print_order = [
-            ItemKind::Macro, // Includes bang procedural macros
-            ItemKind::ProcAttribute,
-            ItemKind::ProcDerive,
-            ItemKind::Module,
-            ItemKind::ExternCrate,
-            ItemKind::Use,       // Renamed from Import
-            ItemKind::Primitive, // Only if explicitly selected? unlikely
-            ItemKind::Union,
-            ItemKind::Struct,
-            ItemKind::Enum,
-            ItemKind::Trait,
-            ItemKind::TypeAlias,
-            ItemKind::TraitAlias,
-            ItemKind::Static,
-            ItemKind::Constant,
-            ItemKind::Function,
-            // ItemKind::Impl, // Handled within struct/enum/trait
-            ItemKind::ExternType, // Renamed from ForeignType
-            // ItemKind::Variant, // Handled within enum
-            // ItemKind::StructField, // Handled within struct/variant
-            // ItemKind::AssocConst, // Handled within trait/impl
-            // ItemKind::AssocType, // Handled within trait/impl
-            ItemKind::Keyword, // Only if explicitly selected? unlikely
-        ];
-
-        for kind in print_order {
-            if let Some(ids) = items_by_kind.get_mut(&kind) {
-                // Sort items by name within each kind
-                ids.sort_by_key(|id| {
-                    self.krate.index.get(id).and_then(|item| item.name.clone()) // Clone name for sorting
-                });
-
-                if !ids.is_empty() {
-                    // Add section header only if needed and not implicitly handled
-                    let header = match kind {
-                        ItemKind::Module => "Modules",
-                        ItemKind::Struct => "Structs",
-                        ItemKind::Enum => "Enums",
-                        ItemKind::Trait => "Traits",
-                        ItemKind::Function => "Functions",
-                        ItemKind::Macro | ItemKind::ProcAttribute | ItemKind::ProcDerive => {
-                            "Macros"
-                        }
-                        ItemKind::Static => "Statics",
-                        ItemKind::Constant => "Constants",
-                        ItemKind::TypeAlias => "Type Aliases",
-                        ItemKind::TraitAlias => "Trait Aliases",
-                        ItemKind::Union => "Unions",
-                        ItemKind::Use => "Imports",
-                        ItemKind::ExternCrate => "External Crates",
-                        ItemKind::ExternType => "External Types",
-                        _ => "", // No header for implicitly handled kinds
-                    };
-
-                    if !header.is_empty() {
-                        // Check if this specific header was already printed (e.g., multiple macro kinds)
-                        let full_header = format!("\n{} {}", "#".repeat(self.level + 1), header);
-                        // A bit hacky check to avoid duplicate "Macros" headers
-                        if !(header == "Macros" && self.output.contains(&full_header)) {
-                            writeln!(self.output, "{}", full_header).unwrap();
-                        }
-                    }
-
-                    for id in ids.clone() {
-                        // Clone ids to allow modification of self.printed_ids inside loop
-                        if let Some(item) = self.krate.index.get(&id) {
-                            match &item.inner {
-                                ItemEnum::Module(sub_module) => {
-                                    if !self.printed_ids.contains(&id) {
-                                        // Avoid re-printing modules already handled? No, print structure.
-                                        writeln!(
-                                            self.output,
-                                            "\n{} Module {}",
-                                            "#".repeat(self.level + 1),
-                                            item.name.as_deref().unwrap_or("{unnamed}")
-                                        )
-                                        .unwrap();
-                                        self.printed_ids.insert(id); // Mark module printed before recursion
-                                        let current_level = self.level;
-                                        self.level += 1;
-                                        // Print module docs first
-                                        if let Some(docs) = &item.docs {
-                                            if !docs.trim().is_empty() {
-                                                writeln!(self.output, "\n{}", docs.trim()).unwrap();
-                                            }
-                                        }
-                                        self.print_module_contents(sub_module);
-                                        self.level = current_level;
-                                    }
-                                }
-                                // Skip Impl items here, they are handled inside Struct/Enum/Trait print methods
-                                ItemEnum::Impl(_) => {}
-                                // Skip Variant/Field/Assoc items here
-                                ItemEnum::Variant(_)
-                                | ItemEnum::StructField(_)
-                                | ItemEnum::AssocConst { .. }
-                                | ItemEnum::AssocType { .. } => {}
-                                _ => {
-                                    // Only print if not already handled (e.g., via impl block)
-                                    if !self.printed_ids.contains(&id) {
-                                        self.print_item(&id);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // Fallback for inferring ItemKind if not found in paths map
@@ -2076,66 +1729,707 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
+    /// Prints the details of a single selected item.
+    fn print_item_details(&mut self, id: &Id) {
+        if !self.selected_ids.contains(id) || !self.printed_ids.insert(*id) {
+            return; // Skip unselected or already printed items
+        }
+
+        if let Some(item) = self.krate.index.get(id) {
+            let declaration = generate_item_declaration(item, self.krate);
+
+            // Print Header (### `declaration`)
+            writeln!(
+                self.output,
+                "\n{} `{}`\n",                      // Add newline after header
+                "#".repeat(self.current_level + 2), // Item level is ###
+                declaration
+            )
+            .unwrap();
+
+            // Print Code Block for Struct/Enum
+            let code_block = match &item.inner {
+                ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
+                ItemEnum::Enum(e) => Some(generate_enum_code_block(item, e, self.krate)),
+                _ => None,
+            };
+
+            if let Some(code) = code_block {
+                writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
+            }
+
+            // Print Documentation
+            if let Some(docs) = &item.docs {
+                if !docs.trim().is_empty() {
+                    writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                }
+            }
+
+            // Print Specific Sections
+            match &item.inner {
+                ItemEnum::Struct(s) => self.print_struct_fields(item, s),
+                ItemEnum::Enum(e) => self.print_enum_variants(item, e),
+                ItemEnum::Trait(t) => self.print_trait_associated_items(item, t),
+                // Add other kinds requiring detailed sections if necessary
+                _ => {}
+            }
+
+            // Print Implementations (common to Struct, Enum, Trait, Primitive, etc.)
+            match &item.inner {
+                ItemEnum::Struct(s) => self.print_item_implementations(&s.impls, item),
+                ItemEnum::Enum(e) => self.print_item_implementations(&e.impls, item),
+                ItemEnum::Trait(t) => { /* Trait impls are implementors, not impls *on* the trait */
+                }
+                ItemEnum::Union(u) => self.print_item_implementations(&u.impls, item),
+                ItemEnum::Primitive(p) => self.print_item_implementations(&p.impls, item),
+                _ => {}
+            }
+        }
+    }
+
+    /// Prints the "Fields" section for a struct.
+    fn print_struct_fields(&mut self, _item: &Item, s: &Struct) {
+        let fields_to_print: Vec<Id> = match &s.kind {
+            StructKind::Plain { fields, .. } => fields.clone(),
+            StructKind::Tuple(fields) => fields.iter().filter_map(|opt_id| *opt_id).collect(),
+            StructKind::Unit => vec![],
+        };
+        let has_stripped = matches!(
+            &s.kind,
+            StructKind::Plain {
+                has_stripped_fields: true,
+                ..
+            }
+        );
+
+        if !fields_to_print.is_empty() || has_stripped {
+            writeln!(
+                self.output,
+                "{} Fields\n",                      // Add newline after header
+                "#".repeat(self.current_level + 3)  // Fields section level is ####
+            )
+            .unwrap();
+            for field_id in &fields_to_print {
+                self.print_field_details(field_id);
+            }
+            if has_stripped {
+                writeln!(self.output, "\n_[Private fields hidden]_").unwrap();
+            }
+        }
+    }
+
+    /// Prints the details for a single struct field.
+    fn print_field_details(&mut self, field_id: &Id) {
+        if !self.selected_ids.contains(field_id) {
+            return;
+        } // Skip unselected
+          // Avoid printing if already handled elsewhere (though unlikely for fields)
+          // if !self.printed_ids.insert(*field_id) { return; }
+
+        if let Some(item) = self.krate.index.get(field_id) {
+            if let ItemEnum::StructField(field_type) = &item.inner {
+                let name = item.name.as_deref().unwrap_or("_");
+                // Header: ##### `field_name`
+                writeln!(
+                    self.output,
+                    "{} `{}`\n",                        // Add newline after header
+                    "#".repeat(self.current_level + 4), // Field level is #####
+                    name
+                )
+                .unwrap();
+                // Docs
+                if let Some(docs) = &item.docs {
+                    if !docs.trim().is_empty() {
+                        writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                    }
+                }
+                // Type (optional, could add here if needed)
+                // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
+            }
+        }
+    }
+
+    /// Prints the "Variants" section for an enum.
+    fn print_enum_variants(&mut self, _item: &Item, e: &Enum) {
+        if !e.variants.is_empty() || e.has_stripped_variants {
+            writeln!(
+                self.output,
+                "{} Variants\n",                    // Add newline after header
+                "#".repeat(self.current_level + 3)  // Variants section level is ####
+            )
+            .unwrap();
+            for variant_id in &e.variants {
+                self.print_variant_details(variant_id);
+            }
+            if e.has_stripped_variants {
+                writeln!(self.output, "\n_[Private variants hidden]_").unwrap();
+            }
+        }
+    }
+
+    /// Prints the details for a single enum variant.
+    fn print_variant_details(&mut self, variant_id: &Id) {
+        if !self.selected_ids.contains(variant_id) {
+            return;
+        } // Skip unselected
+          // Avoid printing if already handled elsewhere
+          // if !self.printed_ids.insert(*variant_id) { return; }
+
+        if let Some(item) = self.krate.index.get(variant_id) {
+            if let ItemEnum::Variant(variant_data) = &item.inner {
+                let signature = format_variant_signature(item, variant_data, self.krate);
+                // Header: ##### `VariantSignature`
+                writeln!(
+                    self.output,
+                    "{} `{}`\n",                        // Add newline after header
+                    "#".repeat(self.current_level + 4), // Variant level is #####
+                    signature
+                )
+                .unwrap();
+                // Docs
+                if let Some(docs) = &item.docs {
+                    if !docs.trim().is_empty() {
+                        writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Prints the "Associated Items" section for a trait.
+    fn print_trait_associated_items(&mut self, _item: &Item, t: &Trait) {
+        if t.items.is_empty() {
+            return;
+        }
+
+        writeln!(
+            self.output,
+            "{} Associated Items\n",            // Add newline after header
+            "#".repeat(self.current_level + 3)  // Associated Items section is ####
+        )
+        .unwrap();
+
+        let mut assoc_consts = vec![];
+        let mut assoc_types = vec![];
+        let mut assoc_fns = vec![];
+
+        for item_id in &t.items {
+            if let Some(assoc_item) = self.krate.index.get(item_id) {
+                if !self.selected_ids.contains(item_id) {
+                    continue;
+                }
+                match &assoc_item.inner {
+                    ItemEnum::AssocConst { .. } => assoc_consts.push(item_id),
+                    ItemEnum::AssocType { .. } => assoc_types.push(item_id),
+                    ItemEnum::Function(_) => assoc_fns.push(item_id),
+                    _ => {} // Should not happen?
+                }
+            }
+        }
+
+        // Print in order: consts, types, fns
+        if !assoc_consts.is_empty() {
+            writeln!(
+                self.output,
+                "{} Associated Constants\n",
+                "#".repeat(self.current_level + 4) // #####
+            )
+            .unwrap();
+            for id in assoc_consts {
+                self.print_associated_item_details(id);
+            }
+        }
+        if !assoc_types.is_empty() {
+            writeln!(
+                self.output,
+                "{} Associated Types\n",
+                "#".repeat(self.current_level + 4) // #####
+            )
+            .unwrap();
+            for id in assoc_types {
+                self.print_associated_item_details(id);
+            }
+        }
+        if !assoc_fns.is_empty() {
+            writeln!(
+                self.output,
+                "{} Associated Functions\n",
+                "#".repeat(self.current_level + 4) // #####
+            )
+            .unwrap();
+            for id in assoc_fns {
+                self.print_associated_item_details(id);
+            }
+        }
+    }
+
+    /// Prints the details for a single associated item (const, type, function).
+    fn print_associated_item_details(&mut self, assoc_item_id: &Id) {
+        if !self.selected_ids.contains(assoc_item_id) {
+            return;
+        }
+        // Do not mark as printed here, let print_item_details handle it if called standalone
+
+        if let Some(item) = self.krate.index.get(assoc_item_id) {
+            let declaration = generate_item_declaration(item, self.krate);
+
+            // Print Header (##### `declaration`) - Note: using +4 level assuming parent is ####
+            writeln!(
+                self.output,
+                "{} `{}`\n",                        // Add newline after header
+                "#".repeat(self.current_level + 4), // Assoc Item level is #####
+                declaration
+            )
+            .unwrap();
+
+            // Print Documentation
+            if let Some(docs) = &item.docs {
+                if !docs.trim().is_empty() {
+                    writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                }
+            }
+
+            // Potentially add default values/bounds for assoc const/type here
+            match &item.inner {
+                ItemEnum::AssocConst { type_, const_ } => {
+                    writeln!(
+                        self.output,
+                        "_Type: `{}`_\n",
+                        format_type(type_, self.krate)
+                    )
+                    .unwrap();
+                    if let Some(val) = const_ {
+                        writeln!(self.output, "_Default: `{}`_\n", val).unwrap();
+                    }
+                }
+                ItemEnum::AssocType { bounds, type_, .. } => {
+                    // Use renamed field type_
+                    if !bounds.is_empty() {
+                        let bounds_str = bounds
+                            .iter()
+                            .map(|b| format_generic_bound(b, self.krate))
+                            .collect::<Vec<_>>()
+                            .join(" + ");
+                        writeln!(self.output, "_Bounds: `{}`_\n", bounds_str).unwrap();
+                    }
+                    if let Some(ty) = type_ {
+                        writeln!(
+                            self.output,
+                            "_Default: `{}`_\n",
+                            format_type(ty, self.krate)
+                        )
+                        .unwrap();
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Prints Inherent and Trait Implementations for an item.
+    fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
+        let target_name = target_item.name.as_deref().unwrap_or("{unknown}");
+        let all_impls: Vec<&Item> = impl_ids
+            .iter()
+            .filter_map(|impl_id| self.krate.index.get(impl_id))
+            // Only consider impls that are selected *and* haven't been printed yet
+            // (Impl items might be selected independently)
+            .filter(|impl_item| self.selected_ids.contains(&impl_item.id))
+            .collect();
+
+        let (inherent_impls, trait_impls): (Vec<_>, Vec<_>) = all_impls.into_iter().partition(
+            |impl_item| matches!(&impl_item.inner, ItemEnum::Impl(i) if i.trait_.is_none()),
+        );
+
+        // --- Inherent Impls ---
+        if !inherent_impls.is_empty() {
+            writeln!(
+                self.output,
+                "{} Implementations\n",             // Add newline after header
+                "#".repeat(self.current_level + 3)  // #### Section Header
+            )
+            .unwrap();
+            for impl_item in inherent_impls {
+                // Check printed_ids *before* printing the block
+                if self.printed_ids.contains(&impl_item.id) {
+                    continue;
+                }
+                if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    self.print_impl_block_details(impl_item, imp);
+                }
+            }
+        }
+
+        // --- Trait Impls ---
+        if !trait_impls.is_empty() {
+            writeln!(
+                self.output,
+                "{} Trait Implementations for `{}`\n", // Add newline after header
+                "#".repeat(self.current_level + 3),    // #### Section Header
+                target_name
+            )
+            .unwrap();
+
+            let mut simple_impls = Vec::new();
+            let mut generic_impls = Vec::new();
+
+            for impl_item in trait_impls {
+                if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    if let Some(trait_path) = &imp.trait_ {
+                        let is_simple = imp.generics.params.is_empty()
+                            && imp.generics.where_predicates.is_empty()
+                            && trait_path.args.as_ref().map_or(true, |args| {
+                                // Check if args contain only lifetimes or are empty
+                                match **args {
+                                    GenericArgs::AngleBracketed {
+                                        ref args,
+                                        ref constraints,
+                                        ..
+                                    } => {
+                                        args.iter().all(|a| matches!(a, GenericArg::Lifetime(_)))
+                                            && constraints.is_empty()
+                                    }
+                                    _ => false, // Parenthesized or ReturnTypeNotation are not simple path args
+                                }
+                            });
+
+                        if is_simple {
+                            simple_impls
+                                .push(clean_trait_path(&format_path(trait_path, self.krate)));
+                        } else {
+                            // Check printed_ids *before* adding to generic list
+                            if !self.printed_ids.contains(&impl_item.id) {
+                                generic_impls.push(impl_item);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Print simple impls as a list
+            simple_impls.sort(); // Sort alphabetically
+            for cleaned_path in simple_impls {
+                writeln!(self.output, "- `{}`", cleaned_path).unwrap();
+            }
+            if !simple_impls.is_empty() {
+                writeln!(self.output).unwrap(); // Add blank line after list
+            }
+
+            // Print generic impls
+            if !generic_impls.is_empty() {
+                writeln!(
+                    self.output,
+                    "{} Generic Trait Implementations\n", // Add newline after header
+                    "#".repeat(self.current_level + 4)    // ##### Sub-section Header
+                )
+                .unwrap();
+                for impl_item in generic_impls {
+                    if let ItemEnum::Impl(imp) = &impl_item.inner {
+                        // print_impl_block_details marks as printed
+                        self.print_impl_block_details(impl_item, imp);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Prints the details of a specific impl block (header, associated items).
+    fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl) {
+        // Mark as printed *now* before printing details
+        if !self.printed_ids.insert(impl_item.id) {
+            return;
+        }
+
+        let mut impl_header = String::new();
+        if imp.is_unsafe {
+            write!(impl_header, "unsafe ").unwrap();
+        }
+        write!(impl_header, "impl").unwrap();
+
+        // Print impl generics only if they exist
+        let impl_generics_str = format_generics_full(&imp.generics, self.krate);
+        if !impl_generics_str.is_empty() && !impl_generics_str.starts_with('\n') {
+            write!(impl_header, "{} ", impl_generics_str).unwrap(); // Space after generics if single line
+        } else if !impl_generics_str.is_empty() {
+            write!(impl_header, "{}", impl_generics_str).unwrap(); // Multiline generics include spacing
+        }
+
+        if let Some(trait_path) = &imp.trait_ {
+            // Use format_path with the Path struct
+            write!(impl_header, "{} for ", format_path(trait_path, self.krate)).unwrap();
+        }
+        write!(impl_header, "{}", format_type(&imp.for_, self.krate)).unwrap();
+
+        // Append where clause from impl generics if needed and not already printed *within the header line*
+        // (Multi-line where clauses were handled by format_generics_full)
+        if !imp.generics.where_predicates.is_empty()
+            && !impl_generics_str.contains("where\n")
+            && !impl_generics_str.is_empty()
+            && impl_generics_str.ends_with('>')
+        {
+            let where_clause =
+                format_generics_where_only(&imp.generics.where_predicates, self.krate);
+            write!(impl_header, "\n  {}", where_clause).unwrap(); // Add multiline where clause
+        } else if !imp.generics.where_predicates.is_empty() && impl_generics_str.is_empty() {
+            let where_clause =
+                format_generics_where_only(&imp.generics.where_predicates, self.krate);
+            write!(impl_header, " {}", where_clause).unwrap(); // Add single line where clause
+        }
+
+        // Print the impl block header (##### `impl ...`)
+        writeln!(
+            self.output,
+            "{} `{}`\n",                        // Add newline after header
+            "#".repeat(self.current_level + 4), // Impl block level is #####
+            impl_header.trim() // Trim potential trailing space if no where clause added
+        )
+        .unwrap();
+
+        // Print associated items within this impl block
+        let mut assoc_consts = vec![];
+        let mut assoc_types = vec![];
+        let mut assoc_fns = vec![];
+        for assoc_item_id in &imp.items {
+            // Important: Only print associated items that are *selected*
+            if !self.selected_ids.contains(assoc_item_id) {
+                continue;
+            }
+
+            if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
+                match &assoc_item.inner {
+                    ItemEnum::AssocConst { .. } => assoc_consts.push(assoc_item_id),
+                    ItemEnum::AssocType { .. } => assoc_types.push(assoc_item_id),
+                    ItemEnum::Function(_) => assoc_fns.push(assoc_item_id),
+                    _ => {} // Should not happen in impl block
+                }
+            }
+        }
+
+        // Print associated items using the dedicated detail printer
+        // No extra sub-headers needed here, print_associated_item_details already uses #####
+        if !assoc_consts.is_empty() {
+            // writeln!(self.output, "\n###### Associated Constants\n").unwrap(); // No sub-sub-header
+            for id in assoc_consts {
+                self.print_associated_item_details(id);
+            }
+        }
+        if !assoc_types.is_empty() {
+            // writeln!(self.output, "\n###### Associated Types\n").unwrap();
+            for id in assoc_types {
+                self.print_associated_item_details(id);
+            }
+        }
+        if !assoc_fns.is_empty() {
+            // writeln!(self.output, "\n###### Associated Functions\n").unwrap();
+            for id in assoc_fns {
+                self.print_associated_item_details(id);
+            }
+        }
+    }
+
+    /// Prints the contents of a module, grouping items by kind.
+    fn print_module_contents(&mut self, module: &Module) {
+        // Group selected items by kind within this module
+        let mut items_by_kind: BTreeMap<ItemKind, Vec<Id>> = BTreeMap::new(); // Use BTreeMap for sorted kinds
+        for id in &module.items {
+            if !self.selected_ids.contains(id) || self.printed_ids.contains(id) {
+                continue; // Skip unselected or already printed items
+            }
+            let kind = self.get_item_kind(id).unwrap_or_else(|| {
+                // Fallback if not in paths (should be rare for local items)
+                self.krate
+                    .index
+                    .get(id)
+                    .map(|item| self.infer_item_kind(item))
+                    .unwrap_or(ItemKind::Module) // Default fallback kind
+            });
+
+            // Skip kinds handled implicitly within others for grouping
+            match kind {
+                ItemKind::Impl
+                | ItemKind::Variant
+                | ItemKind::StructField
+                | ItemKind::AssocConst
+                | ItemKind::AssocType => continue,
+                _ => {}
+            }
+
+            items_by_kind.entry(kind).or_default().push(*id);
+        }
+
+        // Sort items by name within each kind
+        for ids in items_by_kind.values_mut() {
+            ids.sort_by_key(|id| self.krate.index.get(id).and_then(|item| item.name.clone()));
+        }
+
+        // Defined printing order (subset relevant for module contents)
+        let print_order = [
+            ItemKind::Macro,
+            ItemKind::ProcAttribute,
+            ItemKind::ProcDerive,
+            ItemKind::Module,
+            ItemKind::ExternCrate,
+            ItemKind::Use,
+            ItemKind::Primitive, // Unlikely here unless re-exported
+            ItemKind::Union,
+            ItemKind::Struct,
+            ItemKind::Enum,
+            ItemKind::Trait,
+            ItemKind::TypeAlias,
+            ItemKind::TraitAlias,
+            ItemKind::Static,
+            ItemKind::Constant,
+            ItemKind::Function,
+            ItemKind::ExternType,
+            ItemKind::Keyword, // Unlikely here
+        ];
+
+        let mut printed_headers = HashSet::new(); // Track headers printed at this level
+
+        for kind in print_order {
+            if let Some(ids) = items_by_kind.get(&kind) {
+                // Determine group header
+                let header_name = match kind {
+                    ItemKind::Module => "Modules",
+                    ItemKind::Struct => "Structs",
+                    ItemKind::Enum => "Enums",
+                    ItemKind::Trait => "Traits",
+                    ItemKind::Function => "Functions",
+                    ItemKind::Macro | ItemKind::ProcAttribute | ItemKind::ProcDerive => "Macros",
+                    ItemKind::Static => "Statics",
+                    ItemKind::Constant => "Constants",
+                    ItemKind::TypeAlias => "Type Aliases",
+                    ItemKind::TraitAlias => "Trait Aliases",
+                    ItemKind::Union => "Unions",
+                    ItemKind::Use => "Imports",
+                    ItemKind::ExternCrate => "External Crates",
+                    ItemKind::ExternType => "External Types",
+                    ItemKind::Primitive => "Primitives",
+                    ItemKind::Keyword => "Keywords",
+                    // These are skipped above, but listed defensively
+                    ItemKind::Impl
+                    | ItemKind::Variant
+                    | ItemKind::StructField
+                    | ItemKind::AssocConst
+                    | ItemKind::AssocType => "",
+                };
+
+                if !header_name.is_empty() && printed_headers.insert(header_name) {
+                    writeln!(
+                        self.output,
+                        "\n{} {}",
+                        "#".repeat(self.current_level + 1), // Group level is ##
+                        header_name
+                    )
+                    .unwrap();
+                }
+
+                // Print items of this kind
+                for id in ids {
+                    if let Some(item) = self.krate.index.get(id) {
+                        // Handle nested modules recursively
+                        if let ItemEnum::Module(sub_module) = &item.inner {
+                            // Check printed_ids again before recursing
+                            if !self.printed_ids.contains(id) {
+                                let mod_name = item.name.as_deref().unwrap_or("{unnamed}");
+                                writeln!(
+                                    self.output,
+                                    "\n{} `mod {}`\n", // Module header uses ###
+                                    "#".repeat(self.current_level + 2),
+                                    mod_name
+                                )
+                                .unwrap();
+                                self.printed_ids.insert(*id); // Mark printed *before* recursion
+
+                                // Print module docs
+                                if let Some(docs) = &item.docs {
+                                    if !docs.trim().is_empty() {
+                                        writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                                    }
+                                }
+
+                                let previous_level = self.current_level;
+                                self.current_level += 1;
+                                self.print_module_contents(sub_module);
+                                self.current_level = previous_level;
+                            }
+                        } else {
+                            // Print other item types using the detail printer
+                            self.print_item_details(id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Finalizes the documentation string, printing the crate header and contents.
     fn finalize(mut self) -> String {
         let root_item = self.krate.index.get(&self.krate.root).unwrap(); // Assume root exists
         let crate_name = root_item.name.as_deref().unwrap_or("Unknown Crate");
         let crate_version = self.krate.crate_version.as_deref().unwrap_or("");
 
-        // Use writeln! to ensure newline at the end of the header
+        // Print Crate Header (# Crate Name (Version))
         writeln!(
             self.output,
-            "{} {} API ({})",
-            "#".repeat(self.level),
+            "{} {} API ({})\n", // Add newline after header
+            "#".repeat(self.current_level),
             crate_name,
             crate_version
         )
         .unwrap();
-        self.printed_ids.insert(self.krate.root); // Mark root as "printed"
+        self.printed_ids.insert(self.krate.root); // Mark root as printed
 
+        // Print Crate Documentation
         if let Some(docs) = &root_item.docs {
             if !docs.trim().is_empty() {
-                writeln!(self.output, "\n{}", docs.trim()).unwrap();
+                writeln!(self.output, "{}\n", docs.trim()).unwrap();
             }
         }
 
+        // Print Root Module Contents
         if let ItemEnum::Module(root_module) = &root_item.inner {
             self.print_module_contents(root_module);
         }
 
-        // Check for unprinted selected items
-        let mut unprinted_count = 0;
-        let mut unprinted_output = String::new();
-        let mut temp_output_store = String::new(); // Store the main output temporarily
-
-        // Swap buffers to collect unprinted items separately
-        std::mem::swap(&mut self.output, &mut temp_output_store);
-
+        // --- Check for Unprinted Selected Items ---
+        let mut unprinted_ids = Vec::new();
         for id in self.selected_ids {
             if !self.printed_ids.contains(id) {
-                if unprinted_count == 0 {
-                    writeln!(
-                        unprinted_output,
-                        "\n{} Other Items",
-                        "#".repeat(self.level + 1) // Use self.level which is 1 here
-                    )
-                    .unwrap();
-                    warn!("Found selected items that were not printed in the structured output. Adding them to an 'Other Items' section.");
+                // Additional check: skip impl items that might be selected but belong
+                // to an unselected struct/enum/trait. Their details are printed
+                // under their target type if that type *is* selected.
+                if let Some(item) = self.krate.index.get(id) {
+                    if !matches!(item.inner, ItemEnum::Impl(_)) {
+                        unprinted_ids.push(*id);
+                    }
                 }
-                unprinted_count += 1;
-                self.print_item(id); // This now writes to self.output (which was swapped)
-                write!(unprinted_output, "{}", self.output).unwrap(); // Append the printed item
-                self.output.clear(); // Clear for the next unprinted item
             }
         }
 
-        // Swap back and append unprinted items
-        std::mem::swap(&mut self.output, &mut temp_output_store);
-        if unprinted_count > 0 {
-            write!(self.output, "{}", unprinted_output).unwrap();
+        if !unprinted_ids.is_empty() {
             warn!(
-                "{} unprinted items were added to the 'Other Items' section.",
-                unprinted_count
+                "Found {} selected items that were not printed in the structured output. Adding them to an 'Other Items' section.",
+                unprinted_ids.len()
             );
+            writeln!(
+                self.output,
+                "\n{} Other Items", // Use ## level for this section
+                "#".repeat(self.current_level + 1)
+            )
+            .unwrap();
+
+            // Sort unprinted items for consistent output
+            unprinted_ids.sort_by_key(|id| {
+                (
+                    self.krate.paths.get(id).map(|p| p.path.clone()),
+                    self.krate.index.get(id).and_then(|i| i.name.clone()),
+                )
+            });
+
+            for id in unprinted_ids {
+                self.print_item_details(&id); // Print details for unprinted items
+            }
         }
 
         self.output
