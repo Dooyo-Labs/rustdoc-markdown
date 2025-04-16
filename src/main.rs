@@ -133,11 +133,7 @@ async fn find_best_version(
             api_data
                 .versions
                 .into_iter()
-                .find(|v| {
-                    v.semver
-                        .as_ref()
-                        .map_or(false, |sv| req.matches(sv))
-                })
+                .find(|v| v.semver.as_ref().map_or(false, |sv| req.matches(sv)))
                 .ok_or_else(|| {
                     anyhow!(
                         "No version found matching requirement '{}' for crate '{}'",
@@ -165,10 +161,7 @@ async fn download_and_unpack_crate(
     krate: &CrateVersion,
     temp_dir: &Path,
 ) -> Result<PathBuf> {
-    info!(
-        "Downloading {} version {}...",
-        krate.crate_name, krate.num
-    );
+    info!("Downloading {} version {}...", krate.crate_name, krate.num);
     let url = format!(
         "https://crates.io/api/v1/crates/{}/{}/download",
         krate.crate_name, krate.num
@@ -206,23 +199,27 @@ async fn download_and_unpack_crate(
 
             if crate_root_path.is_none() {
                 // The first file/dir tells us the root path within temp_dir
-                crate_root_path = Some(temp_dir.join(Path::new(&crate_dir_prefix).components().next().unwrap()));
+                crate_root_path =
+                    Some(temp_dir.join(Path::new(&crate_dir_prefix).components().next().unwrap()));
             }
         } else {
             debug!("Skipping entry outside expected crate dir: {:?}", path);
         }
     }
 
-    let root = crate_root_path.ok_or_else(|| anyhow!("Failed to find crate root directory after unpacking"))?;
+    let root = crate_root_path
+        .ok_or_else(|| anyhow!("Failed to find crate root directory after unpacking"))?;
     info!("Unpacked to: {}", root.display());
     Ok(root)
 }
 
-
 fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
     let manifest_path = crate_dir.join("Cargo.toml");
     if !manifest_path.exists() {
-        bail!("Cargo.toml not found in unpacked crate at {}", manifest_path.display());
+        bail!(
+            "Cargo.toml not found in unpacked crate at {}",
+            manifest_path.display()
+        );
     }
 
     info!("Running cargo +nightly rustdoc ...");
@@ -233,7 +230,7 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
             "rustdoc",
             "--manifest-path",
             manifest_path.to_str().unwrap(), // Should be valid UTF-8
-            "--", // Separator for rustdoc flags
+            "--",                            // Separator for rustdoc flags
             "-Z",
             "unstable-options",
             "--output-format",
@@ -256,7 +253,9 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
     }
 
     // target/doc/{crate_name}.json relative to crate_dir
-    let json_path = crate_dir.join("target/doc").join(format!("{}.json", crate_name));
+    let json_path = crate_dir
+        .join("target/doc")
+        .join(format!("{}.json", crate_name));
 
     if !json_path.exists() {
         bail!(
@@ -268,7 +267,6 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
     info!("Generated rustdoc JSON at: {}", json_path.display());
     Ok(json_path)
 }
-
 
 fn parse_and_print_docs(json_path: &Path) -> Result<()> {
     info!("Parsing rustdoc JSON: {}", json_path.display());
@@ -294,30 +292,30 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                     .unwrap_or_else(|| format!("Unknown Path (ID: {:?})", id));
 
                 let item_kind = match item.inner {
-                     ItemEnum::Module(_) => "Module",
-                     ItemEnum::ExternCrate { .. } => "Extern Crate",
-                     ItemEnum::Import(_) => "Import",
-                     ItemEnum::Union(_) => "Union",
-                     ItemEnum::Struct(_) => "Struct",
-                     ItemEnum::StructField(_) => "Struct Field",
-                     ItemEnum::Enum(_) => "Enum",
-                     ItemEnum::Variant(_) => "Variant",
-                     ItemEnum::Function(_) => "Function",
-                     ItemEnum::Trait(_) => "Trait",
-                     ItemEnum::TraitAlias(_) => "Trait Alias",
-                     ItemEnum::Impl(_) => "Impl",
-                     ItemEnum::Typedef(_) => "Typedef",
-                     ItemEnum::OpaqueTy(_) => "Opaque Type",
-                     ItemEnum::Constant(_) => "Constant",
-                     ItemEnum::Static(_) => "Static",
-                     ItemEnum::ForeignType => "Foreign Type",
-                     ItemEnum::Macro(_) => "Macro (Declarative)",
-                     ItemEnum::ProcMacro(_) => "Proc Macro",
-                     ItemEnum::Primitive(_) => "Primitive",
-                     ItemEnum::AssocConst { .. } => "Associated Constant",
-                     ItemEnum::AssocType { .. } => "Associated Type",
-                     _ => "Unknown Item Kind",
-                 };
+                    ItemEnum::Module(_) => "Module",
+                    ItemEnum::ExternCrate { .. } => "Extern Crate",
+                    ItemEnum::Import(_) => "Import",
+                    ItemEnum::Union(_) => "Union",
+                    ItemEnum::Struct(_) => "Struct",
+                    ItemEnum::StructField(_) => "Struct Field",
+                    ItemEnum::Enum(_) => "Enum",
+                    ItemEnum::Variant(_) => "Variant",
+                    ItemEnum::Function(_) => "Function",
+                    ItemEnum::Trait(_) => "Trait",
+                    ItemEnum::TraitAlias(_) => "Trait Alias",
+                    ItemEnum::Impl(_) => "Impl",
+                    ItemEnum::Typedef(_) => "Typedef",
+                    ItemEnum::OpaqueTy(_) => "Opaque Type",
+                    ItemEnum::Constant(_) => "Constant",
+                    ItemEnum::Static(_) => "Static",
+                    ItemEnum::ForeignType => "Foreign Type",
+                    ItemEnum::Macro(_) => "Macro (Declarative)",
+                    ItemEnum::ProcMacro(_) => "Proc Macro",
+                    ItemEnum::Primitive(_) => "Primitive",
+                    ItemEnum::AssocConst { .. } => "Associated Constant",
+                    ItemEnum::AssocType { .. } => "Associated Type",
+                    _ => "Unknown Item Kind",
+                };
 
                 println!("\n## Item: {} ({})", path_str, item_kind);
                 println!("{}", "-".repeat(path_str.len() + item_kind.len() + 6)); // Separator line
@@ -334,7 +332,6 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
 
     Ok(())
 }
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
