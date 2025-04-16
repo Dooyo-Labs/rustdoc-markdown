@@ -18,14 +18,16 @@
 //! rustup-toolchain = "0.1"
 //! ```
 #![allow(clippy::uninlined_format_args)]
+#![allow(clippy::too_many_lines)]
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
-    Crate, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef, Generics, Id, Item,
-    ItemEnum, ItemKind, Module, Struct, Type, TypeKind, Variant, WherePredicate,
+    Abi, Crate, Function, FunctionHeader, FunctionSignature, GenericArg, GenericArgs, GenericBound,
+    Generics, Id, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, Term, Type,
+    WherePredicate,
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
@@ -33,7 +35,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
-use std::path::{Path, PathBuf};
+use std::path::{Path as FilePath, PathBuf};
 use tar::Archive;
 use tracing::{debug, info, warn};
 
@@ -176,7 +178,7 @@ async fn find_best_version(
 async fn download_and_unpack_crate(
     client: &reqwest::Client,
     krate: &CrateVersion,
-    output_path: &Path,
+    output_path: &FilePath,
 ) -> Result<PathBuf> {
     let crate_dir_name = format!("{}-{}", krate.crate_name, krate.num);
     let target_dir = output_path.join(crate_dir_name);
@@ -235,7 +237,7 @@ async fn download_and_unpack_crate(
     Ok(target_dir)
 }
 
-fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
+fn run_rustdoc(crate_dir: &FilePath, crate_name: &str) -> Result<PathBuf> {
     let manifest_path = crate_dir.join("Cargo.toml");
     if !manifest_path.exists() {
         bail!(
@@ -290,7 +292,7 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
     }
 }
 
-fn normalize_path(user_path: &str, crate_name: &str, normalized_crate_name: &str) -> Vec<String> {
+fn normalize_path(user_path: &str, _crate_name: &str, normalized_crate_name: &str) -> Vec<String> {
     let path = if user_path.starts_with("::") {
         format!("{}{}", normalized_crate_name, user_path)
     } else if !user_path.contains("::") && !user_path.is_empty() {
@@ -309,113 +311,255 @@ fn path_matches(item_path: &[String], filter_path: &[String]) -> bool {
     item_path.starts_with(filter_path)
 }
 
+/// Gets the `Id` associated with a type, if it's a path-based type.
+fn get_type_id(ty: &Type) -> Option<Id> {
+    match ty {
+        Type::ResolvedPath(p) => Some(p.id),
+        Type::Generic(_) => None, // Generic types don't have a direct ID in this context
+        Type::Primitive(_) => None,
+        Type::FunctionPointer(_) => None, // Function pointers don't have an ID
+        Type::Tuple(_) => None,
+        Type::Slice(inner) => get_type_id(inner), // Look inside
+        Type::Array { type_, .. } => get_type_id(type_), // Look inside
+        Type::Pat { type_, .. } => get_type_id(type_), // Look inside
+        Type::Infer => None,
+        Type::RawPointer { type_, .. } => get_type_id(type_), // Look inside
+        Type::BorrowedRef { type_, .. } => get_type_id(type_), // Look inside
+        Type::QualifiedPath { trait_, .. } => trait_.as_ref().map(|p| p.id), // ID of the trait? Or self_type? Context dependent. Let's prioritize trait for now.
+        Type::ImplTrait(_) => None,
+        Type::DynTrait(_) => None,
+    }
+}
+
 /// Finds all reachable `Id`s referenced within a `Type`.
 fn find_type_dependencies(ty: &Type, krate: &Crate, dependencies: &mut HashSet<Id>) {
+    // Add the direct ID if the type itself resolves to one
+    if let Some(id) = get_type_id(ty) {
+        // Check if the ID is part of the current crate before adding
+        if krate.index.contains_key(&id) {
+            dependencies.insert(id);
+        }
+    }
+
+    // Recursively check inner types and generic arguments
     match ty {
-        Type::ResolvedPath(p)
-        | Type::Generic(p)
-        | Type::Primitive(p)
-        | Type::BareFunction(p)
-        | Type::Tuple(p)
-        | Type::Slice(p)
-        | Type::Array(p)
-        | Type::Pat { .. }
-        | Type::RawPointer(p)
-        | Type::BorrowedRef(p)
-        | Type::QualifiedPath(p) => {
-            // Most variants have an Id or inner types we can check.
-            // This is a simplification; a full implementation needs to handle each variant.
-            if let Some(id) = ty.id() {
-                dependencies.insert(id);
-            }
-            // Recursively check inner types (e.g., in Tuple, Slice, Array, Pointers, Refs, QualifiedPath)
-            match ty {
-                Type::Tuple(inner_types) => {
-                    for inner_ty in inner_types {
-                        find_type_dependencies(inner_ty, krate, dependencies);
-                    }
-                }
-                Type::Slice(inner_ty) | Type::Array(inner_ty, _) | Type::Pat(inner_ty, _) => {
-                    find_type_dependencies(inner_ty, krate, dependencies);
-                }
-                Type::RawPointer(inner_ty, _) | Type::BorrowedRef { type_, .. } => {
-                    find_type_dependencies(inner_ty, krate, dependencies);
-                }
-                Type::QualifiedPath { type_, trait_, .. } => {
-                    find_type_dependencies(type_, krate, dependencies);
-                    if let Some(trait_id) = trait_.id() {
-                        dependencies.insert(trait_id);
-                    }
-                    // Need to check GenericArgs as well
-                }
-                _ => {} // Other types might have dependencies too
+        Type::ResolvedPath(Path { args, id, .. }) => {
+            // Add the path's own ID
+            if krate.index.contains_key(id) {
+                dependencies.insert(*id);
             }
             // Check generic arguments
-            if let Some(args) = ty.generic_args() {
-                match args {
-                    GenericArgs::AngleBracketed { args, .. } => {
-                        for arg in args {
-                            match arg {
-                                GenericArg::Type(t) => {
-                                    find_type_dependencies(t, krate, dependencies)
-                                }
-                                GenericArg::Constant(c) => {
-                                    if let Some(type_id) = c.type_.id() {
-                                        dependencies.insert(type_id);
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    GenericArgs::Parenthesized { inputs, output, .. } => {
-                        for input in inputs {
-                            find_type_dependencies(input, krate, dependencies);
-                        }
-                        if let Some(out) = output {
-                            find_type_dependencies(out, krate, dependencies);
-                        }
-                    }
-                    _ => {}
+            if let Some(args) = args.as_deref() {
+                find_generic_args_dependencies(args, krate, dependencies);
+            }
+        }
+        Type::Tuple(inner_types) => {
+            for inner_ty in inner_types {
+                find_type_dependencies(inner_ty, krate, dependencies);
+            }
+        }
+        Type::Slice(inner_ty) => {
+            find_type_dependencies(inner_ty, krate, dependencies);
+        }
+        Type::Array { type_, .. } => {
+            find_type_dependencies(type_, krate, dependencies);
+        }
+        Type::Pat { type_, .. } => {
+            find_type_dependencies(type_, krate, dependencies);
+        }
+        Type::RawPointer { type_, .. } => {
+            find_type_dependencies(type_, krate, dependencies);
+        }
+        Type::BorrowedRef { type_, .. } => {
+            find_type_dependencies(type_, krate, dependencies);
+        }
+        Type::QualifiedPath {
+            args,
+            self_type,
+            trait_,
+            ..
+        } => {
+            find_type_dependencies(self_type, krate, dependencies);
+            if let Some(trait_path) = trait_ {
+                if krate.index.contains_key(&trait_path.id) {
+                    dependencies.insert(trait_path.id);
                 }
+            }
+            if let Some(args) = args.as_deref() {
+                find_generic_args_dependencies(args, krate, dependencies);
             }
         }
         Type::DynTrait(dyn_trait) => {
             for poly_trait in &dyn_trait.traits {
-                if let Some(id) = poly_trait.trait_.id() {
-                    dependencies.insert(id);
+                if krate.index.contains_key(&poly_trait.trait_.id) {
+                    dependencies.insert(poly_trait.trait_.id);
                 }
-                // Also check generic param defs within the poly trait?
+                // Check generic param defs within the poly trait? Maybe later.
             }
         }
         Type::ImplTrait(bounds) => {
             for bound in bounds {
-                match bound {
-                    GenericBound::TraitBound { trait_, .. } => {
-                        if let Some(id) = trait_.id() {
-                            dependencies.insert(id);
-                        }
+                if let GenericBound::TraitBound { trait_, .. } = bound {
+                    if krate.index.contains_key(&trait_.id) {
+                        dependencies.insert(trait_.id);
                     }
-                    _ => {}
+                    // TODO: Check generic params in TraitBound?
                 }
             }
         }
         Type::FunctionPointer(fp) => {
-            for input in &fp.sig.inputs {
-                find_type_dependencies(&input.type_, krate, dependencies);
+            find_generics_dependencies(&fp.generics, krate, dependencies);
+            for (_name, input_type) in &fp.sig.inputs {
+                find_type_dependencies(input_type, krate, dependencies);
             }
             if let Some(output) = &fp.sig.output {
                 find_type_dependencies(output, krate, dependencies);
             }
-            // Check generics in fp.generics
         }
-        Type::Infer => {} // No dependencies
+        // Types without complex inner structures or IDs
+        Type::Generic(_) | Type::Primitive(_) | Type::Infer => {}
+    }
+}
+
+fn find_generic_args_dependencies(
+    args: &GenericArgs,
+    krate: &Crate,
+    dependencies: &mut HashSet<Id>,
+) {
+    match args {
+        GenericArgs::AngleBracketed { args, bindings, .. } => {
+            for arg in args {
+                match arg {
+                    GenericArg::Type(t) => find_type_dependencies(t, krate, dependencies),
+                    GenericArg::Const(c) => find_type_dependencies(&c.type_, krate, dependencies),
+                    GenericArg::Lifetime(_) | GenericArg::Infer => {}
+                }
+            }
+            for binding in bindings {
+                // AssocItemConstraint { name: String, kind: AssocItemConstraintKind }
+                // kind can be Equality(Term) or Constraint(Vec<GenericBound>)
+                match &binding.kind {
+                    rustdoc_types::AssocItemConstraintKind::Equality { term, .. } => match term {
+                        Term::Type(t) => find_type_dependencies(t, krate, dependencies),
+                        Term::Constant(c) => find_type_dependencies(&c.type_, krate, dependencies),
+                    },
+                    rustdoc_types::AssocItemConstraintKind::Constraint { bounds, .. } => {
+                        for bound in bounds {
+                            find_generic_bound_dependencies(bound, krate, dependencies);
+                        }
+                    }
+                }
+            }
+        }
+        GenericArgs::Parenthesized { inputs, output, .. } => {
+            for input in inputs {
+                find_type_dependencies(input, krate, dependencies);
+            }
+            if let Some(out) = output {
+                find_type_dependencies(out, krate, dependencies);
+            }
+        }
+        GenericArgs::ReturnTypeNotation { .. } => {} // TODO: Handle this? T::method(..) - maybe the T part?
+    }
+}
+
+fn find_generic_bound_dependencies(
+    bound: &GenericBound,
+    krate: &Crate,
+    dependencies: &mut HashSet<Id>,
+) {
+    match bound {
+        GenericBound::TraitBound {
+            trait_,
+            generic_params,
+            ..
+        } => {
+            if krate.index.contains_key(&trait_.id) {
+                dependencies.insert(trait_.id);
+            }
+            // Check HRTBs (generic_params)
+            for param_def in generic_params {
+                find_generic_param_def_dependencies(param_def, krate, dependencies);
+            }
+        }
+        GenericBound::Outlives(_) => {} // Lifetimes don't have IDs
+        GenericBound::Use(args) => {
+            // args: Vec<PreciseCapturingArg>
+            for arg in args {
+                match arg {
+                    rustdoc_types::PreciseCapturingArg::Lifetime(_) => {}
+                    rustdoc_types::PreciseCapturingArg::Param(id) => {
+                        if krate.index.contains_key(id) {
+                            dependencies.insert(*id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn find_generics_dependencies(generics: &Generics, krate: &Crate, dependencies: &mut HashSet<Id>) {
+    for param in &generics.params {
+        find_generic_param_def_dependencies(param, krate, dependencies);
+    }
+    for predicate in &generics.where_predicates {
+        match predicate {
+            WherePredicate::BoundPredicate {
+                type_,
+                bounds,
+                generic_params,
+                ..
+            } => {
+                find_type_dependencies(type_, krate, dependencies);
+                for bound in bounds {
+                    find_generic_bound_dependencies(bound, krate, dependencies);
+                }
+                // Check HRTBs (generic_params)
+                for param_def in generic_params {
+                    find_generic_param_def_dependencies(param_def, krate, dependencies);
+                }
+            }
+            WherePredicate::LifetimePredicate { .. } => {} // Lifetimes don't have IDs
+            WherePredicate::EqPredicate { lhs, rhs, .. } => {
+                find_type_dependencies(lhs, krate, dependencies);
+                // rhs is Term
+                match rhs {
+                    Term::Type(t) => find_type_dependencies(t, krate, dependencies),
+                    Term::Constant(c) => find_type_dependencies(&c.type_, krate, dependencies),
+                }
+            }
+        }
+    }
+}
+
+fn find_generic_param_def_dependencies(
+    param_def: &rustdoc_types::GenericParamDef,
+    krate: &Crate,
+    dependencies: &mut HashSet<Id>,
+) {
+    match &param_def.kind {
+        rustdoc_types::GenericParamDefKind::Lifetime { .. } => {}
+        rustdoc_types::GenericParamDefKind::Type {
+            bounds, default, ..
+        } => {
+            for bound in bounds {
+                find_generic_bound_dependencies(bound, krate, dependencies);
+            }
+            if let Some(ty) = default {
+                find_type_dependencies(ty, krate, dependencies);
+            }
+        }
+        rustdoc_types::GenericParamDefKind::Const { type_, .. } => {
+            // Ignore default string
+            find_type_dependencies(type_, krate, dependencies);
+        }
     }
 }
 
 /// Selects items based on path filters and recursively includes their dependencies.
 fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
-    let mut selected_ids = HashSet::new();
+    let mut selected_ids: HashSet<Id> = HashSet::new();
 
     if user_paths.is_empty() {
         info!("No path filters specified, selecting all items.");
@@ -442,25 +586,23 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
 
     // Initial selection based on paths
     for (id, item_summary) in &krate.paths {
-        // Ensure the item_summary path starts with the normalized crate name if it's local
-        let mut qualified_item_path = item_summary.path.clone();
-        if item_summary.crate_id == 0 // 0 is the conventional ID for the local crate
-            && !qualified_item_path.is_empty()
-            && qualified_item_path[0] != normalized_crate_name
-        {
-            // This might happen for re-exported items? Or maybe paths map isn't always fully qualified?
-            // Let's be cautious and check if the item's path matches *any* filter directly.
-            // A better approach might involve resolving crate_id if > 0 via external_crates.
-        }
+        // We only care about items from the local crate for initial selection
+        if item_summary.crate_id == 0 {
+            let mut qualified_item_path = item_summary.path.clone();
+            // Ensure the path starts with the crate name if it doesn't already
+            if !qualified_item_path.is_empty() && qualified_item_path[0] != normalized_crate_name {
+                qualified_item_path.insert(0, normalized_crate_name.clone());
+            }
 
-        for filter in &normalized_filters {
-            if path_matches(&qualified_item_path, filter) {
-                debug!(
-                    "Path filter {:?} matched item {:?} ({:?})",
-                    filter, qualified_item_path, id
-                );
-                selected_ids.insert(*id);
-                break; // No need to check other filters for this item
+            for filter in &normalized_filters {
+                if path_matches(&qualified_item_path, filter) {
+                    debug!(
+                        "Path filter {:?} matched item {:?} ({:?})",
+                        filter, qualified_item_path, id
+                    );
+                    selected_ids.insert(*id);
+                    break; // No need to check other filters for this item
+                }
             }
         }
     }
@@ -488,82 +630,221 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
         }
 
         if let Some(item) = krate.index.get(&id) {
-            let mut item_deps = HashSet::new();
+            let mut item_deps: HashSet<Id> = HashSet::new();
 
             // 1. Direct Links
             for (link_id, _link_text) in &item.links {
-                item_deps.insert(*link_id);
+                // Check if link_id exists in krate.index before adding
+                if krate.index.contains_key(link_id) {
+                    item_deps.insert(*link_id);
+                }
             }
 
             // 2. Item Kind Specific Dependencies
             match &item.inner {
                 ItemEnum::Module(m) => {
-                    item_deps.extend(m.items.iter());
+                    item_deps.extend(
+                        m.items
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
                 }
                 ItemEnum::Struct(s) => {
-                    item_deps.extend(s.impls.iter());
-                    // Also consider fields types, generics
-                    if let Some(generics) = s.generics() {
-                        for param in &generics.params {
-                            // Add deps from bounds, defaults
+                    item_deps.extend(
+                        s.impls
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
+                    find_generics_dependencies(&s.generics, krate, &mut item_deps);
+                    // Find deps in fields (StructKind can be Plain, Tuple, Unit)
+                    match &s.kind {
+                        rustdoc_types::StructKind::Plain { fields, .. } | // fields_stripped ignored here
+                        rustdoc_types::StructKind::Tuple { fields, .. } => { // fields_stripped ignored here
+                            for field_id in fields.iter().flatten() { // Option<Id>
+                                if krate.index.contains_key(field_id) {
+                                    item_deps.insert(*field_id);
+                                    // Also get dependencies of the field's type
+                                    if let Some(field_item) = krate.index.get(field_id) {
+                                        if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                            find_type_dependencies(field_type, krate, &mut item_deps);
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        for predicate in &generics.where_predicates {
-                            // Add deps from predicates
-                        }
+                        rustdoc_types::StructKind::Unit => {}
                     }
-                    // Find deps in fields s.kind() ...
                 }
                 ItemEnum::Enum(e) => {
-                    item_deps.extend(e.variants.iter());
-                    item_deps.extend(e.impls.iter());
-                    // Also consider generics
+                    item_deps.extend(
+                        e.variants
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
+                    item_deps.extend(
+                        e.impls
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
+                    find_generics_dependencies(&e.generics, krate, &mut item_deps);
                 }
                 ItemEnum::Variant(v) => {
-                    // Add deps from v.kind (fields/types)
+                    match &v.kind {
+                        rustdoc_types::VariantKind::Plain => {}
+                        rustdoc_types::VariantKind::Tuple(fields) => {
+                            for field_id in fields.iter().flatten() {
+                                if krate.index.contains_key(field_id) {
+                                    item_deps.insert(*field_id);
+                                    if let Some(field_item) = krate.index.get(field_id) {
+                                        if let ItemEnum::StructField(field_type) = &field_item.inner
+                                        {
+                                            find_type_dependencies(
+                                                field_type,
+                                                krate,
+                                                &mut item_deps,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        rustdoc_types::VariantKind::Struct { fields, .. } => {
+                            // fields_stripped ignored
+                            for field_id in fields {
+                                if krate.index.contains_key(field_id) {
+                                    item_deps.insert(*field_id);
+                                    if let Some(field_item) = krate.index.get(field_id) {
+                                        if let ItemEnum::StructField(field_type) = &field_item.inner
+                                        {
+                                            find_type_dependencies(
+                                                field_type,
+                                                krate,
+                                                &mut item_deps,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Some(disr) = &v.discriminant {
+                        find_type_dependencies(&disr.type_, krate, &mut item_deps);
+                    }
                 }
                 ItemEnum::Function(f) => {
-                    // Params, Return type, Generics, Where clauses
-                    for param in &f.sig.inputs {
-                        find_type_dependencies(&param.type_, krate, &mut item_deps);
+                    find_generics_dependencies(&f.generics, krate, &mut item_deps);
+                    for (_name, param_type) in &f.sig.inputs {
+                        find_type_dependencies(param_type, krate, &mut item_deps);
                     }
                     if let Some(output) = &f.sig.output {
                         find_type_dependencies(output, krate, &mut item_deps);
                     }
-                    // Also check generics f.generics
                 }
                 ItemEnum::Trait(t) => {
-                    item_deps.extend(t.items.iter());
-                    // Also consider generics, supertraits
+                    item_deps.extend(
+                        t.items
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
+                    find_generics_dependencies(&t.generics, krate, &mut item_deps);
+                    // Also consider supertraits (t.bounds -> Vec<GenericBound>)
+                    for bound in &t.bounds {
+                        find_generic_bound_dependencies(bound, krate, &mut item_deps);
+                    }
                 }
                 ItemEnum::Impl(imp) => {
-                    item_deps.extend(imp.items.iter());
+                    item_deps.extend(
+                        imp.items
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
                     if let Some(trait_path) = &imp.trait_ {
-                        if let Some(trait_id) = trait_path.id() {
-                            item_deps.insert(trait_id);
+                        if krate.index.contains_key(&trait_path.id) {
+                            item_deps.insert(trait_path.id);
                         }
                     }
                     find_type_dependencies(&imp.for_, krate, &mut item_deps);
-                    // Also consider generics
+                    find_generics_dependencies(&imp.generics, krate, &mut item_deps);
                 }
                 ItemEnum::TypeAlias(ta) => {
                     find_type_dependencies(&ta.type_, krate, &mut item_deps);
-                    // Also consider generics
+                    find_generics_dependencies(&ta.generics, krate, &mut item_deps);
                 }
+                ItemEnum::OpaqueTy(ot) => {
+                    for bound in &ot.bounds {
+                        find_generic_bound_dependencies(bound, krate, &mut item_deps);
+                    }
+                    find_generics_dependencies(&ot.generics, krate, &mut item_deps);
+                }
+                ItemEnum::Constant(c) => {
+                    find_type_dependencies(&c.type_, krate, &mut item_deps);
+                    // Maybe parse c.expr for IDs? Complex.
+                }
+                ItemEnum::Static(s) => {
+                    find_type_dependencies(&s.type_, krate, &mut item_deps);
+                }
+                ItemEnum::ForeignType => {}  // No inner types
+                ItemEnum::Macro(_) => {}     // Source string, hard to parse reliably
+                ItemEnum::ProcMacro(_) => {} // No direct code dependencies representable by ID
+                ItemEnum::Primitive(_) => {} // No dependencies
                 ItemEnum::AssocConst { type_, .. } => {
+                    // Ignore default string
                     find_type_dependencies(type_, krate, &mut item_deps);
                 }
                 ItemEnum::AssocType {
-                    bounds, default, ..
+                    generics,
+                    bounds,
+                    default,
+                    ..
                 } => {
+                    find_generics_dependencies(generics, krate, &mut item_deps);
                     for bound in bounds {
-                        // Add deps from bounds
+                        find_generic_bound_dependencies(bound, krate, &mut item_deps);
                     }
                     if let Some(def_type) = default {
                         find_type_dependencies(def_type, krate, &mut item_deps);
                     }
                 }
-                // ... other item kinds ...
-                _ => {}
+                ItemEnum::Union(u) => {
+                    find_generics_dependencies(&u.generics, krate, &mut item_deps);
+                    item_deps.extend(
+                        u.fields
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
+                    item_deps.extend(
+                        u.impls
+                            .iter()
+                            .filter(|id| krate.index.contains_key(id))
+                            .cloned(),
+                    );
+                    for field_id in &u.fields {
+                        if krate.index.contains_key(field_id) {
+                            if let Some(field_item) = krate.index.get(field_id) {
+                                if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                    find_type_dependencies(field_type, krate, &mut item_deps);
+                                }
+                            }
+                        }
+                    }
+                }
+                ItemEnum::TraitAlias(ta) => {
+                    find_generics_dependencies(&ta.generics, krate, &mut item_deps);
+                    for bound in &ta.params {
+                        find_generic_bound_dependencies(bound, krate, &mut item_deps);
+                    }
+                }
+                ItemEnum::StructField(ty) => find_type_dependencies(ty, krate, &mut item_deps),
+                ItemEnum::ExternCrate { .. }
+                | ItemEnum::Import { .. }
+                | ItemEnum::Keyword { .. } => {} // Ignore these for dep finding
             }
 
             // Add newly found dependencies to the queue if they aren't already selected
@@ -586,36 +867,58 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
 
 // --- Formatting Helpers ---
 
-fn format_path(path: &Type, krate: &Crate) -> String {
-    // Basic path formatting, needs improvement for generics etc.
-    if let Some(id) = path.id() {
-        krate
-            .paths
-            .get(&id)
-            .map(|p| p.path.join("::"))
-            .unwrap_or_else(|| format!("{{unknown_id:{:?}}}", id))
-    } else {
-        match path {
-            Type::Primitive(name) => name.clone(),
-            // Add more cases for non-ID types like DynTrait, ImplTrait etc.
-            _ => "{complex_type}".to_string(),
+fn format_id_path(id: &Id, krate: &Crate) -> String {
+    krate
+        .paths
+        .get(id)
+        .map(|p| p.path.join("::"))
+        .unwrap_or_else(|| format!("{{unknown_id:{:?}}}", id))
+}
+
+fn format_path(path: &Path, krate: &Crate) -> String {
+    let base_path = format_id_path(&path.id, krate);
+    if let Some(args) = path.args.as_deref() {
+        // Basic formatting, needs improvement for angle vs paren etc.
+        let args_str = format_generic_args(args, krate);
+        if !args_str.is_empty() {
+            format!("{}<{}>", base_path, args_str) // Assuming angle brackets for now
+        } else {
+            base_path
         }
+    } else {
+        base_path
     }
+}
+
+fn format_poly_trait(poly_trait: &PolyTrait, krate: &Crate) -> String {
+    // TODO: Handle HRTBs (poly_trait.generic_params)
+    format_id_path(&poly_trait.trait_.id, krate)
 }
 
 fn format_type(ty: &Type, krate: &Crate) -> String {
     match ty {
-        Type::ResolvedPath(p) => format_path(ty, krate), // Needs generics handling
+        Type::ResolvedPath(p) => format_path(p, krate),
+        Type::DynTrait(dt) => {
+            // TODO: Add lifetime bound dt.lifetime
+            format!(
+                "dyn {}",
+                dt.traits
+                    .iter()
+                    .map(|pt| format_poly_trait(pt, krate))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            )
+        }
         Type::Generic(name) => name.clone(),
         Type::Primitive(name) => name.clone(),
         Type::FunctionPointer(fp) => {
-            // Simplified
+            // Simplified, ignores generics on fp
             format!(
                 "fn({}){}",
                 fp.sig
                     .inputs
                     .iter()
-                    .map(|a| format_type(&a.type_, krate))
+                    .map(|(_name, type_)| format_type(type_, krate)) // Ignore name pattern
                     .collect::<Vec<_>>()
                     .join(", "),
                 fp.sig
@@ -634,42 +937,8 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
                 .join(", ")
         ),
         Type::Slice(inner) => format!("[{}]", format_type(inner, krate)),
-        Type::Array(inner, len) => format!("[{}; {}]", format_type(inner, krate), len),
-        Type::Pat(inner, _) => format!("pat {}", format_type(inner, krate)), // Placeholder
-        Type::RawPointer(inner, mutable) => {
-            format!(
-                "*{}{}",
-                if *mutable { "mut " } else { "const " },
-                format_type(inner, krate)
-            )
-        }
-        Type::BorrowedRef {
-            lifetime,
-            mutable,
-            type_,
-        } => format!(
-            "&{}{}{}",
-            lifetime.as_deref().unwrap_or(""), // Needs ' prefix if present
-            if *mutable { "mut " } else { "" },
-            format_type(type_, krate)
-        ),
-        Type::QualifiedPath {
-            name,
-            args,
-            self_type,
-            trait_,
-        } => {
-            // Highly simplified
-            format!(
-                "<{} as {}>::{}",
-                format_type(self_type, krate),
-                trait_
-                    .as_ref()
-                    .map(|t| format_path(t, krate))
-                    .unwrap_or("_".to_string()),
-                name
-            )
-        }
+        Type::Array { type_, len } => format!("[{}; {}]", format_type(type_, krate), len),
+        Type::Pat { type_, .. } => format!("pat {}", format_type(type_, krate)), // Placeholder
         Type::ImplTrait(bounds) => {
             format!(
                 "impl {}",
@@ -680,18 +949,101 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
                     .join(" + ")
             )
         }
-        Type::DynTrait(dt) => {
+        Type::Infer => "_".to_string(),
+        Type::RawPointer { is_mutable, type_ } => {
             format!(
-                "dyn {}",
-                dt.traits
-                    .iter()
-                    .map(|pt| format_path(&pt.trait_, krate)) // Simplified
-                    .collect::<Vec<_>>()
-                    .join(" + ")
+                "*{}{}",
+                if *is_mutable { "mut " } else { "const " },
+                format_type(type_, krate)
             )
         }
-        Type::Infer => "_".to_string(),
-        _ => "{unhandled_type}".to_string(),
+        Type::BorrowedRef {
+            lifetime,
+            is_mutable,
+            type_,
+        } => format!(
+            "&{}{}{}",
+            lifetime
+                .as_ref()
+                .map(|lt| format!("{} ", lt))
+                .unwrap_or_default(), // Needs ' prefix if present
+            if *is_mutable { "mut " } else { "" },
+            format_type(type_, krate)
+        ),
+        Type::QualifiedPath {
+            name,
+            args,
+            self_type,
+            trait_,
+        } => {
+            let trait_str = trait_
+                .as_ref()
+                .map(|t| format_id_path(&t.id, krate))
+                .unwrap_or("_".to_string());
+            let args_str = args
+                .as_deref()
+                .map(|a| format!("<{}>", format_generic_args(a, krate)))
+                .unwrap_or_default();
+
+            format!(
+                "<{} as {}>::{}{}",
+                format_type(self_type, krate),
+                trait_str,
+                name,
+                args_str
+            )
+        }
+    }
+}
+
+fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
+    match args {
+        GenericArgs::AngleBracketed { args, bindings, .. } => {
+            let arg_strs: Vec<String> = args.iter().map(|a| format_generic_arg(a, krate)).collect();
+            let binding_strs: Vec<String> = bindings
+                .iter()
+                .map(|b| match &b.kind {
+                    rustdoc_types::AssocItemConstraintKind::Equality { term, .. } => {
+                        format!("{} = {}", b.name, format_term(term, krate))
+                    }
+                    rustdoc_types::AssocItemConstraintKind::Constraint { bounds, .. } => format!(
+                        "{}: {}",
+                        b.name,
+                        bounds
+                            .iter()
+                            .map(|bnd| format_generic_bound(bnd, krate))
+                            .collect::<Vec<_>>()
+                            .join(" + ")
+                    ),
+                })
+                .collect();
+            let mut all_strs = arg_strs;
+            all_strs.extend(binding_strs);
+            all_strs.join(", ")
+        }
+        GenericArgs::Parenthesized { inputs, output, .. } => {
+            format!(
+                "({}) -> {}",
+                inputs
+                    .iter()
+                    .map(|t| format_type(t, krate))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                output
+                    .as_ref()
+                    .map_or("()".to_string(), |t| format_type(t, krate))
+            )
+        }
+        GenericArgs::ReturnTypeNotation { .. } => "".to_string(), // How to format T::method(..) args? Ignore for now.
+    }
+}
+
+fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
+    match arg {
+        GenericArg::Lifetime(lt) => lt.clone(), // Needs ' prefix
+        GenericArg::Type(ty) => format_type(ty, krate),
+        GenericArg::Const(c) => format_type(&c.type_, krate), // TODO: Include value c.value?
+        GenericArg::Infer => "_".to_string(),
     }
 }
 
@@ -699,15 +1051,51 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
     match bound {
         GenericBound::TraitBound {
             trait_,
-            generic_params,
+            generic_params, // HRTBs
             modifier,
             ..
         } => {
-            // Simplified - ignores generic_params and modifier
-            format_path(trait_, krate)
+            let hrtb = if generic_params.is_empty() {
+                "".to_string()
+            } else {
+                // Simplified HRTB formatting
+                format!(
+                    "for<{}> ",
+                    generic_params
+                        .iter()
+                        .map(|p| p.name.clone())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            let mod_str = match modifier {
+                rustdoc_types::TraitBoundModifier::None => "",
+                rustdoc_types::TraitBoundModifier::Maybe => "?",
+                rustdoc_types::TraitBoundModifier::MaybeConst => "?const ",
+            };
+            format!("{}{}{}", hrtb, mod_str, format_id_path(&trait_.id, krate)) // Simplified - ignores trait generics for now
         }
         GenericBound::Outlives(lifetime) => lifetime.clone(), // Needs ' prefix
-        GenericBound::Use(_) => "{use_bound}".to_string(),    // Placeholder
+        GenericBound::Use(args) => {
+            // use<'a, T> syntax
+            format!(
+                "use<{}>",
+                args.iter()
+                    .map(|a| match a {
+                        rustdoc_types::PreciseCapturingArg::Lifetime(lt) => lt.clone(), // Needs '
+                        rustdoc_types::PreciseCapturingArg::Param(id) => format_id_path(id, krate), // Hope this ID maps cleanly
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    }
+}
+
+fn format_term(term: &Term, krate: &Crate) -> String {
+    match term {
+        Term::Type(t) => format_type(t, krate),
+        Term::Constant(c) => format_type(&c.type_, krate), // Just show type for now
     }
 }
 
@@ -726,10 +1114,14 @@ fn format_generics(generics: &Generics, krate: &Crate) -> String {
                 match &p.kind {
                     rustdoc_types::GenericParamDefKind::Lifetime { .. } => p.name.clone(), // Needs ' prefix
                     rustdoc_types::GenericParamDefKind::Type {
-                        bounds, default, ..
+                        bounds,
+                        default,
+                        synthetic,
+                        ..
                     } => {
                         format!(
-                            "{}{}{}",
+                            "{}{}{}{}",
+                            if *synthetic { "impl " } else { "" },
                             p.name,
                             if bounds.is_empty() {
                                 "".to_string()
@@ -775,9 +1167,27 @@ fn format_generics(generics: &Generics, krate: &Crate) -> String {
             .iter()
             .map(|p| {
                 match p {
-                    WherePredicate::BoundPredicate { type_, bounds, .. } => {
+                    WherePredicate::BoundPredicate {
+                        type_,
+                        bounds,
+                        generic_params,
+                        ..
+                    } => {
+                        let hrtb = if generic_params.is_empty() {
+                            "".to_string()
+                        } else {
+                            format!(
+                                "for<{}> ",
+                                generic_params
+                                    .iter()
+                                    .map(|gp| gp.name.clone())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        };
                         format!(
-                            "{}: {}",
+                            "{}{}: {}",
+                            hrtb,
                             format_type(type_, krate),
                             bounds
                                 .iter()
@@ -792,8 +1202,7 @@ fn format_generics(generics: &Generics, krate: &Crate) -> String {
                         format!("{}: {}", lifetime, outlives.join(" + ")) // Needs ' prefix
                     }
                     WherePredicate::EqPredicate { lhs, rhs, .. } => {
-                        format!("{} = {}", format_type(lhs, krate), format_type(rhs, krate))
-                        // Term needs formatting too
+                        format!("{} == {}", format_type(lhs, krate), format_term(rhs, krate))
                     }
                 }
             })
@@ -818,8 +1227,8 @@ fn format_function_signature(func: &Function, name: &str, krate: &Crate) -> Stri
         write!(sig_str, "async ").unwrap();
     }
     // Add ABI if not Rust
-    if !matches!(func.header.abi, rustdoc_types::Abi::Rust) {
-        write!(sig_str, "extern \"{}\" ", func.header.abi).unwrap();
+    if !matches!(func.header.abi, Abi::Rust) {
+        write!(sig_str, "extern \"{:?}\" ", func.header.abi).unwrap(); // Use Debug for Abi
     }
 
     write!(sig_str, "fn {}", name).unwrap();
@@ -830,14 +1239,14 @@ fn format_function_signature(func: &Function, name: &str, krate: &Crate) -> Stri
         .sig
         .inputs
         .iter()
-        .map(|arg| {
+        .map(|(arg_name, arg_type)| {
             // TODO: Handle patterns in arg names if needed
-            format!("{}: {}", arg.name, format_type(&arg.type_, krate))
+            format!("{}: {}", arg_name, format_type(arg_type, krate))
         })
         .collect::<Vec<_>>()
         .join(", ");
     write!(sig_str, "{}", args_str).unwrap();
-    if func.sig.c_variadic {
+    if func.sig.is_c_variadic {
         write!(sig_str, ", ...").unwrap();
     }
     write!(sig_str, ")").unwrap();
@@ -870,6 +1279,10 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
+    fn get_item_kind(&self, id: &Id) -> Option<ItemKind> {
+        self.krate.paths.get(id).map(|summary| summary.kind)
+    }
+
     fn print_item(&mut self, id: &Id) {
         if !self.selected_ids.contains(id) || !self.printed_ids.insert(*id) {
             return; // Skip unselected or already printed items
@@ -877,25 +1290,21 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(id) {
             let name = item.name.as_deref().unwrap_or("{unnamed}");
-            let path_str = self
-                .krate
-                .paths
-                .get(id)
-                .map(|p| p.path.join("::"))
-                .unwrap_or_else(|| format!("Unknown Path (ID: {:?})", id));
+            let path_str = format_id_path(id, self.krate);
+            let item_kind = self.get_item_kind(id).unwrap_or(ItemKind::Module); // Default kind?
 
             writeln!(
                 self.output,
                 "\n{} Item: {} ({:?})",
                 "#".repeat(self.level + 1),
                 path_str,
-                item.inner.kind()
+                item_kind // Use kind from ItemSummary
             )
             .unwrap();
             writeln!(
                 self.output,
                 "{}",
-                "-".repeat(path_str.len() + item.inner.kind().to_string().len() + 8)
+                "-".repeat(path_str.len() + format!("{:?}", item_kind).len() + 8)
             )
             .unwrap(); // Separator
 
@@ -917,7 +1326,6 @@ impl<'a> DocPrinter<'a> {
                         format_generics(&s.generics, self.krate)
                     )
                     .unwrap();
-                    // TODO: Print fields
                 }
                 ItemEnum::Enum(e) => {
                     writeln!(
@@ -927,7 +1335,6 @@ impl<'a> DocPrinter<'a> {
                         format_generics(&e.generics, self.krate)
                     )
                     .unwrap();
-                    // TODO: Print variants
                 }
                 ItemEnum::Trait(t) => {
                     writeln!(
@@ -935,6 +1342,37 @@ impl<'a> DocPrinter<'a> {
                         "```rust\ntrait {}{}; // Items omitted\n```",
                         name,
                         format_generics(&t.generics, self.krate)
+                    )
+                    .unwrap();
+                }
+                ItemEnum::TypeAlias(ta) => {
+                    writeln!(
+                        self.output,
+                        "```rust\ntype {}{} = {};\n```",
+                        name,
+                        format_generics(&ta.generics, self.krate),
+                        format_type(&ta.type_, self.krate)
+                    )
+                    .unwrap();
+                }
+                ItemEnum::Constant(c) => {
+                    writeln!(
+                        self.output,
+                        "```rust\nconst {}: {} = {}; // Value omitted\n```",
+                        name,
+                        format_type(&c.type_, self.krate),
+                        c.expr.as_deref().unwrap_or("...")
+                    )
+                    .unwrap();
+                }
+                ItemEnum::Static(s) => {
+                    writeln!(
+                        self.output,
+                        "```rust\nstatic {}{}: {} = {}; // Value omitted\n```",
+                        if s.is_mutable { "mut " } else { "" },
+                        name,
+                        format_type(&s.type_, self.krate),
+                        s.expr.as_deref().unwrap_or("...")
                     )
                     .unwrap();
                 }
@@ -957,8 +1395,10 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    fn print_struct_details(&mut self, item: &Item, s: &Struct) {
+    fn print_struct_details(&mut self, _item: &Item, s: &Struct) {
         // Print Fields (Requires getting StructKind and iterating)
+        // TODO: Implement field printing
+
         // Print Implementations
         let impls: Vec<&Item> = s
             .impls
@@ -1001,16 +1441,25 @@ impl<'a> DocPrinter<'a> {
         // TODO: Blanket Implementations
     }
 
-    fn print_enum_details(&mut self, item: &Item, e: &rustdoc_types::Enum) {
+    fn print_enum_details(&mut self, _item: &Item, _e: &rustdoc_types::Enum) {
         // Print Variants
+        // TODO: Implement variant printing
+
         // Print Implementations (similar to structs)
+        // TODO: Implement enum impl printing (or refactor with struct impls)
     }
 
-    fn print_impl_block(&mut self, impl_item: &Item, imp: &rustdoc_types::Impl) {
+    fn print_impl_block(&mut self, _impl_item: &Item, imp: &rustdoc_types::Impl) {
         let header_level = self.level + 3;
         let mut impl_header = format!("impl{}", format_generics(&imp.generics, self.krate));
         if let Some(trait_path) = &imp.trait_ {
-            write!(impl_header, " {} for", format_path(trait_path, self.krate)).unwrap();
+            // Use format_path with the Id from the Path struct
+            write!(
+                impl_header,
+                " {} for",
+                format_id_path(&trait_path.id, self.krate)
+            )
+            .unwrap();
         }
         write!(impl_header, " {}", format_type(&imp.for_, self.krate)).unwrap();
         // TODO: Add where clause from impl generics if needed
@@ -1059,15 +1508,50 @@ impl<'a> DocPrinter<'a> {
             if !self.selected_ids.contains(id) {
                 continue;
             }
-            if let Some(item) = self.krate.index.get(id) {
-                items_by_kind.entry(item.kind).or_default().push(*id);
+            // Use ItemSummary from krate.paths to get the kind
+            if let Some(kind) = self.get_item_kind(id) {
+                items_by_kind.entry(kind).or_default().push(*id);
+            } else if let Some(item) = self.krate.index.get(id) {
+                // Fallback: try to infer kind from ItemEnum (less ideal)
+                let kind = match item.inner {
+                    ItemEnum::Module(_) => ItemKind::Module,
+                    ItemEnum::ExternCrate { .. } => ItemKind::ExternCrate,
+                    ItemEnum::Import { .. } => ItemKind::Import,
+                    ItemEnum::Union(_) => ItemKind::Union,
+                    ItemEnum::Struct(_) => ItemKind::Struct,
+                    ItemEnum::StructField(_) => ItemKind::StructField,
+                    ItemEnum::Enum(_) => ItemKind::Enum,
+                    ItemEnum::Variant(_) => ItemKind::Variant,
+                    ItemEnum::Function(_) => ItemKind::Function,
+                    ItemEnum::Trait(_) => ItemKind::Trait,
+                    ItemEnum::TraitAlias(_) => ItemKind::TraitAlias,
+                    ItemEnum::Impl { .. } => ItemKind::Impl,
+                    ItemEnum::TypeAlias(_) => ItemKind::TypeAlias,
+                    ItemEnum::OpaqueTy(_) => ItemKind::OpaqueTy,
+                    ItemEnum::Constant(_) => ItemKind::Constant,
+                    ItemEnum::Static(_) => ItemKind::Static,
+                    ItemEnum::ForeignType => ItemKind::ForeignType,
+                    ItemEnum::Macro(_) => ItemKind::Macro,
+                    ItemEnum::ProcMacro(pm) => match pm.kind {
+                        rustdoc_types::MacroKind::Bang => ItemKind::Macro, // Treat bang proc macro as Macro kind
+                        rustdoc_types::MacroKind::Attr => ItemKind::ProcAttribute,
+                        rustdoc_types::MacroKind::Derive => ItemKind::ProcDerive,
+                    },
+                    ItemEnum::Primitive(_) => ItemKind::Primitive,
+                    ItemEnum::AssocConst { .. } => ItemKind::AssocConst,
+                    ItemEnum::AssocType { .. } => ItemKind::AssocType,
+                    ItemEnum::Keyword(_) => ItemKind::Keyword,
+                };
+                items_by_kind.entry(kind).or_default().push(*id);
+                warn!("Used fallback kind detection for item ID {:?}", id);
             }
         }
 
         // Defined printing order
         let print_order = [
-            ItemKind::Macro,
-            ItemKind::ProcMacro,
+            ItemKind::Macro, // Includes bang procedural macros
+            ItemKind::ProcAttribute,
+            ItemKind::ProcDerive,
             ItemKind::Module,
             ItemKind::Static,
             ItemKind::Constant,
@@ -1079,6 +1563,15 @@ impl<'a> DocPrinter<'a> {
             ItemKind::TypeAlias,
             ItemKind::TraitAlias,
             // Add other kinds as needed
+            ItemKind::ExternCrate,
+            ItemKind::Import,
+            ItemKind::OpaqueTy,
+            ItemKind::ForeignType,
+            ItemKind::Primitive,
+            ItemKind::Keyword,
+            // Kinds usually handled within others:
+            // ItemKind::Impl, ItemKind::Variant, ItemKind::StructField,
+            // ItemKind::AssocConst, ItemKind::AssocType,
         ];
 
         for kind in print_order {
@@ -1105,9 +1598,12 @@ impl<'a> DocPrinter<'a> {
                             writeln!(self.output, "\n{} Functions", "#".repeat(self.level + 1))
                                 .unwrap()
                         }
-                        ItemKind::Macro | ItemKind::ProcMacro => {
-                            writeln!(self.output, "\n{} Macros", "#".repeat(self.level + 1))
-                                .unwrap()
+                        ItemKind::Macro | ItemKind::ProcAttribute | ItemKind::ProcDerive => {
+                            if !self.output.ends_with(" Macros\n") {
+                                // Avoid duplicate headers if multiple macro kinds exist
+                                writeln!(self.output, "\n{} Macros", "#".repeat(self.level + 1))
+                                    .unwrap();
+                            }
                         }
                         ItemKind::Static => {
                             writeln!(self.output, "\n{} Statics", "#".repeat(self.level + 1))
@@ -1121,20 +1617,43 @@ impl<'a> DocPrinter<'a> {
                             writeln!(self.output, "\n{} Type Aliases", "#".repeat(self.level + 1))
                                 .unwrap()
                         }
-                        _ => writeln!(
+                        ItemKind::TraitAlias => writeln!(
                             self.output,
-                            "\n{} Other ({:?})",
-                            "#".repeat(self.level + 1),
-                            kind
+                            "\n{} Trait Aliases",
+                            "#".repeat(self.level + 1)
                         )
                         .unwrap(),
+                        ItemKind::Union => {
+                            writeln!(self.output, "\n{} Unions", "#".repeat(self.level + 1))
+                                .unwrap()
+                        }
+                        _ => {
+                            // Avoid printing headers for kinds handled implicitly (Impl, Variant, etc.)
+                            if !matches!(
+                                kind,
+                                ItemKind::Impl
+                                    | ItemKind::Variant
+                                    | ItemKind::StructField
+                                    | ItemKind::AssocConst
+                                    | ItemKind::AssocType
+                            ) {
+                                writeln!(
+                                    self.output,
+                                    "\n{} Other ({:?})",
+                                    "#".repeat(self.level + 1),
+                                    kind
+                                )
+                                .unwrap();
+                            }
+                        }
                     }
 
-                    for id in ids {
-                        if let Some(item) = self.krate.index.get(id) {
+                    for id in ids.clone() {
+                        // Clone ids to allow modification of self.printed_ids inside loop
+                        if let Some(item) = self.krate.index.get(&id) {
                             match &item.inner {
                                 ItemEnum::Module(sub_module) => {
-                                    if !self.printed_ids.contains(id) {
+                                    if !self.printed_ids.contains(&id) {
                                         // Avoid re-printing modules
                                         writeln!(
                                             self.output,
@@ -1143,7 +1662,7 @@ impl<'a> DocPrinter<'a> {
                                             item.name.as_deref().unwrap_or("{unnamed}")
                                         )
                                         .unwrap();
-                                        self.printed_ids.insert(*id); // Mark module printed before recursion
+                                        self.printed_ids.insert(id); // Mark module printed before recursion
                                         let current_level = self.level;
                                         self.level += 1;
                                         self.print_module_contents(sub_module);
@@ -1151,7 +1670,10 @@ impl<'a> DocPrinter<'a> {
                                     }
                                 }
                                 _ => {
-                                    self.print_item(id);
+                                    // Only print if not already handled (e.g., via impl block)
+                                    if !self.printed_ids.contains(&id) {
+                                        self.print_item(&id);
+                                    }
                                 }
                             }
                         }
@@ -1166,6 +1688,7 @@ impl<'a> DocPrinter<'a> {
         let crate_name = root_item.name.as_deref().unwrap_or("Unknown Crate");
         let crate_version = self.krate.crate_version.as_deref().unwrap_or("");
 
+        // Use writeln! to ensure newline at the end of the header
         writeln!(
             self.output,
             "{} {} API ({})",
@@ -1183,25 +1706,31 @@ impl<'a> DocPrinter<'a> {
         // Check for unprinted selected items
         let mut unprinted_count = 0;
         let mut unprinted_output = String::new();
+        let mut temp_output_store = String::new(); // Store the main output temporarily
+
+        // Swap buffers to collect unprinted items separately
+        std::mem::swap(&mut self.output, &mut temp_output_store);
+
         for id in self.selected_ids {
             if !self.printed_ids.contains(id) {
                 if unprinted_count == 0 {
                     writeln!(
                         unprinted_output,
                         "\n{} Other Items",
-                        "#".repeat(self.level + 1)
+                        "#".repeat(self.level + 1) // Use self.level which is 1 here
                     )
                     .unwrap();
                     warn!("Found selected items that were not printed in the structured output. Adding them to an 'Other Items' section.");
                 }
                 unprinted_count += 1;
-                let current_len = self.output.len(); // Temporarily hijack output
-                self.output = String::new();
-                self.print_item(id);
-                write!(unprinted_output, "{}", self.output).unwrap();
-                self.output = String::with_capacity(current_len); // Restore (not perfect)
+                self.print_item(id); // This now writes to self.output (which was swapped)
+                write!(unprinted_output, "{}", self.output).unwrap(); // Append the printed item
+                self.output.clear(); // Clear for the next unprinted item
             }
         }
+
+        // Swap back and append unprinted items
+        std::mem::swap(&mut self.output, &mut temp_output_store);
         if unprinted_count > 0 {
             write!(self.output, "{}", unprinted_output).unwrap();
             warn!(
@@ -1242,7 +1771,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let client = reqwest::Client::builder()
         .user_agent(format!(
-            "crate-doc-extractor/{} (github.com/your-repo)", // Replace with actual repo if applicable
+            "crate-doc-extractor/{} (github.com/ai-sandbox/aidocs-rust)", // Updated repo
             env!("CARGO_PKG_VERSION")
         ))
         .build()?;
@@ -1287,6 +1816,7 @@ async fn main() -> Result<()> {
         krate.crate_version.as_deref().unwrap_or("?")
     );
     info!("Found {} total items in the index.", krate.index.len());
+    info!("Found {} items in the paths map.", krate.paths.len());
 
     // --- Select Items ---
     let selected_ids = select_items(&krate, &args.paths)?;
@@ -1296,9 +1826,7 @@ async fn main() -> Result<()> {
 
     // --- Output Documentation ---
     // For now, just print to stdout
-    println!("{}", documentation);
-
-    // TODO: Optionally write to a file based on args
+    print!("{}", documentation); // Use print! to avoid extra newline at the end
 
     Ok(())
 }
