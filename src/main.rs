@@ -14,7 +14,7 @@
 //! tokio = { version = "1.34", features = ["full"] }
 //! tracing = "0.1"
 //! tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-//! rustdoc-json = "0.16"
+//! rustdoc-json = "0.20"
 //! ```
 #![allow(clippy::uninlined_format_args)]
 
