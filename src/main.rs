@@ -32,7 +32,7 @@ use tar::Archive;
 use tracing::{debug, info, warn};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, disable_version_flag = true)]
 struct Args {
     /// Name of the crate on crates.io
     crate_name: String,
