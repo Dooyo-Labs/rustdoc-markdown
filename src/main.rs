@@ -32,14 +32,14 @@ use tar::Archive;
 use tracing::{debug, info, warn};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None, disable_version_flag = true)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     /// Name of the crate on crates.io
     crate_name: String,
 
     /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*")
-    #[arg(short, long)]
-    version: Option<String>,
+    #[arg(default_value = "*")]
+    crate_version: String,
 
     /// Include prerelease versions when selecting the latest
     #[arg(long)]
@@ -65,7 +65,7 @@ struct CrateVersion {
 async fn find_best_version(
     client: &reqwest::Client,
     crate_name: &str,
-    version_req_str: Option<&str>,
+    version_req_str: &str,
     include_prerelease: bool,
 ) -> Result<CrateVersion> {
     info!(
@@ -122,7 +122,18 @@ async fn find_best_version(
     }
 
     match version_req_str {
-        Some(req_str) => {
+        "*" => {
+            // Find the latest non-prerelease (unless include_prerelease is true)
+            info!("No version specified, selecting latest suitable version...");
+            api_data.versions.into_iter().next().ok_or_else(|| {
+                anyhow!(
+                    "Could not determine the latest{} version for crate '{}'",
+                    if include_prerelease { "" } else { " stable" },
+                    crate_name
+                )
+            })
+        }
+        req_str => {
             info!(
                 "Finding best match for version requirement '{}'...",
                 req_str
@@ -141,17 +152,6 @@ async fn find_best_version(
                         crate_name
                     )
                 })
-        }
-        None => {
-            // Find the latest non-prerelease (unless include_prerelease is true)
-            info!("No version specified, selecting latest suitable version...");
-            api_data.versions.into_iter().next().ok_or_else(|| {
-                anyhow!(
-                    "Could not determine the latest{} version for crate '{}'",
-                    if include_prerelease { "" } else { " stable" },
-                    crate_name
-                )
-            })
         }
     }
 }
@@ -356,7 +356,7 @@ async fn main() -> Result<()> {
     let target_version = find_best_version(
         &client,
         &args.crate_name,
-        args.version.as_deref(),
+        &args.crate_version,
         args.include_prerelease,
     )
     .await?;
