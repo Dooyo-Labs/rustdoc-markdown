@@ -5,7 +5,7 @@
 //! clap = { version = "4.4", features = ["derive"] }
 //! flate2 = "1.0"
 //! reqwest = { version = "0.11", features = ["json", "stream"] }
-//! rustdoc-types = "0.23"
+//! rustdoc-types = "0.39"
 //! semver = "1.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
@@ -15,6 +15,7 @@
 //! tracing = "0.1"
 //! tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 //! rustdoc-json = "*"
+//! rustup-toolchain = "0.1"
 //! ```
 #![allow(clippy::uninlined_format_args)]
 
@@ -32,6 +33,8 @@ use std::path::{Path, PathBuf};
 use tar::Archive;
 // Removed unused import: use tempfile::TempDir;
 use tracing::{debug, info, warn};
+
+const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -241,7 +244,7 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
 
     let builder = Builder::default()
         .manifest_path(manifest_path)
-        .toolchain("+nightly") // Specify the nightly toolchain
+        .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
         .target_dir(crate_dir.join("target/doc")) // Set the output directory
         .package(crate_name); // Specify the package
 
@@ -333,6 +336,9 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
+
+    // Install the required nightly toolchain
+    rustup_toolchain::install(NIGHTLY_RUST_VERSION).unwrap();
 
     let args = Args::parse();
     let client = reqwest::Client::builder()
