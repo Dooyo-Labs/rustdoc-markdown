@@ -4,3 +4,5 @@ formatter: cargo fmt
 tests:
   - name: Build
     command: cargo build
+  - name: Help
+    command: cargo run -- --help
