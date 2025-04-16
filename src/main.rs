@@ -27,7 +27,7 @@ use rustdoc_types::{Crate, ItemEnum};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::fs::File;
-use std::io::{self, BufReader, Cursor};
+use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
 // Removed unused import: use std::process::Command;
 use tar::Archive;
@@ -66,7 +66,6 @@ struct CrateVersion {
     crate_name: String,
     num: String, // Version number string
     yanked: bool,
-    license: Option<String>,
     #[serde(skip)]
     semver: Option<Version>, // Parsed version, populated later
 }
@@ -290,7 +289,6 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                 let item_kind = match item.inner {
                     ItemEnum::Module(_) => "Module",
                     ItemEnum::ExternCrate { .. } => "Extern Crate",
-                    ItemEnum::Import { .. } => "Import",
                     ItemEnum::Union(_) => "Union",
                     ItemEnum::Struct(_) => "Struct",
                     ItemEnum::StructField(_) => "Struct Field",
@@ -300,18 +298,16 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                     ItemEnum::Trait(_) => "Trait",
                     ItemEnum::TraitAlias(_) => "Trait Alias",
                     ItemEnum::Impl(_) => "Impl",
-                    ItemEnum::TypeAlias(_) => "Type Alias", // Changed from Typedef
-                    ItemEnum::OpaqueTy { .. } => "Opaque Type",
+                    ItemEnum::TypeAlias(_) => "Type Alias",
                     ItemEnum::Constant { .. } => "Constant",
                     ItemEnum::Static(_) => "Static",
-                    ItemEnum::ForeignType => "Foreign Type",
                     ItemEnum::Macro(_) => "Macro (Declarative)",
                     ItemEnum::ProcMacro(_) => "Proc Macro",
                     ItemEnum::Primitive(_) => "Primitive",
                     ItemEnum::AssocConst { .. } => "Associated Constant",
                     ItemEnum::AssocType { .. } => "Associated Type",
-                    // Handle potential future additions gracefully
-                    // _ => "Unknown Item Kind",
+                    ItemEnum::Use(_) => "Use",
+                    ItemEnum::ExternType => "Extern Type",
                 };
 
                 println!("\n## Item: {} ({})", path_str, item_kind);
