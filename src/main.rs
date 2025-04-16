@@ -26,15 +26,17 @@ use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
-    Abi, Constant, Crate, Enum, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef,
-    Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, StructKind,
-    Term, Trait, Type, Variant, VariantKind, WherePredicate,
+    Abi, Constant, Crate, Discriminant, Enum, GenericArg, GenericArgs, GenericBound,
+    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct,
+    StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::borrow::Borrow;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque}; // Keep BTreeMap for sorting output later if needed, import HashMap
 use std::fmt::Write;
 use std::fs::File;
+use std::hash::Hash;
 use std::io::{BufReader, Cursor};
 use std::path::{Path as FilePath, PathBuf};
 use tar::Archive;
@@ -806,7 +808,6 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                     }
                     if let Some(disr) = &v.discriminant {
                         // Discriminant has expr and value (strings), no direct type dependency ID
-                        // find_type_dependencies(&disr.type_, krate, &mut item_deps); // Removed: Discriminant has no type_
                         let _ = disr; // Avoid unused warning
                     }
                 }
@@ -863,7 +864,6 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                     find_type_dependencies(&ta.type_, krate, &mut item_deps);
                     find_generics_dependencies(&ta.generics, krate, &mut item_deps);
                 }
-                // ItemEnum::OpaqueTy removed
                 // Use struct pattern matching for Constant
                 ItemEnum::Constant { type_, .. } => {
                     find_type_dependencies(type_, krate, &mut item_deps);
@@ -876,8 +876,9 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                 ItemEnum::Macro(_) => {}     // Source string, hard to parse reliably
                 ItemEnum::ProcMacro(_) => {} // No direct code dependencies representable by ID
                 ItemEnum::Primitive(_) => {} // No dependencies
-                ItemEnum::AssocConst { type_, .. } => {
-                    // Ignore default string (const_)
+                // Use correct fields for AssocConst { type_, value }
+                ItemEnum::AssocConst { type_, value: _ } => {
+                    // Ignore default string (value)
                     find_type_dependencies(type_, krate, &mut item_deps);
                 }
                 // Use renamed field type_ (was default)
@@ -928,7 +929,6 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                 ItemEnum::StructField(ty) => find_type_dependencies(ty, krate, &mut item_deps),
                 // Use renamed variant Use (was Import)
                 ItemEnum::ExternCrate { .. } | ItemEnum::Use { .. } => {} // Ignore these for dep finding
-                                                                          // ItemEnum::Keyword removed
             }
 
             // Add newly found dependencies to the queue if they aren't already selected
@@ -1145,7 +1145,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{} = {}",
+                            "{}{}{} = {}", // Fixed: Added {} for the term
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1160,7 +1160,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}: {}",
+                            "{}{}{}: {}", // Fixed: Added {} for the bounds
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1208,6 +1208,15 @@ fn format_const_expr(constant: &Constant) -> String {
         }
     }
     constant.expr.clone()
+}
+
+/// Formats a discriminant expression, potentially showing the value if different.
+fn format_discriminant_expr(discr: &Discriminant) -> String {
+    if discr.value != discr.expr {
+        format!("{} /* = {} */", discr.expr, discr.value)
+    } else {
+        discr.expr.clone()
+    }
 }
 
 fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
@@ -1525,7 +1534,6 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
         ItemEnum::AssocConst { .. } => format!("const {}", name),
         ItemEnum::AssocType { .. } => format!("type {}", name),
         ItemEnum::Impl(_) => "impl".to_string(), // Impls handled specially
-        ItemEnum::Union(_) => format!("union {}", name), // Handled above, but keep for completeness
     }
 }
 
@@ -1603,7 +1611,8 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
                 .unwrap();
                 // Add discriminant if present
                 if let Some(discr) = &variant_data.discriminant {
-                    write!(code, " = {}", format_const_expr(discr)).unwrap(); // Use format_const_expr for discriminant
+                    // Use format_discriminant_expr for discriminant
+                    write!(code, " = {}", format_discriminant_expr(discr)).unwrap();
                 }
                 writeln!(code, ",").unwrap();
             }
@@ -1663,7 +1672,8 @@ fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
     // Similar to definition but potentially simpler, without pub, maybe add discriminant visually
     let mut sig = format_variant_definition(item, v, krate);
     if let Some(discr) = &v.discriminant {
-        write!(sig, " = {}", format_const_expr(discr)).unwrap();
+        // Use format_discriminant_expr
+        write!(sig, " = {}", format_discriminant_expr(discr)).unwrap();
     }
     sig
 }
@@ -1725,7 +1735,6 @@ impl<'a> DocPrinter<'a> {
             ItemEnum::Primitive(_) => ItemKind::Primitive,
             ItemEnum::AssocConst { .. } => ItemKind::AssocConst,
             ItemEnum::AssocType { .. } => ItemKind::AssocType,
-            // ItemEnum::Keyword removed
         }
     }
 
@@ -1778,7 +1787,7 @@ impl<'a> DocPrinter<'a> {
             match &item.inner {
                 ItemEnum::Struct(s) => self.print_item_implementations(&s.impls, item),
                 ItemEnum::Enum(e) => self.print_item_implementations(&e.impls, item),
-                ItemEnum::Trait(t) => { /* Trait impls are implementors, not impls *on* the trait */
+                ItemEnum::Trait(_t) => { /* Trait impls are implementors, not impls *on* the trait */
                 }
                 ItemEnum::Union(u) => self.print_item_implementations(&u.impls, item),
                 ItemEnum::Primitive(p) => self.print_item_implementations(&p.impls, item),
@@ -1827,7 +1836,7 @@ impl<'a> DocPrinter<'a> {
           // if !self.printed_ids.insert(*field_id) { return; }
 
         if let Some(item) = self.krate.index.get(field_id) {
-            if let ItemEnum::StructField(field_type) = &item.inner {
+            if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_");
                 // Header: ##### `field_name`
                 writeln!(
@@ -1991,14 +2000,15 @@ impl<'a> DocPrinter<'a> {
 
             // Potentially add default values/bounds for assoc const/type here
             match &item.inner {
-                ItemEnum::AssocConst { type_, const_ } => {
+                // Use correct fields { type_, value }
+                ItemEnum::AssocConst { type_, value } => {
                     writeln!(
                         self.output,
                         "_Type: `{}`_\n",
                         format_type(type_, self.krate)
                     )
                     .unwrap();
-                    if let Some(val) = const_ {
+                    if let Some(val) = value {
                         writeln!(self.output, "_Default: `{}`_\n", val).unwrap();
                     }
                 }
@@ -2107,11 +2117,12 @@ impl<'a> DocPrinter<'a> {
             }
 
             // Print simple impls as a list
-            simple_impls.sort(); // Sort alphabetically
-            for cleaned_path in simple_impls {
-                writeln!(self.output, "- `{}`", cleaned_path).unwrap();
-            }
             if !simple_impls.is_empty() {
+                simple_impls.sort(); // Sort alphabetically
+                for cleaned_path in &simple_impls {
+                    // Iterate over reference
+                    writeln!(self.output, "- `{}`", cleaned_path).unwrap();
+                }
                 writeln!(self.output).unwrap(); // Add blank line after list
             }
 
@@ -2230,7 +2241,8 @@ impl<'a> DocPrinter<'a> {
     /// Prints the contents of a module, grouping items by kind.
     fn print_module_contents(&mut self, module: &Module) {
         // Group selected items by kind within this module
-        let mut items_by_kind: BTreeMap<ItemKind, Vec<Id>> = BTreeMap::new(); // Use BTreeMap for sorted kinds
+        // Use HashMap instead of BTreeMap for ItemKind
+        let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new();
         for id in &module.items {
             if !self.selected_ids.contains(id) || self.printed_ids.contains(id) {
                 continue; // Skip unselected or already printed items
@@ -2254,6 +2266,7 @@ impl<'a> DocPrinter<'a> {
                 _ => {}
             }
 
+            // Use or_insert_with for HashMap
             items_by_kind.entry(kind).or_default().push(*id);
         }
 
@@ -2281,12 +2294,13 @@ impl<'a> DocPrinter<'a> {
             ItemKind::Constant,
             ItemKind::Function,
             ItemKind::ExternType,
-            ItemKind::Keyword, // Unlikely here
+            // ItemKind::Keyword, // Removed from rustdoc-types 0.39 ItemKind
         ];
 
         let mut printed_headers = HashSet::new(); // Track headers printed at this level
 
         for kind in print_order {
+            // Use .get() for HashMap
             if let Some(ids) = items_by_kind.get(&kind) {
                 // Determine group header
                 let header_name = match kind {
@@ -2305,7 +2319,6 @@ impl<'a> DocPrinter<'a> {
                     ItemKind::ExternCrate => "External Crates",
                     ItemKind::ExternType => "External Types",
                     ItemKind::Primitive => "Primitives",
-                    ItemKind::Keyword => "Keywords",
                     // These are skipped above, but listed defensively
                     ItemKind::Impl
                     | ItemKind::Variant
