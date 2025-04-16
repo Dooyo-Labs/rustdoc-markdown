@@ -283,7 +283,7 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
     info!("Found {} items in the index.", krate.index.len());
     let mut doc_count = 0;
 
-    println!("\n--- Docstrings for Crate: {} ---", krate.root);
+    println!("\n--- Docstrings for Crate: {:?} ---", krate.root);
 
     for (id, item) in &krate.index {
         if let Some(docs) = &item.docs {
