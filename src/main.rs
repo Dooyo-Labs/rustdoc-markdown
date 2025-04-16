@@ -437,7 +437,13 @@ fn find_generic_args_dependencies(
             for arg in args {
                 match arg {
                     GenericArg::Type(t) => find_type_dependencies(t, krate, dependencies),
-                    GenericArg::Const(c) => find_type_dependencies(&c.type_, krate, dependencies), // c is Constant struct
+                    GenericArg::Const(c) => find_type_dependencies(
+                        &c.expr
+                            .as_ref()
+                            .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
+                        krate,
+                        dependencies,
+                    ), // c is Constant struct
                     GenericArg::Lifetime(_) | GenericArg::Infer => {}
                 }
             }
@@ -447,7 +453,13 @@ fn find_generic_args_dependencies(
                     // Use tuple variant matching
                     rustdoc_types::AssocItemConstraintKind::Equality(term) => match term {
                         Term::Type(t) => find_type_dependencies(t, krate, dependencies),
-                        Term::Constant(c) => find_type_dependencies(&c.type_, krate, dependencies), // c is Constant struct
+                        Term::Constant(c) => find_type_dependencies(
+                            &c.expr
+                                .as_ref()
+                                .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
+                            krate,
+                            dependencies,
+                        ), // c is Constant struct
                     },
                     rustdoc_types::AssocItemConstraintKind::Constraint(bounds) => {
                         for bound in bounds {
@@ -537,7 +549,13 @@ fn find_generics_dependencies(generics: &Generics, krate: &Crate, dependencies: 
                 // rhs is Term
                 match rhs {
                     Term::Type(t) => find_type_dependencies(t, krate, dependencies),
-                    Term::Constant(c) => find_type_dependencies(&c.type_, krate, dependencies), // c is Constant struct
+                    Term::Constant(c) => find_type_dependencies(
+                        &c.expr
+                            .as_ref()
+                            .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
+                        krate,
+                        dependencies,
+                    ), // c is Constant struct
                 }
             }
         }
@@ -675,6 +693,7 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                             fields,
                             has_stripped_fields,
                         } => {
+                            let mut dependencies = String::new();
                             if !fields.is_empty() || *has_stripped_fields {
                                 for field_id in fields {
                                     if krate.index.contains_key(field_id) {
@@ -1151,7 +1170,12 @@ fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
     match arg {
         GenericArg::Lifetime(lt) => format!("'{}", lt), // Add quote
         GenericArg::Type(ty) => format_type(ty, krate),
-        GenericArg::Const(c) => format_type(&c.type_, krate), // Just show type for now, c is Constant
+        GenericArg::Const(c) => format_type(
+            &c.expr
+                .as_ref()
+                .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
+            krate,
+        ), // Just show type for now, c is Constant
         GenericArg::Infer => "_".to_string(),
     }
 }
@@ -1203,7 +1227,12 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
 fn format_term(term: &Term, krate: &Crate) -> String {
     match term {
         Term::Type(t) => format_type(t, krate),
-        Term::Constant(c) => format_type(&c.type_, krate), // Just show type for now, c is Constant
+        Term::Constant(c) => format_type(
+            &c.expr
+                .as_ref()
+                .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
+            krate,
+        ), // Just show type for now, c is Constant
     }
 }
 
@@ -1289,7 +1318,7 @@ fn format_generics(generics: &Generics, krate: &Crate) -> String {
                             "for<{}> ",
                             generic_params
                                 .iter()
-                                .map(|gp| format_generic_param_def(gp, krate)) // Format full def
+                                .map(|gp| format_generic_param_def(gp, krate))
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         )
@@ -1573,7 +1602,7 @@ impl<'a> DocPrinter<'a> {
                         "```rust\nconst {}: {} = {};\n```",
                         name,
                         format_type(type_, self.krate),
-                        const_.as_deref().unwrap_or("...") // Use expr field
+                        const_.value.as_deref().unwrap_or("...") // Use expr field
                     )
                     .unwrap();
                 }
@@ -1615,12 +1644,12 @@ impl<'a> DocPrinter<'a> {
                 fields,
                 has_stripped_fields,
             } => {
-                if !fields.is_empty() || has_stripped_fields {
+                if !fields.is_empty() || *has_stripped_fields {
                     writeln!(self.output, "\n{} Fields", "#".repeat(self.level + 2)).unwrap();
                     for field_id in fields {
                         self.print_item(field_id); // Will print StructField item
                     }
-                    if has_stripped_fields {
+                    if *has_stripped_fields {
                         writeln!(self.output, "\n_[Private fields hidden]_").unwrap();
                     }
                 }
