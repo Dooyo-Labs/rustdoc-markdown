@@ -998,7 +998,7 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
             let lifetime_bound = dt
                 .lifetime
                 .as_ref()
-                .map(|lt| format!(" + '{}'", lt)) // Add quote for lifetime
+                .map(|lt| format!(" + {}", lt)) // Add quote for lifetime
                 .unwrap_or_default();
             format!(
                 "dyn {}{}",
@@ -1093,7 +1093,7 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
             "&{}{}{}",
             lifetime
                 .as_ref()
-                .map(|lt| format!("'{} ", lt)) // Add quote
+                .map(|lt| format!("{} ", lt)) // Add quote
                 .unwrap_or_default(),
             if *is_mutable { "mut " } else { "" },
             format_type(type_, krate)
@@ -1225,7 +1225,7 @@ fn format_discriminant_expr(discr: &Discriminant) -> String {
 
 fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
     match arg {
-        GenericArg::Lifetime(lt) => format!("'{}", lt), // Add quote
+        GenericArg::Lifetime(lt) => format!("{}", lt), // Add quote
         GenericArg::Type(ty) => format_type(ty, krate),
         GenericArg::Const(c) => format_const_expr(c),
         GenericArg::Infer => "_".to_string(),
@@ -1259,7 +1259,7 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
             };
             format!("{}{}{}", hrtb, mod_str, format_path(trait_, krate)) // Use format_path
         }
-        GenericBound::Outlives(lifetime) => format!("'{}", lifetime), // Add quote
+        GenericBound::Outlives(lifetime) => format!("{}", lifetime), // Add quote
         GenericBound::Use(args) => {
             // use<'a, T> syntax
             format!(
@@ -1285,7 +1285,7 @@ fn format_term(term: &Term, krate: &Crate) -> String {
 
 fn format_generic_param_def(p: &GenericParamDef, krate: &Crate) -> String {
     match &p.kind {
-        rustdoc_types::GenericParamDefKind::Lifetime { .. } => format!("'{}", p.name), // Add quote
+        rustdoc_types::GenericParamDefKind::Lifetime { .. } => format!("{}", p.name), // Add quote
         rustdoc_types::GenericParamDefKind::Type {
             bounds,
             default,
@@ -1416,11 +1416,11 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
                 lifetime, outlives, ..
             } => {
                 format!(
-                    "'{}: {}",
+                    "{}: {}",
                     lifetime,
                     outlives
                         .iter()
-                        .map(|lt| format!("'{}", lt)) // Add quotes
+                        .map(|lt| format!("{}", lt)) // Add quotes
                         .collect::<Vec<_>>()
                         .join(" + ")
                 )
@@ -1565,6 +1565,9 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                 writeln!(code, " {{").unwrap(); // Generics on same line
             } else {
                 write!(code, " {{").unwrap(); // No generics or multiline generics
+            }
+            if !fields.is_empty() {
+                write!(code, "\n").unwrap();
             }
             for field_id in fields {
                 if let Some(field_item) = krate.index.get(field_id) {
@@ -2367,8 +2370,14 @@ impl<'a> DocPrinter<'a> {
             // Print generic impls (complex ones) using their dedicated block printer
             for impl_item in generic_impl_items {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    // print_impl_block_details marks as printed and adds ##### header
-                    self.print_impl_block_details(impl_item, imp);
+                    let trait_path = imp.trait_.as_ref().unwrap();
+                    writeln!(
+                        self.output,
+                        "- `{}`",
+                        clean_trait_path(&format_path(trait_path, self.krate))
+                    )
+                    .unwrap();
+                    self.print_impl_trait_block(impl_item, imp);
                 }
             }
         }
@@ -2395,7 +2404,7 @@ impl<'a> DocPrinter<'a> {
             for impl_item in implementors {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
                     // Only print the header for the implementation here
-                    let impl_header = self.format_impl_header(imp);
+                    let impl_header = self.format_impl_decl(imp);
                     // Print the impl block header (##### `impl ...`)
                     writeln!(
                         self.output,
@@ -2416,13 +2425,34 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Helper to format just the header line of an impl block.
+    /// Helper to format a single-line impl block or trait impl header
     fn format_impl_header(&self, imp: &Impl) -> String {
         let mut impl_header = String::new();
         if imp.is_unsafe {
             write!(impl_header, "unsafe ").unwrap();
         }
-        write!(impl_header, "impl").unwrap();
+
+        if let Some(trait_path) = &imp.trait_ {
+            write!(impl_header, "impl {}", format_path(trait_path, self.krate)).unwrap();
+        } else {
+            write!(impl_header, "impl {}", format_type(&imp.for_, self.krate)).unwrap();
+        }
+
+        impl_header
+    }
+
+    /// Helper to format an impl block or trait impl.
+    fn format_impl_decl(&self, imp: &Impl) -> String {
+        let mut impl_header = String::new();
+        if imp.is_unsafe {
+            write!(impl_header, "unsafe ").unwrap();
+        }
+
+        if imp.trait_.is_none() {
+            write!(impl_header, "impl {}", format_type(&imp.for_, self.krate)).unwrap();
+        } else {
+            write!(impl_header, "impl").unwrap();
+        }
 
         // Print impl generics only if they exist
         let impl_generics_str = format_generics_full(&imp.generics, self.krate);
@@ -2457,13 +2487,68 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the details of a specific impl block (header, associated items).
+    fn print_impl_trait_block(&mut self, impl_item: &Item, imp: &Impl) {
+        // Mark as printed *now* before printing details
+        if !self.printed_ids.insert(impl_item.id) {
+            return;
+        }
+
+        let impl_header = self.format_impl_decl(imp);
+
+        writeln!(
+            self.output,
+            "```rust\n{} {{\n",
+            impl_header.trim() // Trim potential trailing space if no where clause added
+        )
+        .unwrap();
+
+        // Print associated items within this impl block
+        let mut assoc_consts = vec![];
+        let mut assoc_types = vec![];
+        for assoc_item_id in &imp.items {
+            // Important: Only print associated items that are *selected*
+            if !self.selected_ids.contains(assoc_item_id) {
+                continue;
+            }
+
+            if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
+                match &assoc_item.inner {
+                    ItemEnum::AssocConst { .. } => assoc_consts.push(assoc_item_id),
+                    ItemEnum::AssocType { .. } => assoc_types.push(assoc_item_id),
+                    ItemEnum::Function(_) => {}
+                    _ => {
+                        unreachable!()
+                    } // Should not happen in impl block
+                }
+            }
+        }
+
+        // Print associated items using the dedicated detail printer
+        // No extra sub-headers needed here, print_associated_item_details already uses #####
+        if !assoc_consts.is_empty() {
+            // writeln!(self.output, "\n###### Associated Constants\n").unwrap(); // No sub-sub-header
+            for id in assoc_consts {
+                self.print_associated_item_details(id);
+            }
+        }
+        if !assoc_types.is_empty() {
+            // writeln!(self.output, "\n###### Associated Types\n").unwrap();
+            for id in assoc_types {
+                self.print_associated_item_details(id);
+            }
+        }
+
+        writeln!(self.output, "\n}}\n```\n").unwrap();
+    }
+
+    /// Prints the details of a specific impl block (header, associated items).
     fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl) {
         // Mark as printed *now* before printing details
         if !self.printed_ids.insert(impl_item.id) {
             return;
         }
 
-        let impl_header = self.format_impl_header(imp);
+        let impl_header = self.format_impl_decl(imp);
 
         // Print the impl block header (##### `impl ...`)
         writeln!(
@@ -2515,7 +2600,6 @@ impl<'a> DocPrinter<'a> {
             }
         }
     }
-
     /// Prints the contents of a module, grouping items by kind.
     fn print_module_contents(&mut self, module: &Module) {
         // Group selected items by kind within this module
