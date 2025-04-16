@@ -14,19 +14,21 @@
 //! tokio = { version = "1.34", features = ["full"] }
 //! tracing = "0.1"
 //! tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+//! rustdoc-json = "0.16"
 //! ```
 #![allow(clippy::uninlined_format_args)]
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use flate2::read::GzDecoder;
+use rustdoc_json::Builder;
 use rustdoc_types::{Crate, ItemEnum};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::fs::File;
 use std::io::{self, BufReader, Cursor, Write}; // Added Write, BufReader. Removed Read.
 use std::path::{Path, PathBuf};
-use std::process::Command;
+// Removed unused import: use std::process::Command;
 use tar::Archive;
 // Removed unused import: use tempfile::TempDir;
 use tracing::{debug, info, warn};
@@ -231,52 +233,30 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
         );
     }
 
-    info!("Running cargo +nightly rustdoc ...");
+    info!("Generating rustdoc JSON using rustdoc-json crate...");
 
-    let output = Command::new("cargo")
-        .args([
-            "+nightly",
-            "rustdoc",
-            "--manifest-path",
-            manifest_path.to_str().unwrap(), // Should be valid UTF-8
-            "--",                            // Separator for rustdoc flags
-            "-Z",
-            "unstable-options",
-            "--output-format",
-            "json",
-        ])
-        .output()
-        .context("Failed to execute cargo rustdoc command")?;
-
-    if !output.status.success() {
-        eprintln!("--- cargo rustdoc stdout ---");
-        // Use write_all from the imported std::io::Write trait
-        io::stderr().write_all(&output.stdout)?;
-        eprintln!("--- cargo rustdoc stderr ---");
-        // Use write_all from the imported std::io::Write trait
-        io::stderr().write_all(&output.stderr)?;
-        bail!("cargo rustdoc failed with status: {}", output.status);
-    } else {
-        debug!("--- cargo rustdoc stdout ---");
-        debug!("{}", String::from_utf8_lossy(&output.stdout));
-        debug!("--- cargo rustdoc stderr ---");
-        debug!("{}", String::from_utf8_lossy(&output.stderr));
-    }
-
-    // target/doc/{crate_name}.json relative to crate_dir
     let json_path = crate_dir
         .join("target/doc")
         .join(format!("{}.json", crate_name));
 
-    if !json_path.exists() {
-        bail!(
-            "Expected rustdoc JSON output not found at {}",
-            json_path.display()
-        );
-    }
+    let builder = Builder::default()
+        .manifest_path(manifest_path)
+        .toolchain("+nightly") // Specify the nightly toolchain
+        .target_dir(crate_dir.join("target/doc")) // Set the output directory
+        .package(crate_name); // Specify the package
 
-    info!("Generated rustdoc JSON at: {}", json_path.display());
-    Ok(json_path)
+    // Generate the JSON file
+    match builder.build() {
+        Ok(s) => {
+            info!("Generated rustdoc JSON at: {}", json_path.display());
+            Ok(s)
+        }
+        Err(e) => {
+            eprintln!("--- rustdoc-json stderr ---");
+            eprintln!("{:?}", e);
+            bail!("rustdoc-json failed: {}", e);
+        }
+    }
 }
 
 fn parse_and_print_docs(json_path: &Path) -> Result<()> {
