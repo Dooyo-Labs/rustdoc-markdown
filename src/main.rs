@@ -26,8 +26,9 @@ use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
-    Abi, Crate, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef, Generics, Id,
-    Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, Term, Type, WherePredicate,
+    Abi, Constant, Crate, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef,
+    Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, Term, Type,
+    WherePredicate,
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
@@ -386,9 +387,49 @@ fn find_type_dependencies(ty: &Type, krate: &Crate, dependencies: &mut HashSet<I
                     dependencies.insert(trait_path.id);
                 }
             }
-            if let Some(args) = args.as_ref() {
-                // args is &Box<GenericArgs>
-                find_generic_args_dependencies(args, krate, dependencies);
+            match &**args {
+                GenericArgs::AngleBracketed { args, constraints } => {
+                    for arg in args {
+                        match arg {
+                            GenericArg::Type(t) => find_type_dependencies(t, krate, dependencies),
+                            // Constant expr/value are stringly typed
+                            GenericArg::Const(_) | GenericArg::Lifetime(_) | GenericArg::Infer => {}
+                        }
+                    }
+                    for constraint in constraints {
+                        // AssocItemConstraint { name: String, kind: AssocItemConstraintKind }
+                        match constraint {
+                            // Use tuple variant matching
+                            rustdoc_types::AssocItemConstraint {
+                                name: _,
+                                args: _,
+                                binding: rustdoc_types::AssocItemConstraintKind::Equality(term),
+                            } => match term {
+                                Term::Type(t) => find_type_dependencies(t, krate, dependencies),
+                                // Constant expr/value are stringly typed
+                                Term::Constant(_) => {}
+                            },
+                            rustdoc_types::AssocItemConstraint {
+                                name: _,
+                                args: _,
+                                binding: rustdoc_types::AssocItemConstraintKind::Constraint(bounds),
+                            } => {
+                                for bound in bounds {
+                                    find_generic_bound_dependencies(bound, krate, dependencies);
+                                }
+                            }
+                        }
+                    }
+                }
+                GenericArgs::Parenthesized { inputs, output } => {
+                    for input in inputs {
+                        find_type_dependencies(input, krate, dependencies);
+                    }
+                    if let Some(out) = output {
+                        find_type_dependencies(out, krate, dependencies);
+                    }
+                }
+                GenericArgs::ReturnTypeNotation => {}
             }
         }
         Type::DynTrait(dyn_trait) => {
@@ -437,13 +478,7 @@ fn find_generic_args_dependencies(
             for arg in args {
                 match arg {
                     GenericArg::Type(t) => find_type_dependencies(t, krate, dependencies),
-                    GenericArg::Const(c) => find_type_dependencies(
-                        &c.expr
-                            .as_ref()
-                            .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
-                        krate,
-                        dependencies,
-                    ), // c is Constant struct
+                    GenericArg::Const(_) => {}
                     GenericArg::Lifetime(_) | GenericArg::Infer => {}
                 }
             }
@@ -451,17 +486,19 @@ fn find_generic_args_dependencies(
                 // AssocItemConstraint { name: String, kind: AssocItemConstraintKind }
                 match constraint {
                     // Use tuple variant matching
-                    rustdoc_types::AssocItemConstraintKind::Equality(term) => match term {
+                    rustdoc_types::AssocItemConstraint {
+                        name: _,
+                        args: _,
+                        binding: rustdoc_types::AssocItemConstraintKind::Equality(term),
+                    } => match term {
                         Term::Type(t) => find_type_dependencies(t, krate, dependencies),
-                        Term::Constant(c) => find_type_dependencies(
-                            &c.expr
-                                .as_ref()
-                                .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
-                            krate,
-                            dependencies,
-                        ), // c is Constant struct
+                        Term::Constant(_) => {}
                     },
-                    rustdoc_types::AssocItemConstraintKind::Constraint(bounds) => {
+                    rustdoc_types::AssocItemConstraint {
+                        name: _,
+                        args: _,
+                        binding: rustdoc_types::AssocItemConstraintKind::Constraint(bounds),
+                    } => {
                         for bound in bounds {
                             find_generic_bound_dependencies(bound, krate, dependencies);
                         }
@@ -504,21 +541,7 @@ fn find_generic_bound_dependencies(
                 find_generic_param_def_dependencies(param_def, krate, dependencies);
             }
         }
-        GenericBound::Outlives(_) => {} // Lifetimes don't have IDs
-        GenericBound::Use(args) => {
-            // args: Vec<PreciseCapturingArg>
-            for arg in args {
-                match arg {
-                    rustdoc_types::PreciseCapturingArg::Lifetime(_) => {}
-                    rustdoc_types::PreciseCapturingArg::Param(id) => {
-                        // id is Id, check if it's in the local crate
-                        if krate.index.contains_key(id) {
-                            dependencies.insert(*id);
-                        }
-                    }
-                }
-            }
-        }
+        GenericBound::Outlives(_) | GenericBound::Use(_) => {}
     }
 }
 
@@ -549,13 +572,7 @@ fn find_generics_dependencies(generics: &Generics, krate: &Crate, dependencies: 
                 // rhs is Term
                 match rhs {
                     Term::Type(t) => find_type_dependencies(t, krate, dependencies),
-                    Term::Constant(c) => find_type_dependencies(
-                        &c.expr
-                            .as_ref()
-                            .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
-                        krate,
-                        dependencies,
-                    ), // c is Constant struct
+                    Term::Constant(_) => {} // Constant expr/value are stringly typed
                 }
             }
         }
@@ -857,7 +874,7 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                 }
                 // ItemEnum::OpaqueTy removed
                 // Use struct pattern matching for Constant
-                ItemEnum::Constant { type_, const_, .. } => {
+                ItemEnum::Constant { type_, .. } => {
                     find_type_dependencies(type_, krate, &mut item_deps);
                     // Maybe parse expr/value for IDs? Complex.
                 }
@@ -1108,11 +1125,7 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
                 .as_ref()
                 .map(|t| format_path(t, krate)) // Use format_path
                 .unwrap_or("_".to_string());
-            // Use as_ref() for Option<Box<GenericArgs>>
-            let args_str = args
-                .as_ref()
-                .map(|a| format!("<{}>", format_generic_args(a, krate)))
-                .unwrap_or_default();
+            let args_str = format_generic_args(args, krate);
 
             format!("<{} as {}>::{}{}", self_type_str, trait_str, name, args_str)
         }
@@ -1130,12 +1143,20 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
                 .iter()
                 .map(|c| match c {
                     // Use tuple variant matching
-                    rustdoc_types::AssocItemConstraintKind::Equality(term) => {
-                        format!("{} = {}", c.name, format_term(term, krate))
+                    rustdoc_types::AssocItemConstraint {
+                        name,
+                        args: _,
+                        binding: rustdoc_types::AssocItemConstraintKind::Equality(term),
+                    } => {
+                        format!("{} = {}", name, format_term(term, krate))
                     }
-                    rustdoc_types::AssocItemConstraintKind::Constraint(bounds) => format!(
+                    rustdoc_types::AssocItemConstraint {
+                        name,
+                        args: _,
+                        binding: rustdoc_types::AssocItemConstraintKind::Constraint(bounds),
+                    } => format!(
                         "{}: {}",
-                        c.name,
+                        name,
                         bounds
                             .iter()
                             .map(|bnd| format_generic_bound(bnd, krate))
@@ -1166,16 +1187,23 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
     }
 }
 
+fn format_const_expr(constant: &Constant) -> String {
+    if let Some(v) = &constant.value {
+        if v != &constant.expr {
+            return format!("{} /* {} */", constant.expr, v);
+        } else {
+            return constant.expr.clone();
+        }
+    } else {
+        constant.expr.clone()
+    }
+}
+
 fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
     match arg {
         GenericArg::Lifetime(lt) => format!("'{}", lt), // Add quote
         GenericArg::Type(ty) => format_type(ty, krate),
-        GenericArg::Const(c) => format_type(
-            &c.expr
-                .as_ref()
-                .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
-            krate,
-        ), // Just show type for now, c is Constant
+        GenericArg::Const(c) => format_const_expr(c),
         GenericArg::Infer => "_".to_string(),
     }
 }
@@ -1214,8 +1242,8 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
                 "use<{}>",
                 args.iter()
                     .map(|a| match a {
-                        rustdoc_types::PreciseCapturingArg::Lifetime(lt) => format!("'{}", lt), // Add quote
-                        rustdoc_types::PreciseCapturingArg::Param(id) => format_id_path(id, krate), // Pass &id
+                        rustdoc_types::PreciseCapturingArg::Lifetime(lt) => format!("'{}", lt),
+                        rustdoc_types::PreciseCapturingArg::Param(id) => id.to_string(),
                     })
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -1227,12 +1255,7 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
 fn format_term(term: &Term, krate: &Crate) -> String {
     match term {
         Term::Type(t) => format_type(t, krate),
-        Term::Constant(c) => format_type(
-            &c.expr
-                .as_ref()
-                .map_or(Type::Infer, |s| Type::Primitive(s.clone())),
-            krate,
-        ), // Just show type for now, c is Constant
+        Term::Constant(c) => format_const_expr(c),
     }
 }
 
@@ -1613,7 +1636,7 @@ impl<'a> DocPrinter<'a> {
                         if s.is_mutable { "mut " } else { "" },
                         name,
                         format_type(&s.type_, self.krate),
-                        s.expr.as_ref().unwrap_or("...") // Use Option::as_deref
+                        s.expr
                     )
                     .unwrap();
                 }
