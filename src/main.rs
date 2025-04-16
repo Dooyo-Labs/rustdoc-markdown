@@ -26,7 +26,7 @@ use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
-    Abi, Constant, Crate, Discriminant, Enum, GenericArg, GenericArgs, GenericBound,
+    Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct,
     StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
 };
@@ -1145,7 +1145,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{} = {}", // Fixed: Added missing {} placeholder
+                            "{}{}{}{} = {}", // Added missing {} placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1160,7 +1160,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{}: {}", // Fixed: Added missing {} placeholder
+                            "{}{}{}{}: {}", // Added missing {} placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1345,11 +1345,11 @@ fn format_generics_full(generics: &Generics, krate: &Crate) -> String {
 
     if !generics.where_predicates.is_empty() {
         let where_clause = format_generics_where_only(&generics.where_predicates, krate);
-        // Add newline and indent if params were also present
-        if !generics.params.is_empty() {
+        // Add newline and indent if params were also present and where clause is multiline
+        if !generics.params.is_empty() && where_clause.contains('\n') {
             write!(s, "\n  {}", where_clause).unwrap();
         } else {
-            write!(s, " {}", where_clause).unwrap();
+            write!(s, " {}", where_clause).unwrap(); // Append single line where clause or first line of multiline
         }
     }
 
@@ -1371,70 +1371,77 @@ fn format_generics_params_only(params: &[GenericParamDef], krate: &Crate) -> Str
     )
 }
 
-// Formats only the where clause: "where T: Bound"
+// Formats only the where clause: "where T: Bound" or multi-line
 fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> String {
     if predicates.is_empty() {
         return String::new();
     }
-    format!(
-        "where\n    {}", // Indent where clause contents
-        predicates
-            .iter()
-            .map(|p| match p {
-                WherePredicate::BoundPredicate {
-                    type_,
-                    bounds,
-                    generic_params,
-                    ..
-                } => {
-                    let hrtb = if generic_params.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!(
-                            "for<{}> ",
-                            generic_params
-                                .iter()
-                                .map(|gp| format_generic_param_def(gp, krate))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        )
-                    };
+    let clauses: Vec<String> = predicates
+        .iter()
+        .map(|p| match p {
+            WherePredicate::BoundPredicate {
+                type_,
+                bounds,
+                generic_params,
+                ..
+            } => {
+                let hrtb = if generic_params.is_empty() {
+                    "".to_string()
+                } else {
                     format!(
-                        "{}{}: {}",
-                        hrtb,
-                        format_type(type_, krate),
-                        bounds
+                        "for<{}> ",
+                        generic_params
                             .iter()
-                            .map(|b| format_generic_bound(b, krate))
+                            .map(|gp| format_generic_param_def(gp, krate))
                             .collect::<Vec<_>>()
-                            .join(" + ")
+                            .join(", ")
                     )
-                }
-                WherePredicate::LifetimePredicate {
-                    lifetime, outlives, ..
-                } => {
-                    format!(
-                        "'{}: {}",
-                        lifetime,
-                        outlives
-                            .iter()
-                            .map(|lt| format!("'{}", lt)) // Add quotes
-                            .collect::<Vec<_>>()
-                            .join(" + ")
-                    )
-                }
-                WherePredicate::EqPredicate { lhs, rhs, .. } => {
-                    format!("{} == {}", format_type(lhs, krate), format_term(rhs, krate))
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(",\n    ")  // Join with comma, newline, and indent
-    )
+                };
+                format!(
+                    "{}{}: {}",
+                    hrtb,
+                    format_type(type_, krate),
+                    bounds
+                        .iter()
+                        .map(|b| format_generic_bound(b, krate))
+                        .collect::<Vec<_>>()
+                        .join(" + ")
+                )
+            }
+            WherePredicate::LifetimePredicate {
+                lifetime, outlives, ..
+            } => {
+                format!(
+                    "'{}: {}",
+                    lifetime,
+                    outlives
+                        .iter()
+                        .map(|lt| format!("'{}", lt)) // Add quotes
+                        .collect::<Vec<_>>()
+                        .join(" + ")
+                )
+            }
+            WherePredicate::EqPredicate { lhs, rhs, .. } => {
+                format!("{} == {}", format_type(lhs, krate), format_term(rhs, krate))
+            }
+        })
+        .collect();
+
+    // Determine if multi-line formatting is needed
+    let total_len = clauses.iter().map(|s| s.len()).sum::<usize>();
+    let is_multiline = clauses.len() > 1 || total_len > 60; // Heuristic for multi-line
+
+    if is_multiline {
+        format!("where\n    {}", clauses.join(",\n    ")) // Indent contents
+    } else {
+        format!("where {}", clauses.join(", "))
+    }
 }
 
 // --- Structured Printing Logic ---
 
 /// Generates the primary declaration string for an item (e.g., `struct Foo`, `fn bar()`).
+/// For functions, this is deliberately simplified (no attrs, no where clause).
 fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
     let name = item.name.as_deref().unwrap_or("{unnamed}");
     match &item.inner {
@@ -1456,22 +1463,19 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
         ItemEnum::Trait(t) => {
             let unsafe_kw = if t.is_unsafe { "unsafe " } else { "" };
             let auto = if t.is_auto { "auto " } else { "" };
-            format!("{}{}{}{}", auto, unsafe_kw, "trait ", name) // Generics handled separately if needed
+            // Include param generics in trait header
+            format!(
+                "{}{}{}{}",
+                auto,
+                unsafe_kw,
+                "trait ",
+                name,
+                format_generics_params_only(&t.generics.params, krate)
+            )
         }
         ItemEnum::Function(f) => {
+            // Simplified version for the header: no attrs, no where clause
             let mut decl = String::new();
-            if f.header.is_const {
-                decl.push_str("const ");
-            }
-            if f.header.is_async {
-                decl.push_str("async ");
-            }
-            if f.header.is_unsafe {
-                decl.push_str("unsafe ");
-            }
-            if !matches!(f.header.abi, Abi::Rust) {
-                write!(decl, "extern \"{:?}\" ", f.header.abi).unwrap();
-            }
             write!(decl, "fn {}", name).unwrap();
             // Include only param generics here
             write!(
@@ -1485,7 +1489,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
                 .sig
                 .inputs
                 .iter()
-                .map(|(n, t)| format!("{}: {}", n, format_type(t, krate)))
+                .map(|(n, t)| format!("{}: {}", n, format_type(t, krate))) // Use arg name from tuple
                 .collect::<Vec<_>>()
                 .join(", ");
             write!(decl, "{}", args_str).unwrap();
@@ -1538,16 +1542,23 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
 }
 
 /// Generates the `struct { ... }` code block.
-fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String {
-    let name = item.name.as_deref().unwrap_or("{Unnamed}");
+fn generate_struct_code_block(_item: &Item, s: &Struct, krate: &Crate) -> String {
+    // Use item.name if available, fallback needed? No, struct items must have names.
+    let name = s.name.as_deref().expect("Struct item should have a name");
     let mut code = String::new();
     write!(code, "pub struct {}", name).unwrap();
+    // Use full generics here, including where clause
     write!(code, "{}", format_generics_full(&s.generics, krate)).unwrap();
 
     match &s.kind {
         StructKind::Plain { fields, .. } => {
             // fields_stripped ignored
-            writeln!(code, " {{").unwrap();
+            // Check if generics caused a newline before deciding where to put opening brace
+            if code.ends_with('>') {
+                writeln!(code, " {{").unwrap(); // Generics on same line
+            } else {
+                write!(code, " {{").unwrap(); // No generics or multiline generics
+            }
             for field_id in fields {
                 if let Some(field_item) = krate.index.get(field_id) {
                     if let ItemEnum::StructField(field_type) = &field_item.inner {
@@ -1583,22 +1594,33 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                 })
                 .collect();
             write!(code, "{}", field_types.join(", ")).unwrap();
-            write!(code, ");").unwrap();
+            // Add semicolon only if where clause didn't add one implicitly via multiline format
+            if !code.ends_with("where") && !code.contains("where\n") {
+                write!(code, ");").unwrap();
+            }
         }
         StructKind::Unit => {
-            write!(code, ";").unwrap();
+            // Add semicolon only if where clause didn't add one implicitly
+            if !code.ends_with("where") && !code.contains("where\n") {
+                write!(code, ";").unwrap();
+            }
         }
     }
     code
 }
 
 /// Generates the `enum { ... }` code block.
-fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
-    let name = item.name.as_deref().unwrap_or("{Unnamed}");
+fn generate_enum_code_block(_item: &Item, e: &Enum, krate: &Crate) -> String {
+    let name = e.name.as_deref().expect("Enum item should have a name");
     let mut code = String::new();
     write!(code, "pub enum {}", name).unwrap();
     write!(code, "{}", format_generics_full(&e.generics, krate)).unwrap();
-    writeln!(code, " {{").unwrap();
+    // Check if generics caused a newline before deciding where to put opening brace
+    if code.ends_with('>') || code.contains("where\n") {
+        writeln!(code, " {{").unwrap();
+    } else {
+        write!(code, " {{").unwrap();
+    }
 
     for variant_id in &e.variants {
         if let Some(variant_item) = krate.index.get(variant_id) {
@@ -1620,6 +1642,180 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
     }
 
     write!(code, "}}").unwrap();
+    code
+}
+
+/// Generates the full trait declaration code block.
+fn generate_trait_code_block(_item: &Item, t: &Trait, krate: &Crate) -> String {
+    let name = t.name.as_deref().expect("Trait item should have a name");
+    let mut code = String::new();
+
+    if t.is_auto {
+        write!(code, "pub auto ").unwrap();
+    }
+    if t.is_unsafe {
+        write!(code, "pub unsafe ").unwrap();
+    } else if !t.is_auto {
+        // Add pub if not auto or unsafe (which imply pub sometimes)
+        write!(code, "pub ").unwrap();
+    }
+    write!(code, "trait {}", name).unwrap();
+    // Add generics params and supertraits (bounds)
+    write!(
+        code,
+        "{}",
+        format_generics_params_only(&t.generics.params, krate)
+    )
+    .unwrap();
+    if !t.bounds.is_empty() {
+        write!(
+            code,
+            ": {}",
+            t.bounds
+                .iter()
+                .map(|b| format_generic_bound(b, krate))
+                .collect::<Vec<_>>()
+                .join(" + ")
+        )
+        .unwrap();
+    }
+    // Add where clause
+    let where_clause = format_generics_where_only(&t.generics.where_predicates, krate);
+    if !where_clause.is_empty() {
+        if where_clause.contains('\n') {
+            write!(code, "\n  {}", where_clause).unwrap(); // Multiline where
+        } else {
+            write!(code, " {}", where_clause).unwrap(); // Single line where
+        }
+    }
+
+    // Body
+    if t.items.is_empty() {
+        write!(code, " {{}}").unwrap();
+    } else {
+        writeln!(code, " {{").unwrap();
+        // Print associated items (simple versions)
+        for item_id in &t.items {
+            if let Some(assoc_item) = krate.index.get(item_id) {
+                match &assoc_item.inner {
+                    ItemEnum::AssocConst { type_, value, .. } => {
+                        write!(
+                            code,
+                            "    const {}: {}",
+                            assoc_item.name.as_deref().unwrap_or("_"),
+                            format_type(type_, krate)
+                        )
+                        .unwrap();
+                        if let Some(val) = value {
+                            write!(code, " = {};", val).unwrap(); // Use raw default string
+                        } else {
+                            write!(code, ";").unwrap();
+                        }
+                        writeln!(code).unwrap();
+                    }
+                    ItemEnum::AssocType { bounds, type_, .. } => {
+                        write!(
+                            code,
+                            "    type {}",
+                            assoc_item.name.as_deref().unwrap_or("_")
+                        )
+                        .unwrap();
+                        if !bounds.is_empty() {
+                            write!(
+                                code,
+                                ": {}",
+                                bounds
+                                    .iter()
+                                    .map(|b| format_generic_bound(b, krate))
+                                    .collect::<Vec<_>>()
+                                    .join(" + ")
+                            )
+                            .unwrap();
+                        }
+                        if let Some(ty) = type_ {
+                            write!(code, " = {};", format_type(ty, krate)).unwrap();
+                        } else {
+                            write!(code, ";").unwrap();
+                        }
+                        writeln!(code).unwrap();
+                    }
+                    ItemEnum::Function(f) => {
+                        // Print simple function signature within trait def
+                        writeln!(
+                            code,
+                            "    {};",
+                            generate_function_code_block(assoc_item, f, krate)
+                        )
+                        .unwrap();
+                    }
+                    _ => {} // Ignore others
+                }
+            }
+        }
+        write!(code, "}}").unwrap();
+    }
+    code
+}
+
+/// Generates the full function signature for a code block.
+fn generate_function_code_block(_item: &Item, f: &Function, krate: &Crate) -> String {
+    let name = f.name.as_deref().expect("Function should have a name");
+    let mut code = String::new();
+
+    // Attributes/Keywords
+    // TODO: Add visibility? Assume pub for now.
+    write!(code, "pub ").unwrap();
+    if f.header.is_const {
+        write!(code, "const ").unwrap();
+    }
+    if f.header.is_async {
+        write!(code, "async ").unwrap();
+    }
+    if f.header.is_unsafe {
+        write!(code, "unsafe ").unwrap();
+    }
+    if !matches!(f.header.abi, Abi::Rust) {
+        write!(code, "extern \"{:?}\" ", f.header.abi).unwrap(); // Use Debug for Abi
+    }
+
+    // Core signature
+    write!(code, "fn {}", name).unwrap();
+    // Include full generics here, including where clause
+    write!(code, "{}", format_generics_full(&f.generics, krate)).unwrap();
+
+    // Parameters
+    write!(code, "(").unwrap();
+    let args_str = f
+        .sig
+        .inputs
+        .iter()
+        .map(|(n, t)| format!("{}: {}", n, format_type(t, krate))) // Use name from tuple
+        .collect::<Vec<_>>()
+        .join(", ");
+    write!(code, "{}", args_str).unwrap();
+    if f.sig.is_c_variadic {
+        write!(code, ", ...").unwrap();
+    }
+    write!(code, ")").unwrap();
+
+    // Return type
+    if let Some(output_type) = &f.sig.output {
+        write!(code, " -> {}", format_type(output_type, krate)).unwrap();
+    }
+
+    // Add semicolon or body indicator based on if it has implementation
+    if f.has_body {
+        // Check if where clause ended up on a newline
+        if code.ends_with("where") || code.contains("where\n") {
+            write!(code, " {{ ... }}").unwrap(); // Body on next line after multi-line where
+        } else {
+            write!(code, " {{ ... }}").unwrap(); // Body on same line
+        }
+    } else if !code.ends_with(';') {
+        // Add semicolon if it's just a declaration and doesn't already end with one (e.g., from where clause)
+        write!(code, ";").unwrap();
+    }
+
     code
 }
 
@@ -1756,10 +1952,25 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
-            // Print Code Block for Struct/Enum
+            // Print Code Block for Struct/Enum/Trait/Function (if needed)
             let code_block = match &item.inner {
                 ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
                 ItemEnum::Enum(e) => Some(generate_enum_code_block(item, e, self.krate)),
+                ItemEnum::Trait(t) => Some(generate_trait_code_block(item, t, self.krate)),
+                ItemEnum::Function(f) => {
+                    // Check if function has attrs or where clause
+                    let has_attrs = f.header.is_const
+                        || f.header.is_async
+                        || f.header.is_unsafe
+                        || !matches!(f.header.abi, Abi::Rust);
+                    let has_where = !f.generics.where_predicates.is_empty();
+                    if has_attrs || has_where {
+                        Some(generate_function_code_block(item, f, self.krate))
+                    } else {
+                        None // No code block needed for simple function
+                    }
+                }
+                // TODO: Add code blocks for other types like TypeAlias, Constant if desired
                 _ => None,
             };
 
@@ -1787,8 +1998,7 @@ impl<'a> DocPrinter<'a> {
             match &item.inner {
                 ItemEnum::Struct(s) => self.print_item_implementations(&s.impls, item),
                 ItemEnum::Enum(e) => self.print_item_implementations(&e.impls, item),
-                ItemEnum::Trait(_t) => { /* Trait impls are implementors, not impls *on* the trait */
-                }
+                ItemEnum::Trait(t) => self.print_trait_implementors(&t.implementations, item), // Traits list implementors
                 ItemEnum::Union(u) => self.print_item_implementations(&u.impls, item),
                 ItemEnum::Primitive(p) => self.print_item_implementations(&p.impls, item),
                 _ => {}
@@ -1991,6 +2201,19 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
+            // Add code block for associated functions if they have attrs/where clauses
+            if let ItemEnum::Function(f) = &item.inner {
+                let has_attrs = f.header.is_const
+                    || f.header.is_async
+                    || f.header.is_unsafe
+                    || !matches!(f.header.abi, Abi::Rust);
+                let has_where = !f.generics.where_predicates.is_empty();
+                if has_attrs || has_where {
+                    let code = generate_function_code_block(item, f, self.krate);
+                    writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
+                }
+            }
+
             // Print Documentation
             if let Some(docs) = &item.docs {
                 if !docs.trim().is_empty() {
@@ -2036,14 +2259,15 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints Inherent and Trait Implementations for an item.
+    /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
-        let target_name = target_item.name.as_deref().unwrap_or("{unknown}");
+        let target_name = target_item.name.as_deref().unwrap_or_else(|| {
+            format_type(&target_item.inner.clone().try_into().unwrap(), self.krate)
+        }); // Fallback for primitives
+
         let all_impls: Vec<&Item> = impl_ids
             .iter()
             .filter_map(|impl_id| self.krate.index.get(impl_id))
-            // Only consider impls that are selected *and* haven't been printed yet
-            // (Impl items might be selected independently)
             .filter(|impl_item| self.selected_ids.contains(&impl_item.id))
             .collect();
 
@@ -2074,14 +2298,13 @@ impl<'a> DocPrinter<'a> {
         if !trait_impls.is_empty() {
             writeln!(
                 self.output,
-                "{} Trait Implementations for `{}`\n", // Add newline after header
-                "#".repeat(self.current_level + 3),    // #### Section Header
-                target_name
+                "{} Trait Implementations\n", // Combined Header: Add newline after header
+                "#".repeat(self.current_level + 3)  // #### Section Header
             )
             .unwrap();
 
             let mut simple_impls = Vec::new();
-            let mut generic_impls = Vec::new();
+            let mut generic_impl_items = Vec::new();
 
             for impl_item in trait_impls {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
@@ -2109,48 +2332,76 @@ impl<'a> DocPrinter<'a> {
                         } else {
                             // Check printed_ids *before* adding to generic list
                             if !self.printed_ids.contains(&impl_item.id) {
-                                generic_impls.push(impl_item);
+                                generic_impl_items.push(impl_item);
                             }
                         }
                     }
                 }
             }
 
-            // Print simple impls as a list
+            // Print simple impls as a list first
             if !simple_impls.is_empty() {
                 simple_impls.sort(); // Sort alphabetically
                 for cleaned_path in &simple_impls {
-                    // Iterate over reference
                     writeln!(self.output, "- `{}`", cleaned_path).unwrap();
                 }
                 writeln!(self.output).unwrap(); // Add blank line after list
             }
 
-            // Print generic impls
-            if !generic_impls.is_empty() {
-                writeln!(
-                    self.output,
-                    "{} Generic Trait Implementations\n", // Add newline after header
-                    "#".repeat(self.current_level + 4)    // ##### Sub-section Header
-                )
-                .unwrap();
-                for impl_item in generic_impls {
-                    if let ItemEnum::Impl(imp) = &impl_item.inner {
-                        // print_impl_block_details marks as printed
-                        self.print_impl_block_details(impl_item, imp);
-                    }
+            // Print generic impls (complex ones) using their dedicated block printer
+            for impl_item in generic_impl_items {
+                if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    // print_impl_block_details marks as printed and adds ##### header
+                    self.print_impl_block_details(impl_item, imp);
                 }
             }
         }
     }
 
-    /// Prints the details of a specific impl block (header, associated items).
-    fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl) {
-        // Mark as printed *now* before printing details
-        if !self.printed_ids.insert(impl_item.id) {
-            return;
-        }
+    /// Prints implementors *of* a trait.
+    fn print_trait_implementors(&mut self, impl_ids: &[Id], _trait_item: &Item) {
+        let implementors: Vec<&Item> = impl_ids
+            .iter()
+            .filter_map(|id| self.krate.index.get(id))
+            .filter(|item| {
+                self.selected_ids.contains(&item.id) && matches!(item.inner, ItemEnum::Impl(_))
+            })
+            .collect();
 
+        if !implementors.is_empty() {
+            writeln!(
+                self.output,
+                "{} Implementors\n",                // Add newline after header
+                "#".repeat(self.current_level + 3)  // #### Section Header
+            )
+            .unwrap();
+
+            for impl_item in implementors {
+                if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    // Only print the header for the implementation here
+                    let impl_header = self.format_impl_header(imp);
+                    // Print the impl block header (##### `impl ...`)
+                    writeln!(
+                        self.output,
+                        "{} `{}`\n",                        // Add newline after header
+                        "#".repeat(self.current_level + 4), // Impl block level is #####
+                        impl_header.trim()                  // Trim potential trailing space
+                    )
+                    .unwrap();
+                    // Optionally, print docs for the impl block itself if available
+                    if let Some(docs) = &impl_item.docs {
+                        if !docs.trim().is_empty() {
+                            writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                        }
+                    }
+                    // We don't print the associated items here, just list the implementor
+                }
+            }
+        }
+    }
+
+    /// Helper to format just the header line of an impl block.
+    fn format_impl_header(&self, imp: &Impl) -> String {
         let mut impl_header = String::new();
         if imp.is_unsafe {
             write!(impl_header, "unsafe ").unwrap();
@@ -2186,6 +2437,17 @@ impl<'a> DocPrinter<'a> {
                 format_generics_where_only(&imp.generics.where_predicates, self.krate);
             write!(impl_header, " {}", where_clause).unwrap(); // Add single line where clause
         }
+        impl_header
+    }
+
+    /// Prints the details of a specific impl block (header, associated items).
+    fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl) {
+        // Mark as printed *now* before printing details
+        if !self.printed_ids.insert(impl_item.id) {
+            return;
+        }
+
+        let impl_header = self.format_impl_header(imp);
 
         // Print the impl block header (##### `impl ...`)
         writeln!(
