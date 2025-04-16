@@ -27,8 +27,8 @@ use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
-    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct,
-    StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait,
+    Primitive, Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
@@ -1145,7 +1145,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{} = {}", // Added missing {} placeholder
+                            "{}{}{}{} = {}", // Fixed: Added 5th placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1160,7 +1160,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{}: {}", // Added missing {} placeholder
+                            "{}{}{}{}: {}", // Fixed: Added 5th placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1542,9 +1542,12 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
 }
 
 /// Generates the `struct { ... }` code block.
-fn generate_struct_code_block(_item: &Item, s: &Struct, krate: &Crate) -> String {
-    // Use item.name if available, fallback needed? No, struct items must have names.
-    let name = s.name.as_deref().expect("Struct item should have a name");
+fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String {
+    // Fixed: Use item.name instead of s.name
+    let name = item
+        .name
+        .as_deref()
+        .expect("Struct item should have a name");
     let mut code = String::new();
     write!(code, "pub struct {}", name).unwrap();
     // Use full generics here, including where clause
@@ -1610,8 +1613,9 @@ fn generate_struct_code_block(_item: &Item, s: &Struct, krate: &Crate) -> String
 }
 
 /// Generates the `enum { ... }` code block.
-fn generate_enum_code_block(_item: &Item, e: &Enum, krate: &Crate) -> String {
-    let name = e.name.as_deref().expect("Enum item should have a name");
+fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
+    // Fixed: Use item.name instead of e.name
+    let name = item.name.as_deref().expect("Enum item should have a name");
     let mut code = String::new();
     write!(code, "pub enum {}", name).unwrap();
     write!(code, "{}", format_generics_full(&e.generics, krate)).unwrap();
@@ -1646,8 +1650,9 @@ fn generate_enum_code_block(_item: &Item, e: &Enum, krate: &Crate) -> String {
 }
 
 /// Generates the full trait declaration code block.
-fn generate_trait_code_block(_item: &Item, t: &Trait, krate: &Crate) -> String {
-    let name = t.name.as_deref().expect("Trait item should have a name");
+fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
+    // Fixed: Use item.name instead of t.name
+    let name = item.name.as_deref().expect("Trait item should have a name");
     let mut code = String::new();
 
     if t.is_auto {
@@ -1758,8 +1763,9 @@ fn generate_trait_code_block(_item: &Item, t: &Trait, krate: &Crate) -> String {
 }
 
 /// Generates the full function signature for a code block.
-fn generate_function_code_block(_item: &Item, f: &Function, krate: &Crate) -> String {
-    let name = f.name.as_deref().expect("Function should have a name");
+fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> String {
+    // Fixed: Use item.name instead of f.name
+    let name = item.name.as_deref().expect("Function should have a name");
     let mut code = String::new();
 
     // Attributes/Keywords
@@ -2262,8 +2268,12 @@ impl<'a> DocPrinter<'a> {
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
         let target_name = target_item.name.as_deref().unwrap_or_else(|| {
-            format_type(&target_item.inner.clone().try_into().unwrap(), self.krate)
-        }); // Fallback for primitives
+            // Fixed: Correctly handle primitive name extraction
+            match &target_item.inner {
+                ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
+                _ => "{unknown_primitive}", // Should not happen if called correctly
+            }
+        });
 
         let all_impls: Vec<&Item> = impl_ids
             .iter()
@@ -2279,8 +2289,9 @@ impl<'a> DocPrinter<'a> {
         if !inherent_impls.is_empty() {
             writeln!(
                 self.output,
-                "{} Implementations\n",             // Add newline after header
-                "#".repeat(self.current_level + 3)  // #### Section Header
+                "{} Implementations for `{}`\n", // Added target name, Add newline after header
+                "#".repeat(self.current_level + 3), // #### Section Header
+                target_name
             )
             .unwrap();
             for impl_item in inherent_impls {
@@ -2298,8 +2309,9 @@ impl<'a> DocPrinter<'a> {
         if !trait_impls.is_empty() {
             writeln!(
                 self.output,
-                "{} Trait Implementations\n", // Combined Header: Add newline after header
-                "#".repeat(self.current_level + 3)  // #### Section Header
+                "{} Trait Implementations for `{}`\n", // Added target name, Add newline after header
+                "#".repeat(self.current_level + 3),    // #### Section Header
+                target_name
             )
             .unwrap();
 
