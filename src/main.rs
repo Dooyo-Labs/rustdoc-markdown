@@ -27,7 +27,7 @@ use rustdoc_types::{Crate, ItemEnum};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::fs::File;
-use std::io::{self, BufReader, Cursor, Write}; // Added Write, BufReader. Removed Read.
+use std::io::{self, BufReader, Cursor};
 use std::path::{Path, PathBuf};
 // Removed unused import: use std::process::Command;
 use tar::Archive;
@@ -290,7 +290,7 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                 let item_kind = match item.inner {
                     ItemEnum::Module(_) => "Module",
                     ItemEnum::ExternCrate { .. } => "Extern Crate",
-                    ItemEnum::Import(_) => "Import",
+                    ItemEnum::Import { .. } => "Import",
                     ItemEnum::Union(_) => "Union",
                     ItemEnum::Struct(_) => "Struct",
                     ItemEnum::StructField(_) => "Struct Field",
@@ -301,7 +301,7 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                     ItemEnum::TraitAlias(_) => "Trait Alias",
                     ItemEnum::Impl(_) => "Impl",
                     ItemEnum::TypeAlias(_) => "Type Alias", // Changed from Typedef
-                    ItemEnum::OpaqueTy(_) => "Opaque Type",
+                    ItemEnum::OpaqueTy { .. } => "Opaque Type",
                     ItemEnum::Constant { .. } => "Constant",
                     ItemEnum::Static(_) => "Static",
                     ItemEnum::ForeignType => "Foreign Type",
