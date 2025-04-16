@@ -26,9 +26,8 @@ use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
-    Abi, Constant, Crate, Discriminant, Function, FunctionHeader, FunctionPointer, GenericArg,
-    GenericArgs, GenericBound, GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind,
-    Module, Path, PolyTrait, Struct, Term, Type, WherePredicate,
+    Abi, Crate, Function, GenericArg, GenericArgs, GenericBound, GenericParamDef, Generics, Id,
+    Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait, Struct, Term, Type, WherePredicate,
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
@@ -444,7 +443,7 @@ fn find_generic_args_dependencies(
             }
             for constraint in constraints {
                 // AssocItemConstraint { name: String, kind: AssocItemConstraintKind }
-                match &constraint.kind {
+                match constraint {
                     // Use tuple variant matching
                     rustdoc_types::AssocItemConstraintKind::Equality(term) => match term {
                         Term::Type(t) => find_type_dependencies(t, krate, dependencies),
@@ -672,22 +671,30 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                     find_generics_dependencies(&s.generics, krate, &mut item_deps);
                     // Find deps in fields (StructKind can be Plain, Tuple, Unit)
                     match &s.kind {
-                        rustdoc_types::StructKind::Plain { fields, .. } => {
-                            // fields_stripped ignored here
-                            for field_id in fields {
-                                if krate.index.contains_key(field_id) {
-                                    item_deps.insert(*field_id);
-                                    // Also get dependencies of the field's type
-                                    if let Some(field_item) = krate.index.get(field_id) {
-                                        if let ItemEnum::StructField(field_type) = &field_item.inner
-                                        {
-                                            find_type_dependencies(
-                                                field_type,
-                                                krate,
-                                                &mut item_deps,
-                                            );
+                        rustdoc_types::StructKind::Plain {
+                            fields,
+                            has_stripped_fields,
+                        } => {
+                            if !fields.is_empty() || *has_stripped_fields {
+                                for field_id in fields {
+                                    if krate.index.contains_key(field_id) {
+                                        item_deps.insert(*field_id);
+                                        // Also get dependencies of the field's type
+                                        if let Some(field_item) = krate.index.get(field_id) {
+                                            if let ItemEnum::StructField(field_type) =
+                                                &field_item.inner
+                                            {
+                                                find_type_dependencies(
+                                                    field_type,
+                                                    krate,
+                                                    &mut item_deps,
+                                                );
+                                            }
                                         }
                                     }
+                                }
+                                if *has_stripped_fields {
+                                    writeln!(dependencies, "\n_[Private fields hidden]_").unwrap();
                                 }
                             }
                         }
@@ -831,7 +838,7 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
                 }
                 // ItemEnum::OpaqueTy removed
                 // Use struct pattern matching for Constant
-                ItemEnum::Constant { type_, .. } => {
+                ItemEnum::Constant { type_, const_, .. } => {
                     find_type_dependencies(type_, krate, &mut item_deps);
                     // Maybe parse expr/value for IDs? Complex.
                 }
@@ -1102,7 +1109,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
             let arg_strs: Vec<String> = args.iter().map(|a| format_generic_arg(a, krate)).collect();
             let constraint_strs: Vec<String> = constraints
                 .iter()
-                .map(|c| match &c.kind {
+                .map(|c| match c {
                     // Use tuple variant matching
                     rustdoc_types::AssocItemConstraintKind::Equality(term) => {
                         format!("{} = {}", c.name, format_term(term, krate))
@@ -1560,13 +1567,13 @@ impl<'a> DocPrinter<'a> {
                     .unwrap();
                 }
                 // Use struct pattern matching
-                ItemEnum::Constant { type_, expr, .. } => {
+                ItemEnum::Constant { type_, const_, .. } => {
                     writeln!(
                         self.output,
                         "```rust\nconst {}: {} = {};\n```",
                         name,
                         format_type(type_, self.krate),
-                        expr.as_deref().unwrap_or("...") // Use expr field
+                        const_.as_deref().unwrap_or("...") // Use expr field
                     )
                     .unwrap();
                 }
@@ -1577,7 +1584,7 @@ impl<'a> DocPrinter<'a> {
                         if s.is_mutable { "mut " } else { "" },
                         name,
                         format_type(&s.type_, self.krate),
-                        s.expr.as_deref().unwrap_or("...") // Use Option::as_deref
+                        s.expr.as_ref().unwrap_or("...") // Use Option::as_deref
                     )
                     .unwrap();
                 }
@@ -1606,14 +1613,14 @@ impl<'a> DocPrinter<'a> {
         match &s.kind {
             rustdoc_types::StructKind::Plain {
                 fields,
-                fields_stripped,
+                has_stripped_fields,
             } => {
-                if !fields.is_empty() || *fields_stripped {
+                if !fields.is_empty() || has_stripped_fields {
                     writeln!(self.output, "\n{} Fields", "#".repeat(self.level + 2)).unwrap();
                     for field_id in fields {
                         self.print_item(field_id); // Will print StructField item
                     }
-                    if *fields_stripped {
+                    if has_stripped_fields {
                         writeln!(self.output, "\n_[Private fields hidden]_").unwrap();
                     }
                 }
@@ -1640,12 +1647,12 @@ impl<'a> DocPrinter<'a> {
 
     fn print_enum_details(&mut self, item: &Item, e: &rustdoc_types::Enum) {
         // Print Variants
-        if !e.variants.is_empty() || e.variants_stripped {
+        if !e.variants.is_empty() || e.has_stripped_variants {
             writeln!(self.output, "\n{} Variants", "#".repeat(self.level + 2)).unwrap();
             for variant_id in &e.variants {
                 self.print_item(variant_id); // Will print Variant item
             }
-            if e.variants_stripped {
+            if e.has_stripped_variants {
                 writeln!(self.output, "\n_[Private variants hidden]_").unwrap();
             }
         }
