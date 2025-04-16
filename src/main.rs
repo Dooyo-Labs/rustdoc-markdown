@@ -302,7 +302,7 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                     ItemEnum::Impl(_) => "Impl",
                     ItemEnum::TypeAlias(_) => "Type Alias", // Changed from Typedef
                     ItemEnum::OpaqueTy(_) => "Opaque Type",
-                    ItemEnum::Constant(_) => "Constant",
+                    ItemEnum::Constant { .. } => "Constant",
                     ItemEnum::Static(_) => "Static",
                     ItemEnum::ForeignType => "Foreign Type",
                     ItemEnum::Macro(_) => "Macro (Declarative)",
