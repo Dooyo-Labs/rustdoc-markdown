@@ -1145,12 +1145,12 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{} = {}", // Fixed: Added 5th placeholder
+                            "{}{}{}{}{}", // Fixed: Added 5th placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
                             if assoc_args_str.is_empty() { "" } else { ">" },
-                            format_term(term, krate)
+                            format!(" = {}", format_term(term, krate)) // Put equality inside
                         )
                     }
                     rustdoc_types::AssocItemConstraint {
@@ -1160,16 +1160,20 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{}: {}", // Fixed: Added 5th placeholder
+                            "{}{}{}{}{}", // Fixed: Added 5th placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
                             if assoc_args_str.is_empty() { "" } else { ">" },
-                            bounds
-                                .iter()
-                                .map(|bnd| format_generic_bound(bnd, krate))
-                                .collect::<Vec<_>>()
-                                .join(" + ")
+                            format!(
+                                // Put constraint inside
+                                ": {}",
+                                bounds
+                                    .iter()
+                                    .map(|bnd| format_generic_bound(bnd, krate))
+                                    .collect::<Vec<_>>()
+                                    .join(" + ")
+                            )
                         )
                     }
                 })
@@ -1465,7 +1469,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
             let auto = if t.is_auto { "auto " } else { "" };
             // Include param generics in trait header
             format!(
-                "{}{}{}{}",
+                "{}{}{}{}{}", // Fixed: Added 5th placeholder
                 auto,
                 unsafe_kw,
                 "trait ",
