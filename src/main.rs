@@ -32,11 +32,11 @@ use rustdoc_types::{
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
-use std::borrow::Borrow;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque}; // Keep BTreeMap for sorting output later if needed, import HashMap
+// Removed unused Borrow import
+use std::collections::{HashMap, HashSet, VecDeque}; // Removed BTreeMap
 use std::fmt::Write;
 use std::fs::File;
-use std::hash::Hash;
+// Removed unused Hash import
 use std::io::{BufReader, Cursor};
 use std::path::{Path as FilePath, PathBuf};
 use tar::Archive;
@@ -1145,7 +1145,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{} = {}", // Fixed: Added {} for the term
+                            "{}{}{} = {}", // Fixed: Added {} placeholders for < >
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1160,7 +1160,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}: {}", // Fixed: Added {} for the bounds
+                            "{}{}{}: {}", // Fixed: Added {} placeholders for < >
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -2294,7 +2294,7 @@ impl<'a> DocPrinter<'a> {
             ItemKind::Constant,
             ItemKind::Function,
             ItemKind::ExternType,
-            // ItemKind::Keyword, // Removed from rustdoc-types 0.39 ItemKind
+            ItemKind::Keyword, // Added Keyword to order
         ];
 
         let mut printed_headers = HashSet::new(); // Track headers printed at this level
@@ -2319,6 +2319,7 @@ impl<'a> DocPrinter<'a> {
                     ItemKind::ExternCrate => "External Crates",
                     ItemKind::ExternType => "External Types",
                     ItemKind::Primitive => "Primitives",
+                    ItemKind::Keyword => "", // Handle Keyword - don't give it a header section
                     // These are skipped above, but listed defensively
                     ItemKind::Impl
                     | ItemKind::Variant
