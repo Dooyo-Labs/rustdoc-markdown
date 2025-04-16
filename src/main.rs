@@ -24,11 +24,11 @@ use rustdoc_types::{Crate, ItemEnum};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::fs::File;
-use std::io::{self, Cursor, Read};
+use std::io::{self, BufReader, Cursor, Write}; // Added Write, BufReader. Removed Read.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tar::Archive;
-use tempfile::TempDir;
+// Removed unused import: use tempfile::TempDir;
 use tracing::{debug, info, warn};
 
 #[derive(Parser, Debug)]
@@ -241,8 +241,10 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
 
     if !output.status.success() {
         eprintln!("--- cargo rustdoc stdout ---");
+        // Use write_all from the imported std::io::Write trait
         io::stderr().write_all(&output.stdout)?;
         eprintln!("--- cargo rustdoc stderr ---");
+        // Use write_all from the imported std::io::Write trait
         io::stderr().write_all(&output.stderr)?;
         bail!("cargo rustdoc failed with status: {}", output.status);
     } else {
@@ -271,10 +273,12 @@ fn run_rustdoc(crate_dir: &Path, crate_name: &str) -> Result<PathBuf> {
 fn parse_and_print_docs(json_path: &Path) -> Result<()> {
     info!("Parsing rustdoc JSON: {}", json_path.display());
 
-    let krate: Crate = Crate::from_path(json_path)?;
-    // Alternative using serde_json if direct path reading fails or needs customization:
-    // let reader = BufReader::new(File::open(json_path)?);
-    // let krate: Crate = serde_json::from_reader(reader)?;
+    // Open the file and use serde_json::from_reader
+    let file = File::open(json_path)
+        .with_context(|| format!("Failed to open JSON file: {}", json_path.display()))?;
+    let reader = BufReader::new(file);
+    let krate: Crate = serde_json::from_reader(reader)
+        .with_context(|| format!("Failed to parse JSON file: {}", json_path.display()))?;
 
     info!("Found {} items in the index.", krate.index.len());
     let mut doc_count = 0;
@@ -304,7 +308,7 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                     ItemEnum::Trait(_) => "Trait",
                     ItemEnum::TraitAlias(_) => "Trait Alias",
                     ItemEnum::Impl(_) => "Impl",
-                    ItemEnum::Typedef(_) => "Typedef",
+                    ItemEnum::TypeAlias(_) => "Type Alias", // Changed from Typedef
                     ItemEnum::OpaqueTy(_) => "Opaque Type",
                     ItemEnum::Constant(_) => "Constant",
                     ItemEnum::Static(_) => "Static",
@@ -314,7 +318,8 @@ fn parse_and_print_docs(json_path: &Path) -> Result<()> {
                     ItemEnum::Primitive(_) => "Primitive",
                     ItemEnum::AssocConst { .. } => "Associated Constant",
                     ItemEnum::AssocType { .. } => "Associated Type",
-                    _ => "Unknown Item Kind",
+                    // Handle potential future additions gracefully
+                    // _ => "Unknown Item Kind",
                 };
 
                 println!("\n## Item: {} ({})", path_str, item_kind);
