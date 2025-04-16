@@ -32,8 +32,8 @@ use rustdoc_types::{
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
-// Removed unused Borrow import
-use std::collections::{HashMap, HashSet, VecDeque}; // Removed BTreeMap
+// Removed unused imports
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write;
 use std::fs::File;
 // Removed unused Hash import
@@ -1145,7 +1145,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{} = {}", // Fixed: Added {} placeholders for < >
+                            "{}{}{}{} = {}", // Fixed: Added missing {} placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1160,7 +1160,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}: {}", // Fixed: Added {} placeholders for < >
+                            "{}{}{}{}: {}", // Fixed: Added missing {} placeholder
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
