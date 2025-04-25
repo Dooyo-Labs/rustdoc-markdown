@@ -87,6 +87,10 @@ struct Args {
     #[arg(long, value_parser = parse_id)]
     dump_to_id: Option<Id>,
 
+    /// Limit the maximum depth of the dumped graph (0 means root only, 1 means root and direct children, etc.)
+    #[arg(long)]
+    dump_max_depth: Option<usize>,
+
     /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
     /// Paths starting with '::' imply the root of the current crate.
     /// Matches are prefix-based (e.g., "::style" matches "::style::TextStyle").
@@ -332,6 +336,8 @@ fn dump_node(
     visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
     path_to_target: &mut HashSet<Id>, // Tracks current path to target leaf
     indent: usize,
+    depth: usize,             // Current recursion depth
+    max_depth: Option<usize>, // Maximum allowed depth
     prefix: &str,             // Prefix like "├── " or "└── "
     parent_label: Option<&EdgeLabel>, // Label connecting this node to its parent
     is_root_call: bool, // Flag to know if this is the initial call for a root
@@ -363,7 +369,6 @@ fn dump_node(
             ""
         };
 
-
         writeln!(
             writer,
             "{}{}{}{}{}",
@@ -373,6 +378,26 @@ fn dump_node(
             label_info,
             cycle_marker
         )?;
+    }
+
+    // Check depth limit *before* recursing
+    if let Some(max) = max_depth {
+        if depth >= max {
+            // If we've reached max depth and there are children, indicate truncation
+            if is_newly_visited && graph.get_children(&node_id).map_or(false, |c| !c.is_empty()) {
+                writeln!(
+                    writer,
+                    "{}{} [... children truncated due to max depth ...]",
+                    " ".repeat(indent + 4), // Indent the truncation message
+                    if graph.get_children(&node_id).unwrap().len() == 1 { "└──" } else { "├──" } // Use appropriate prefix for one or more truncated children
+                )?;
+            }
+            // Backtrack and return early if max depth is reached
+            if inserted_in_path {
+                path_to_target.remove(&node_id);
+            }
+            return Ok(());
+        }
     }
 
     // Recurse only if newly visited globally
@@ -403,6 +428,8 @@ fn dump_node(
                     visited,         // Pass mutable reference down
                     path_to_target, // Pass mutable reference down
                     child_indent,
+                    depth + 1, // Increment depth for child
+                    max_depth, // Pass max_depth down
                     new_prefix,
                     Some(child_label),
                     false, // Not a root call anymore
@@ -426,6 +453,7 @@ fn dump_graph_subset(
     root_ids: &HashSet<Id>,
     output_path: &FilePath,
     dump_description: &str,
+    max_depth: Option<usize>, // Add max_depth parameter
 ) -> Result<()> {
     info!(
         "Dumping {} graph to: {}",
@@ -461,7 +489,9 @@ fn dump_graph_subset(
                     &mut visited,     // Pass shared mutable visited set
                     &mut path_to_target, // Pass new mutable path set
                     0,
-                    "", // No prefix for top-level nodes in fallback
+                    0,         // Initial depth is 0
+                    max_depth, // Pass max_depth
+                    "",        // No prefix for top-level nodes in fallback
                     None,
                     true, // It's a root call in this fallback context
                 )?;
@@ -482,7 +512,9 @@ fn dump_graph_subset(
                     &mut visited,     // Pass shared mutable visited set
                     &mut path_to_target, // Pass new mutable path set for this root
                     0,
-                    "", // No prefix for root nodes
+                    0,         // Initial depth is 0
+                    max_depth, // Pass max_depth
+                    "",        // No prefix for root nodes
                     None,
                     true, // It's a root call
                 )?;
@@ -4436,7 +4468,14 @@ async fn main() -> Result<()> {
     // Perform dumps based on arguments, using the potentially filtered graph
     if let Some(dump_path) = &args.dump_graph {
         let roots = graph_to_dump.find_roots();
-        dump_graph_subset(&graph_to_dump, &krate, &roots, dump_path, "full")?;
+        dump_graph_subset(
+            &graph_to_dump,
+            &krate,
+            &roots,
+            dump_path,
+            "full",
+            args.dump_max_depth,
+        )?;
     }
 
     if let Some(dump_path) = &args.dump_modules {
@@ -4457,6 +4496,7 @@ async fn main() -> Result<()> {
             &module_roots,
             dump_path,
             "modules",
+            args.dump_max_depth,
         )?;
     }
 
@@ -4473,6 +4513,7 @@ async fn main() -> Result<()> {
                 &roots,
                 dump_path,
                 &format!("ID {}", root_id.0),
+                args.dump_max_depth,
             )?;
         } else {
             warn!(
