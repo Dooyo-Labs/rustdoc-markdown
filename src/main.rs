@@ -2460,7 +2460,7 @@ impl<'a> DocPrinter<'a> {
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
     fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item, item_level: usize) {
-        let _target_name = target_item.name.as_deref().unwrap_or_else(|| {
+        let target_name = target_item.name.as_deref().unwrap_or_else(|| {
             match &target_item.inner {
                 ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
                 _ => "{unknown_primitive}", // Should not happen if called correctly
@@ -2500,11 +2500,11 @@ impl<'a> DocPrinter<'a> {
                 self.output,
                 "{} Trait Implementations for `{}`\n", // Keep this header, Add newline after header
                 "#".repeat(impl_section_level),
-                _target_name // Use the name we got earlier
+                target_name // Use the name we got earlier
             )
             .unwrap();
 
-            let mut simple_impls = Vec::new();
+            let mut simple_impl_data: Vec<(&Item, &Impl, String)> = Vec::new();
             let mut generic_impl_items = Vec::new();
 
             for impl_item in trait_impls {
@@ -2528,8 +2528,8 @@ impl<'a> DocPrinter<'a> {
                             });
 
                         if is_simple {
-                            simple_impls
-                                .push(clean_trait_path(&format_path(trait_path, self.krate)));
+                            let cleaned_path = clean_trait_path(&format_path(trait_path, self.krate));
+                            simple_impl_data.push((impl_item, imp, cleaned_path));
                         } else {
                             // Check printed_ids *before* adding to generic list
                             if !self.printed_ids.contains(&impl_item.id) {
@@ -2540,11 +2540,21 @@ impl<'a> DocPrinter<'a> {
                 }
             }
 
-            // Print simple impls as a list first
-            if !simple_impls.is_empty() {
-                simple_impls.sort(); // Sort alphabetically
-                for cleaned_path in &simple_impls {
+            // Sort simple impls by their cleaned path string
+            simple_impl_data.sort_by(|a, b| a.2.cmp(&b.2));
+
+            // Print simple impls as a list first AND mark their items as printed
+            if !simple_impl_data.is_empty() {
+                for (impl_item, imp, cleaned_path) in &simple_impl_data {
                     writeln!(self.output, "- `{}`", cleaned_path).unwrap();
+                    // Mark the simple impl item itself as printed
+                    self.printed_ids.insert(impl_item.id);
+                    // ALSO mark all associated items within this simple impl as printed
+                    for assoc_item_id in &imp.items {
+                        if self.selected_ids.contains(assoc_item_id) {
+                            self.printed_ids.insert(*assoc_item_id);
+                        }
+                    }
                 }
                 writeln!(self.output).unwrap(); // Add blank line after list
             }
@@ -2830,18 +2840,21 @@ impl<'a> DocPrinter<'a> {
             // writeln!(self.output, "\n{} Associated Constants\n", "#".repeat(sub_section_level + 1)).unwrap(); // No sub-sub-header
             for id in assoc_consts {
                 self.print_associated_item_summary(id, sub_section_level);
+                self.printed_ids.insert(*id); // Mark printed here too
             }
         }
         if !assoc_types.is_empty() {
             // writeln!(self.output, "\n{} Associated Types\n", "#".repeat(sub_section_level + 1)).unwrap();
             for id in assoc_types {
                 self.print_associated_item_summary(id, sub_section_level);
+                self.printed_ids.insert(*id); // Mark printed here too
             }
         }
         if !assoc_fns.is_empty() {
             // writeln!(self.output, "\n{} Associated Functions\n", "#".repeat(sub_section_level + 1)).unwrap();
             for id in assoc_fns {
                 self.print_associated_item_summary(id, sub_section_level);
+                self.printed_ids.insert(*id); // Mark printed here too
             }
         }
     }
