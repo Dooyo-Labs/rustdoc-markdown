@@ -29,7 +29,7 @@ use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
     Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
-}; // Removed Module import
+};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 // Removed unused imports
@@ -1592,7 +1592,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
             name: crate_name, ..
         } => format!("extern crate {}", crate_name),
         ItemEnum::Use(u) => {
-            // TODO: format Use statement better
+            // TODO: format Use statement better - this shouldn't be printed anyway
             format!("use {}", u.name)
         }
         ItemEnum::ExternType => format!("extern type {}", name),
@@ -2903,7 +2903,8 @@ impl<'a> DocPrinter<'a> {
                             | ItemKind::Variant
                             | ItemKind::StructField
                             | ItemKind::AssocConst
-                            | ItemKind::AssocType => continue,
+                            | ItemKind::AssocType
+                            | ItemKind::Use => continue, // Skip Use items here too
                             _ => {}
                         }
                         items_by_kind.entry(kind).or_default().push(*id);
@@ -2933,7 +2934,7 @@ impl<'a> DocPrinter<'a> {
                     (ItemKind::Static, "Statics"),
                     (ItemKind::Constant, "Constants"),
                     (ItemKind::ExternCrate, "External Crates"),
-                    (ItemKind::Use, "Imports"),
+                    // (ItemKind::Use, "Imports"), // REMOVED Use/Imports section
                     (ItemKind::ExternType, "External Types"),
                     (ItemKind::Primitive, "Primitives"), // Unlikely unless re-exported
                 ];
@@ -2945,13 +2946,6 @@ impl<'a> DocPrinter<'a> {
                         if ids.is_empty() {
                             continue;
                         } // Skip empty sections
-
-                        // Combine macro kinds under one header if needed (already done by map structure if ProcMacro maps to Macro kind)
-                        // let display_header_name = if kind == ItemKind::ProcAttribute || kind == ItemKind::ProcDerive {
-                        //     "Macros" // Group proc macros under Macros visually? Or keep separate? Keeping separate for now.
-                        // } else {
-                        //     header_name
-                        // };
 
                         writeln!(
                             self.output,
@@ -3140,9 +3134,9 @@ impl<'a> DocPrinter<'a> {
         let mut unprinted_ids = Vec::new();
         for id in self.selected_ids {
             if !self.printed_ids.contains(id) {
-                // Skip impl items as they are handled under their target types
+                // Skip impl items and use items as they are handled implicitly or ignored
                 if let Some(item) = self.krate.index.get(id) {
-                    if !matches!(item.inner, ItemEnum::Impl(_)) {
+                    if !matches!(item.inner, ItemEnum::Impl(_) | ItemEnum::Use { .. }) {
                         unprinted_ids.push(*id);
                     }
                 }
