@@ -2153,16 +2153,16 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
         }
         ItemEnum::Function(f) => {
             // Simplified version for the header: no attrs, no where clause
-            let mut decl = String::new();
-            write!(decl, "fn {}", name).unwrap();
+            let mut code = String::new();
+            write!(code, "fn {}", name).unwrap();
             // Include only param generics here
             write!(
-                decl,
+                code,
                 "{}",
                 format_generics_params_only(&f.generics.params, krate)
             )
             .unwrap();
-            write!(decl, "(").unwrap();
+            write!(code, "(").unwrap();
             let args_str = f
                 .sig
                 .inputs
@@ -2170,15 +2170,15 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
                 .map(|(n, t)| format!("{}: {}", n, format_type(t, krate))) // Use arg name from tuple
                 .collect::<Vec<_>>()
                 .join(", ");
-            write!(decl, "{}", args_str).unwrap();
+            write!(code, "{}", args_str).unwrap();
             if f.sig.is_c_variadic {
-                write!(decl, ", ...").unwrap();
+                write!(code, ", ...").unwrap();
             }
-            write!(decl, ")").unwrap();
+            write!(code, ")").unwrap();
             if let Some(output_type) = &f.sig.output {
-                write!(decl, " -> {}", format_type(output_type, krate)).unwrap();
+                write!(code, " -> {}", format_type(output_type, krate)).unwrap();
             }
-            decl
+            code
         }
         ItemEnum::TypeAlias(ta) => format!(
             "type {}{}",
@@ -2502,7 +2502,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
         .join(", ");
     write!(code, "{}", args_str).unwrap();
     if f.sig.is_c_variadic {
-        write!(decl, ", ...").unwrap();
+        write!(code, ", ...").unwrap();
     }
     write!(code, ")").unwrap();
 
