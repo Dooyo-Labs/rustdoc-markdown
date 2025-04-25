@@ -2460,7 +2460,7 @@ impl<'a> DocPrinter<'a> {
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
     fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item, item_level: usize) {
-        let target_name = target_item.name.as_deref().unwrap_or_else(|| {
+        let _target_name = target_item.name.as_deref().unwrap_or_else(|| {
             match &target_item.inner {
                 ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
                 _ => "{unknown_primitive}", // Should not happen if called correctly
@@ -2481,19 +2481,21 @@ impl<'a> DocPrinter<'a> {
 
         // --- Inherent Impls ---
         if !inherent_impls.is_empty() {
-            writeln!(
-                self.output,
-                "{} Implementations for `{}`\n", // Added target name, Add newline after header
-                "#".repeat(impl_section_level),
-                target_name
-            )
-            .unwrap();
+            // REMOVED: Inherent Impls header
+            // writeln!(
+            //     self.output,
+            //     "{} Implementations for `{}`\n", // Add newline after header
+            //     "#".repeat(impl_section_level),
+            //     target_name
+            // )
+            // .unwrap();
             for impl_item in inherent_impls {
                 // Check printed_ids *before* printing the block
                 if self.printed_ids.contains(&impl_item.id) {
                     continue;
                 }
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    // Pass the level where the "Implementations" header *would* have been
                     self.print_impl_block_details(impl_item, imp, impl_section_level);
                 }
             }
@@ -2503,9 +2505,9 @@ impl<'a> DocPrinter<'a> {
         if !trait_impls.is_empty() {
             writeln!(
                 self.output,
-                "{} Trait Implementations for `{}`\n", // Added target name, Add newline after header
+                "{} Trait Implementations for `{}`\n", // Keep this header, Add newline after header
                 "#".repeat(impl_section_level),
-                target_name
+                _target_name // Use the name we got earlier
             )
             .unwrap();
 
@@ -2779,7 +2781,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the details of a specific impl block (header, associated items).
-    /// `section_level` is the level of the "Implementations" or "Trait Implementations" header (e.g., 4).
+    /// `section_level` is the level where the impl header should be printed (e.g., 4 for `####`).
     fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl, section_level: usize) {
         // Mark as printed *now* before printing details
         if !self.printed_ids.insert(impl_item.id) {
@@ -2787,9 +2789,9 @@ impl<'a> DocPrinter<'a> {
         }
 
         let impl_header = self.format_impl_decl(imp);
-        let impl_header_level = section_level + 1; // Impl block level is section_level + 1
+        let impl_header_level = section_level; // Impl block header uses the provided section level directly
 
-        // Print the impl block header (e.g. ##### `impl ...`)
+        // Print the impl block header (e.g. #### `impl ...`)
         writeln!(
             self.output,
             "{} `{}`\n", // Add newline after header
@@ -2827,8 +2829,9 @@ impl<'a> DocPrinter<'a> {
         }
 
         // Print associated items using the dedicated detail printer
-        // No extra sub-headers needed here, print_associated_item_summary already uses appropriate level
-        let sub_section_level = impl_header_level; // Associated items details start at impl_header_level + 1
+        // The level passed to print_associated_item_summary determines its header level
+        // The associated item header level will be impl_header_level + 1
+        let sub_section_level = impl_header_level; // This is the level *containing* the associated items
 
         if !assoc_consts.is_empty() {
             // writeln!(self.output, "\n{} Associated Constants\n", "#".repeat(sub_section_level + 1)).unwrap(); // No sub-sub-header
