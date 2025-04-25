@@ -951,6 +951,15 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
 
 // --- Formatting Helpers ---
 
+/// Indents each line of a string by the specified amount.
+fn indent_string(s: &str, amount: usize) -> String {
+    let prefix = " ".repeat(amount);
+    s.lines()
+        .map(|line| format!("{}{}", prefix, line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn format_id_path(id: &Id, krate: &Crate) -> String {
     krate
         .paths
@@ -1335,22 +1344,28 @@ fn format_generics_full(generics: &Generics, krate: &Crate) -> String {
     }
 
     let mut s = String::new();
-    if !generics.params.is_empty() {
-        s.push('<');
-        let params_str = generics
-            .params
-            .iter()
-            .map(|p| format_generic_param_def(p, krate))
-            .collect::<Vec<_>>()
-            .join(", ");
-        s.push_str(&params_str);
-        s.push('>');
-    }
+    let params_str = if !generics.params.is_empty() {
+        format!(
+            "<{}>",
+            generics
+                .params
+                .iter()
+                .map(|p| format_generic_param_def(p, krate))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    } else {
+        String::new()
+    };
 
-    if !generics.where_predicates.is_empty() {
-        let where_clause = format_generics_where_only(&generics.where_predicates, krate);
+    let where_clause = format_generics_where_only(&generics.where_predicates, krate);
+
+    if !params_str.is_empty() {
+        write!(s, "{}", params_str).unwrap();
+    }
+    if !where_clause.is_empty() {
         // Add newline and indent if params were also present and where clause is multiline
-        if !generics.params.is_empty() && where_clause.contains('\n') {
+        if !params_str.is_empty() && where_clause.contains('\n') {
             write!(s, "\n  {}", where_clause).unwrap();
         } else {
             write!(s, " {}", where_clause).unwrap(); // Append single line where clause or first line of multiline
@@ -1555,17 +1570,19 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
     let mut code = String::new();
     write!(code, "pub struct {}", name).unwrap();
     // Use full generics here, including where clause
-    write!(code, "{}", format_generics_full(&s.generics, krate)).unwrap();
+    let generics_str = format_generics_full(&s.generics, krate);
+    let where_is_multiline = generics_str.contains("where\n");
+    write!(code, "{}", generics_str).unwrap();
 
     match &s.kind {
         StructKind::Plain { fields, .. } => {
             // fields_stripped ignored
-            // Check if generics caused a newline before deciding where to put opening brace
-            if code.ends_with('>') {
-                writeln!(code, " {{").unwrap(); // Generics on same line
+            if where_is_multiline {
+                write!(code, " {{").unwrap(); // Open brace on same line as multiline where
             } else {
-                write!(code, " {{").unwrap(); // No generics or multiline generics
+                write!(code, " {{").unwrap(); // Open brace on same line as generics or no generics
             }
+
             if !fields.is_empty() {
                 write!(code, "\n").unwrap();
             }
@@ -1582,6 +1599,9 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                         .unwrap();
                     }
                 }
+            }
+            if !fields.is_empty() && !code.ends_with('\n') {
+                writeln!(code).unwrap();
             }
             write!(code, "}}").unwrap();
         }
@@ -1604,14 +1624,15 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                 })
                 .collect();
             write!(code, "{}", field_types.join(", ")).unwrap();
+            write!(code, ")").unwrap();
             // Add semicolon only if where clause didn't add one implicitly via multiline format
-            if !code.ends_with("where") && !code.contains("where\n") {
-                write!(code, ");").unwrap();
+            if !where_is_multiline {
+                write!(code, ";").unwrap();
             }
         }
         StructKind::Unit => {
             // Add semicolon only if where clause didn't add one implicitly
-            if !code.ends_with("where") && !code.contains("where\n") {
+            if !where_is_multiline {
                 write!(code, ";").unwrap();
             }
         }
@@ -1625,14 +1646,20 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Enum item should have a name");
     let mut code = String::new();
     write!(code, "pub enum {}", name).unwrap();
-    write!(code, "{}", format_generics_full(&e.generics, krate)).unwrap();
+    let generics_str = format_generics_full(&e.generics, krate);
+    let where_is_multiline = generics_str.contains("where\n");
+    write!(code, "{}", generics_str).unwrap();
+
     // Check if generics caused a newline before deciding where to put opening brace
-    if code.ends_with('>') || code.contains("where\n") {
-        writeln!(code, " {{").unwrap();
+    if where_is_multiline {
+        write!(code, " {{").unwrap();
     } else {
         write!(code, " {{").unwrap();
     }
 
+    if !e.variants.is_empty() {
+        write!(code, "\n").unwrap();
+    }
     for variant_id in &e.variants {
         if let Some(variant_item) = krate.index.get(variant_id) {
             if let ItemEnum::Variant(variant_data) = &variant_item.inner {
@@ -1651,7 +1678,9 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
             }
         }
     }
-
+    if !e.variants.is_empty() && !code.ends_with('\n') {
+        writeln!(code).unwrap();
+    }
     write!(code, "}}").unwrap();
     code
 }
@@ -1705,7 +1734,13 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
     if t.items.is_empty() {
         write!(code, " {{}}").unwrap();
     } else {
-        writeln!(code, " {{").unwrap();
+        if where_clause.contains('\n') {
+            write!(code, " {{").unwrap(); // Open brace on same line as multiline where
+        } else {
+            write!(code, " {{").unwrap(); // Open brace on same line as signature
+        }
+        writeln!(code).unwrap();
+
         // Print associated items (simple versions)
         for item_id in &t.items {
             if let Some(assoc_item) = krate.index.get(item_id) {
@@ -1764,6 +1799,9 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                 }
             }
         }
+        if !code.ends_with('\n') {
+            writeln!(code).unwrap();
+        }
         write!(code, "}}").unwrap();
     }
     code
@@ -1794,7 +1832,9 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
     // Core signature
     write!(code, "fn {}", name).unwrap();
     // Include full generics here, including where clause
-    write!(code, "{}", format_generics_full(&f.generics, krate)).unwrap();
+    let generics_str = format_generics_full(&f.generics, krate);
+    let where_is_multiline = generics_str.contains("where\n");
+    write!(code, "{}", generics_str).unwrap();
 
     // Parameters
     write!(code, "(").unwrap();
@@ -1818,14 +1858,13 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
 
     // Add semicolon or body indicator based on if it has implementation
     if f.has_body {
-        // Check if where clause ended up on a newline
-        if code.ends_with("where") || code.contains("where\n") {
-            write!(code, " {{ ... }}").unwrap(); // Body on next line after multi-line where
+        if where_is_multiline {
+            write!(code, " {{ ... }}").unwrap(); // Body on same line as multiline where
         } else {
             write!(code, " {{ ... }}").unwrap(); // Body on same line
         }
-    } else if !code.ends_with(';') {
-        // Add semicolon if it's just a declaration and doesn't already end with one (e.g., from where clause)
+    } else if !where_is_multiline {
+        // Add semicolon if it's just a declaration and doesn't already end with one (e.g., from multiline where clause)
         write!(code, ";").unwrap();
     }
 
@@ -2168,7 +2207,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             for id in assoc_consts {
-                self.print_associated_item_details(id);
+                self.print_associated_item_summary(id);
             }
         }
         if !assoc_types.is_empty() {
@@ -2179,7 +2218,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             for id in assoc_types {
-                self.print_associated_item_details(id);
+                self.print_associated_item_summary(id);
             }
         }
         if !assoc_fns.is_empty() {
@@ -2190,29 +2229,19 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             for id in assoc_fns {
-                self.print_associated_item_details(id);
+                self.print_associated_item_summary(id);
             }
         }
     }
 
-    /// Prints the details for a single associated item (const, type, function).
-    fn print_associated_item_details(&mut self, assoc_item_id: &Id) {
+    /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
+    /// Does NOT include the markdown header.
+    fn generate_associated_item_summary(&mut self, assoc_item_id: &Id) -> Option<String> {
         if !self.selected_ids.contains(assoc_item_id) {
-            return;
+            return None;
         }
-        // Do not mark as printed here, let print_item_details handle it if called standalone
-
         if let Some(item) = self.krate.index.get(assoc_item_id) {
-            let declaration = generate_item_declaration(item, self.krate);
-
-            // Print Header (##### `declaration`) - Note: using +4 level assuming parent is ####
-            writeln!(
-                self.output,
-                "{} `{}`\n",                        // Add newline after header
-                "#".repeat(self.current_level + 4), // Assoc Item level is #####
-                declaration
-            )
-            .unwrap();
+            let mut summary = String::new();
 
             // Add code block for associated functions if they have attrs/where clauses
             if let ItemEnum::Function(f) = &item.inner {
@@ -2223,14 +2252,14 @@ impl<'a> DocPrinter<'a> {
                 let has_where = !f.generics.where_predicates.is_empty();
                 if has_attrs || has_where {
                     let code = generate_function_code_block(item, f, self.krate);
-                    writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
+                    writeln!(summary, "```rust\n{}\n```\n", code).unwrap();
                 }
             }
 
             // Print Documentation
             if let Some(docs) = &item.docs {
                 if !docs.trim().is_empty() {
-                    writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                    writeln!(summary, "{}\n", docs.trim()).unwrap();
                 }
             }
 
@@ -2238,14 +2267,9 @@ impl<'a> DocPrinter<'a> {
             match &item.inner {
                 // Use correct fields { type_, value }
                 ItemEnum::AssocConst { type_, value } => {
-                    writeln!(
-                        self.output,
-                        "_Type: `{}`_\n",
-                        format_type(type_, self.krate)
-                    )
-                    .unwrap();
+                    writeln!(summary, "_Type: `{}`_", format_type(type_, self.krate)).unwrap();
                     if let Some(val) = value {
-                        writeln!(self.output, "_Default: `{}`_\n", val).unwrap();
+                        writeln!(summary, "_Default: `{}`_\n", val).unwrap(); // Add newline
                     }
                 }
                 ItemEnum::AssocType { bounds, type_, .. } => {
@@ -2256,18 +2280,39 @@ impl<'a> DocPrinter<'a> {
                             .map(|b| format_generic_bound(b, self.krate))
                             .collect::<Vec<_>>()
                             .join(" + ");
-                        writeln!(self.output, "_Bounds: `{}`_\n", bounds_str).unwrap();
+                        writeln!(summary, "_Bounds: `{}`_", bounds_str).unwrap();
                     }
                     if let Some(ty) = type_ {
-                        writeln!(
-                            self.output,
-                            "_Default: `{}`_\n",
-                            format_type(ty, self.krate)
-                        )
-                        .unwrap();
+                        writeln!(summary, "_Default: `{}`_\n", format_type(ty, self.krate))
+                            .unwrap(); // Add newline
                     }
                 }
                 _ => {}
+            }
+            Some(summary)
+        } else {
+            None
+        }
+    }
+
+    /// Prints the header and summary for a single associated item (const, type, function).
+    fn print_associated_item_summary(&mut self, assoc_item_id: &Id) {
+        if let Some(item) = self.krate.index.get(assoc_item_id) {
+            if let Some(summary) = self.generate_associated_item_summary(assoc_item_id) {
+                let declaration = generate_item_declaration(item, self.krate);
+                // Print Header (##### `declaration`) - Note: using +4 level assuming parent is ####
+                writeln!(
+                    self.output,
+                    "{} `{}`\n",                        // Add newline after header
+                    "#".repeat(self.current_level + 4), // Assoc Item level is #####
+                    declaration
+                )
+                .unwrap();
+                // Print the generated summary
+                if !summary.trim().is_empty() {
+                    writeln!(self.output, "{}", summary.trim()).unwrap();
+                }
+                writeln!(self.output).unwrap(); // Ensure a blank line afterwards
             }
         }
     }
@@ -2370,14 +2415,18 @@ impl<'a> DocPrinter<'a> {
             // Print generic impls (complex ones) using their dedicated block printer
             for impl_item in generic_impl_items {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    let trait_path = imp.trait_.as_ref().unwrap();
-                    writeln!(
-                        self.output,
-                        "- `{}`",
-                        clean_trait_path(&format_path(trait_path, self.krate))
-                    )
-                    .unwrap();
-                    self.print_impl_trait_block(impl_item, imp);
+                    if let Some(trait_path) = &imp.trait_ {
+                        let trait_name = clean_trait_path(&format_path(trait_path, self.krate));
+                        writeln!(self.output, "- `{}`", trait_name).unwrap(); // List item marker
+
+                        if let Some(impl_block_str) =
+                            self.generate_impl_trait_block(impl_item, imp)
+                        {
+                            // Indent the generated code block by 4 spaces for list context
+                            let indented_block = indent_string(&impl_block_str, 4);
+                            writeln!(self.output, "```rust\n{}\n```\n", indented_block).unwrap();
+                        }
+                    }
                 }
             }
         }
@@ -2441,104 +2490,127 @@ impl<'a> DocPrinter<'a> {
         impl_header
     }
 
-    /// Helper to format an impl block or trait impl.
+    /// Helper to format an impl block or trait impl declaration line.
     fn format_impl_decl(&self, imp: &Impl) -> String {
-        let mut impl_header = String::new();
+        let mut decl = String::new();
         if imp.is_unsafe {
-            write!(impl_header, "unsafe ").unwrap();
+            write!(decl, "unsafe ").unwrap();
+        }
+        write!(decl, "impl").unwrap();
+
+        // Add generics params <...>
+        let generics_params = format_generics_params_only(&imp.generics.params, self.krate);
+        if !generics_params.is_empty() {
+            write!(decl, "{}", generics_params).unwrap();
         }
 
-        if imp.trait_.is_none() {
-            write!(impl_header, "impl {}", format_type(&imp.for_, self.krate)).unwrap();
-        } else {
-            write!(impl_header, "impl").unwrap();
-        }
-
-        // Print impl generics only if they exist
-        let impl_generics_str = format_generics_full(&imp.generics, self.krate);
-        if !impl_generics_str.is_empty() && !impl_generics_str.starts_with('\n') {
-            write!(impl_header, "{} ", impl_generics_str).unwrap(); // Space after generics if single line
-        } else if !impl_generics_str.is_empty() {
-            write!(impl_header, "{}", impl_generics_str).unwrap(); // Multiline generics include spacing
-        }
-
+        // Add Trait for Type
         if let Some(trait_path) = &imp.trait_ {
-            // Use format_path with the Path struct
-            write!(impl_header, "{} for ", format_path(trait_path, self.krate)).unwrap();
+            write!(decl, " {} for", format_path(trait_path, self.krate)).unwrap();
         }
-        write!(impl_header, "{}", format_type(&imp.for_, self.krate)).unwrap();
+        write!(decl, " {}", format_type(&imp.for_, self.krate)).unwrap();
 
-        // Append where clause from impl generics if needed and not already printed *within the header line*
-        // (Multi-line where clauses were handled by format_generics_full)
-        if !imp.generics.where_predicates.is_empty()
-            && !impl_generics_str.contains("where\n")
-            && !impl_generics_str.is_empty()
-            && impl_generics_str.ends_with('>')
-        {
-            let where_clause =
-                format_generics_where_only(&imp.generics.where_predicates, self.krate);
-            write!(impl_header, "\n  {}", where_clause).unwrap(); // Add multiline where clause
-        } else if !imp.generics.where_predicates.is_empty() && impl_generics_str.is_empty() {
-            let where_clause =
-                format_generics_where_only(&imp.generics.where_predicates, self.krate);
-            write!(impl_header, " {}", where_clause).unwrap(); // Add single line where clause
+        // Add where clause
+        let where_clause = format_generics_where_only(&imp.generics.where_predicates, self.krate);
+        if !where_clause.is_empty() {
+            if where_clause.contains('\n') {
+                write!(decl, "\n  {}", where_clause).unwrap(); // Multiline where
+            } else {
+                write!(decl, " {}", where_clause).unwrap(); // Single line where
+            }
         }
-        impl_header
+        decl
     }
 
-    /// Prints the details of a specific impl block (header, associated items).
-    fn print_impl_trait_block(&mut self, impl_item: &Item, imp: &Impl) {
-        // Mark as printed *now* before printing details
+    /// Generates the full code block string for a trait impl, including associated items.
+    fn generate_impl_trait_block(&mut self, impl_item: &Item, imp: &Impl) -> Option<String> {
+        // Mark as printed *now*
         if !self.printed_ids.insert(impl_item.id) {
-            return;
+            return None;
         }
 
-        let impl_header = self.format_impl_decl(imp);
+        let mut code = String::new();
+        let impl_header = self.format_impl_decl(imp); // Get the potentially multi-line header
 
-        writeln!(
-            self.output,
-            "```rust\n{} {{\n",
-            impl_header.trim() // Trim potential trailing space if no where clause added
-        )
-        .unwrap();
+        writeln!(code, "{} {{", impl_header).unwrap(); // Add opening brace
 
-        // Print associated items within this impl block
-        let mut assoc_consts = vec![];
-        let mut assoc_types = vec![];
+        // Process associated items
+        let mut assoc_items_content = String::new();
+        let mut has_items = false;
+
         for assoc_item_id in &imp.items {
-            // Important: Only print associated items that are *selected*
             if !self.selected_ids.contains(assoc_item_id) {
-                continue;
+                continue; // Skip unselected items
             }
-
             if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
+                has_items = true; // Mark that we found at least one selected item
                 match &assoc_item.inner {
-                    ItemEnum::AssocConst { .. } => assoc_consts.push(assoc_item_id),
-                    ItemEnum::AssocType { .. } => assoc_types.push(assoc_item_id),
-                    ItemEnum::Function(_) => {}
-                    _ => {
-                        unreachable!()
-                    } // Should not happen in impl block
+                    ItemEnum::AssocConst { type_, value, .. } => {
+                        write!(
+                            assoc_items_content,
+                            "    const {}: {}",
+                            assoc_item.name.as_deref().unwrap_or("_"),
+                            format_type(type_, self.krate)
+                        )
+                        .unwrap();
+                        if let Some(val) = value {
+                            write!(assoc_items_content, " = {};", val).unwrap();
+                        } else {
+                            write!(assoc_items_content, ";").unwrap();
+                        }
+                        writeln!(assoc_items_content).unwrap();
+                    }
+                    ItemEnum::AssocType { bounds, type_, .. } => {
+                        write!(
+                            assoc_items_content,
+                            "    type {}",
+                            assoc_item.name.as_deref().unwrap_or("_")
+                        )
+                        .unwrap();
+                        if !bounds.is_empty() {
+                            let bounds_str = bounds
+                                .iter()
+                                .map(|b| format_generic_bound(b, self.krate))
+                                .collect::<Vec<_>>()
+                                .join(" + ");
+                            write!(assoc_items_content, ": {}", bounds_str).unwrap();
+                        }
+                        if let Some(ty) = type_ {
+                            write!(assoc_items_content, " = {}", format_type(ty, self.krate))
+                                .unwrap();
+                        }
+                        write!(assoc_items_content, ";").unwrap();
+                        writeln!(assoc_items_content).unwrap();
+                    }
+                    ItemEnum::Function(f) => {
+                        // Generate the full function block if selected
+                        let func_block = generate_function_code_block(assoc_item, f, self.krate);
+                        // Indent the function block
+                        writeln!(assoc_items_content, "{}", indent_string(&func_block, 4))
+                            .unwrap();
+                    }
+                    _ => {} // Ignore others
                 }
             }
         }
 
-        // Print associated items using the dedicated detail printer
-        // No extra sub-headers needed here, print_associated_item_details already uses #####
-        if !assoc_consts.is_empty() {
-            // writeln!(self.output, "\n###### Associated Constants\n").unwrap(); // No sub-sub-header
-            for id in assoc_consts {
-                self.print_associated_item_details(id);
+        if has_items {
+            // Add a newline before the first item if the header was multi-line
+            if impl_header.contains('\n') {
+                writeln!(code).unwrap();
             }
-        }
-        if !assoc_types.is_empty() {
-            // writeln!(self.output, "\n###### Associated Types\n").unwrap();
-            for id in assoc_types {
-                self.print_associated_item_details(id);
+            write!(code, "{}", assoc_items_content).unwrap();
+            // Add a newline before the closing brace if needed
+            if !code.ends_with('\n') {
+                writeln!(code).unwrap();
             }
+        } else if impl_header.contains('\n') {
+            // If no items but multiline header, add newline before closing brace
+            writeln!(code).unwrap();
         }
 
-        writeln!(self.output, "\n}}\n```\n").unwrap();
+        write!(code, "}}").unwrap(); // Add closing brace
+        Some(code)
     }
 
     /// Prints the details of a specific impl block (header, associated items).
@@ -2580,23 +2652,23 @@ impl<'a> DocPrinter<'a> {
         }
 
         // Print associated items using the dedicated detail printer
-        // No extra sub-headers needed here, print_associated_item_details already uses #####
+        // No extra sub-headers needed here, print_associated_item_summary already uses #####
         if !assoc_consts.is_empty() {
             // writeln!(self.output, "\n###### Associated Constants\n").unwrap(); // No sub-sub-header
             for id in assoc_consts {
-                self.print_associated_item_details(id);
+                self.print_associated_item_summary(id);
             }
         }
         if !assoc_types.is_empty() {
             // writeln!(self.output, "\n###### Associated Types\n").unwrap();
             for id in assoc_types {
-                self.print_associated_item_details(id);
+                self.print_associated_item_summary(id);
             }
         }
         if !assoc_fns.is_empty() {
             // writeln!(self.output, "\n###### Associated Functions\n").unwrap();
             for id in assoc_fns {
-                self.print_associated_item_details(id);
+                self.print_associated_item_summary(id);
             }
         }
     }
