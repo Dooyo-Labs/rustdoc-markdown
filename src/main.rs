@@ -2694,6 +2694,59 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
+    /// Prints the details for a single enum variant field, only if it has documentation.
+    /// Returns true if the field was printed, false otherwise.
+    /// `section_level` is the header level of the "Variant Fields" section (e.g., 5 for `#####`).
+    fn print_variant_field_details(&mut self, field_id: &Id, section_level: usize) -> bool {
+        if !self.selected_ids.contains(field_id) || self.printed_ids.contains(field_id) {
+            return false; // Skip unselected or already printed
+        }
+
+        if let Some(item) = self.krate.index.get(field_id) {
+            // Only proceed if the field has documentation
+            if let Some(docs) = &item.docs {
+                if docs.trim().is_empty() {
+                    // If no docs, the ID should already be marked printed in print_variant_details
+                    return false;
+                }
+
+                // Mark as printed *before* printing details
+                self.printed_ids.insert(*field_id);
+
+                if let ItemEnum::StructField(_field_type) = &item.inner {
+                    let name = item.name.as_deref().unwrap_or("_"); // Might be _ for tuple fields
+                    let field_header_level = section_level + 1; // Field level is section_level + 1
+
+                    // Header: e.g., ###### `field_name`
+                    // Use field index for tuple fields if name is "_" (name is often '0', '1' etc.)
+                    let header_name = if name == "_" || name.chars().all(|c| c.is_ascii_digit()) {
+                        format!("Field {}", name)
+                    } else {
+                        name.to_string()
+                    };
+                    writeln!(
+                        self.output,
+                        "{} `{}`\n", // Add newline after header
+                        "#".repeat(field_header_level),
+                        header_name
+                    )
+                    .unwrap();
+
+                    // Docs (with adjusted headers - we already checked non-empty)
+                    let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
+                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+
+                    // Type (optional)
+                    // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
+                    return true; // Field was printed
+                }
+            }
+        }
+        // Mark as printed even if item lookup failed
+        self.printed_ids.insert(*field_id);
+        false
+    }
+
     /// Checks if any selected variant within an enum has documentation.
     fn has_documented_variants(&self, e: &Enum) -> bool {
         e.variants.iter().any(|variant_id| {
@@ -2707,13 +2760,13 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the "Variants" section for an enum, only if needed.
-    /// Also marks variants without documentation as printed.
+    /// Also marks variants *and their fields* without documentation as printed.
     /// `item_level` is the header level of the enum itself (e.g., 3 for `###`).
     fn print_enum_variants(&mut self, _item: &Item, e: &Enum, item_level: usize) {
-        let mut has_documented_variant_to_print = false;
+        let mut has_documented_variant_or_field_to_print = false;
         let mut printed_any_variant = false;
 
-        // First pass: Mark undocumented variants as printed and check if any documented ones will be printed.
+        // First pass: Mark undocumented variants/fields as printed and check if any documented ones will be printed.
         for variant_id in &e.variants {
             if !self.selected_ids.contains(variant_id) {
                 continue; // Skip unselected variants
@@ -2721,13 +2774,76 @@ impl<'a> DocPrinter<'a> {
 
             if let Some(item) = self.krate.index.get(variant_id) {
                 let has_docs = item.docs.as_ref().map_or(false, |d| !d.trim().is_empty());
-                if has_docs {
-                    // Check if it's already printed to avoid double counting
+                let mut has_documented_field = false;
+
+                // Check fields within the variant
+                if let ItemEnum::Variant(v) = &item.inner {
+                    match &v.kind {
+                        VariantKind::Plain => {} // No fields
+                        VariantKind::Tuple(fields) => {
+                            for field_id_opt in fields {
+                                if let Some(field_id) = field_id_opt {
+                                    if self.selected_ids.contains(field_id) {
+                                        let field_has_docs = self
+                                            .krate
+                                            .index
+                                            .get(field_id)
+                                            .map_or(false, |f_item| {
+                                                f_item
+                                                    .docs
+                                                    .as_ref()
+                                                    .map_or(false, |d| !d.trim().is_empty())
+                                            });
+                                        if field_has_docs {
+                                            if !self.printed_ids.contains(field_id) {
+                                                has_documented_field = true;
+                                            }
+                                        } else {
+                                            self.printed_ids.insert(*field_id); // Mark undocumented field printed
+                                        }
+                                    } else {
+                                        // Mark unselected field id printed if present in tuple
+                                        self.printed_ids.insert(*field_id);
+                                    }
+                                }
+                            }
+                        }
+                        VariantKind::Struct { fields, .. } => {
+                            for field_id in fields {
+                                if self.selected_ids.contains(field_id) {
+                                    let field_has_docs = self
+                                        .krate
+                                        .index
+                                        .get(field_id)
+                                        .map_or(false, |f_item| {
+                                            f_item
+                                                .docs
+                                                .as_ref()
+                                                .map_or(false, |d| !d.trim().is_empty())
+                                        });
+                                    if field_has_docs {
+                                        if !self.printed_ids.contains(field_id) {
+                                            has_documented_field = true;
+                                        }
+                                    } else {
+                                        self.printed_ids.insert(*field_id); // Mark undocumented field printed
+                                    }
+                                } else {
+                                    // Mark unselected field id printed
+                                    self.printed_ids.insert(*field_id);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if has_docs || has_documented_field {
+                    // Check if the variant itself is already printed to avoid double counting
                     if !self.printed_ids.contains(variant_id) {
-                        has_documented_variant_to_print = true;
+                        has_documented_variant_or_field_to_print = true;
                     }
                 } else {
-                    // Mark undocumented variant as printed immediately
+                    // Mark undocumented variant (with no documented fields) as printed immediately
                     self.printed_ids.insert(*variant_id);
                 }
             } else {
@@ -2736,8 +2852,8 @@ impl<'a> DocPrinter<'a> {
             }
         }
 
-        // Only print the "Variants" section if there's a documented variant to print or stripped variants exist
-        if !has_documented_variant_to_print && !e.has_stripped_variants {
+        // Only print the "Variants" section if there's a documented variant/field to print or stripped variants exist
+        if !has_documented_variant_or_field_to_print && !e.has_stripped_variants {
             return;
         }
 
@@ -2749,7 +2865,7 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Second pass: Print details for documented variants
+        // Second pass: Print details for variants that have docs or contain documented fields
         for variant_id in &e.variants {
             if self.print_variant_details(variant_id, variants_header_level) {
                 printed_any_variant = true;
@@ -2765,8 +2881,8 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints the details for a single enum variant, only if it has documentation.
-    /// Returns true if the variant was printed, false otherwise.
+    /// Prints the details for a single enum variant. Includes variant docs and docs for its fields if present.
+    /// Returns true if the variant was printed (because it or its fields had docs), false otherwise.
     /// `section_level` is the header level of the "Variants" section (e.g., 4 for `####`).
     fn print_variant_details(&mut self, variant_id: &Id, section_level: usize) -> bool {
         if !self.selected_ids.contains(variant_id) || self.printed_ids.contains(variant_id) {
@@ -2774,34 +2890,125 @@ impl<'a> DocPrinter<'a> {
         }
 
         if let Some(item) = self.krate.index.get(variant_id) {
-            // Only proceed if the variant has documentation
-            if let Some(docs) = &item.docs {
-                if docs.trim().is_empty() {
-                    // Already marked as printed in the first pass of print_enum_variants
-                    return false; // Skip variants without docs
+            if let ItemEnum::Variant(variant_data) = &item.inner {
+                let has_variant_docs = item.docs.as_ref().map_or(false, |d| !d.trim().is_empty());
+                let mut documented_fields = Vec::new();
+                let mut has_stripped_fields = false;
+                let mut printed_any_field = false;
+
+                // Determine fields and check their docs
+                match &variant_data.kind {
+                    VariantKind::Plain => {} // No fields
+                    VariantKind::Tuple(fields) => {
+                        for field_id_opt in fields {
+                            if let Some(field_id) = field_id_opt {
+                                if self.selected_ids.contains(field_id) {
+                                    let field_has_docs = self
+                                        .krate
+                                        .index
+                                        .get(field_id)
+                                        .map_or(false, |f_item| {
+                                            f_item
+                                                .docs
+                                                .as_ref()
+                                                .map_or(false, |d| !d.trim().is_empty())
+                                        });
+                                    if field_has_docs && !self.printed_ids.contains(field_id) {
+                                        documented_fields.push(*field_id);
+                                    } else {
+                                        // Mark unselected or undocumented field printed
+                                        self.printed_ids.insert(*field_id);
+                                    }
+                                }
+                            }
+                        }
+                        // Tuple variants don't have `has_stripped_fields`
+                    }
+                    VariantKind::Struct {
+                        fields,
+                        has_stripped_fields: stripped,
+                    } => {
+                        has_stripped_fields = *stripped;
+                        for field_id in fields {
+                            if self.selected_ids.contains(field_id) {
+                                let field_has_docs = self
+                                    .krate
+                                    .index
+                                    .get(field_id)
+                                    .map_or(false, |f_item| {
+                                        f_item
+                                            .docs
+                                            .as_ref()
+                                            .map_or(false, |d| !d.trim().is_empty())
+                                    });
+                                if field_has_docs && !self.printed_ids.contains(field_id) {
+                                    documented_fields.push(*field_id);
+                                } else {
+                                    // Mark unselected or undocumented field printed
+                                    self.printed_ids.insert(*field_id);
+                                }
+                            } else {
+                                // Mark unselected field printed
+                                self.printed_ids.insert(*field_id);
+                            }
+                        }
+                    }
+                }
+
+                // Only print the variant if it has docs OR it has documented fields to print
+                if !has_variant_docs && documented_fields.is_empty() {
+                    // Mark variant as printed if skipped
+                    self.printed_ids.insert(*variant_id);
+                    return false;
                 }
 
                 // Mark as printed *before* printing details
                 self.printed_ids.insert(*variant_id);
 
-                if let ItemEnum::Variant(variant_data) = &item.inner {
-                    let signature = format_variant_signature(item, variant_data, self.krate);
-                    let variant_header_level = section_level + 1; // Variant level is section_level + 1
+                let signature = format_variant_signature(item, variant_data, self.krate);
+                let variant_header_level = section_level + 1; // Variant level is section_level + 1
 
-                    // Header: e.g., ##### `VariantSignature`
+                // Header: e.g., ##### `VariantSignature`
+                writeln!(
+                    self.output,
+                    "{} `{}`\n", // Add newline after header
+                    "#".repeat(variant_header_level),
+                    signature
+                )
+                .unwrap();
+
+                // Variant Docs (if present)
+                if let Some(docs) = &item.docs {
+                    if !docs.trim().is_empty() {
+                        let adjusted_docs =
+                            adjust_markdown_headers(docs.trim(), variant_header_level);
+                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+                    }
+                }
+
+                // Print documented fields (if any)
+                if !documented_fields.is_empty() || has_stripped_fields {
+                    let field_section_level = variant_header_level + 1; // Fields section is variant_level + 1
                     writeln!(
                         self.output,
-                        "{} `{}`\n", // Add newline after header
-                        "#".repeat(variant_header_level),
-                        signature
+                        "{} Fields\n", // Add newline after header
+                        "#".repeat(field_section_level)
                     )
                     .unwrap();
-
-                    // Docs (with adjusted headers - we already checked non-empty)
-                    let adjusted_docs = adjust_markdown_headers(docs.trim(), variant_header_level);
-                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                    return true; // Variant was printed
+                    for field_id in documented_fields {
+                        if self.print_variant_field_details(&field_id, field_section_level) {
+                            printed_any_field = true;
+                        }
+                    }
+                    if has_stripped_fields {
+                        if printed_any_field {
+                            writeln!(self.output).unwrap(); // Add newline before stripped message
+                        }
+                        writeln!(self.output, "_[Private fields hidden]_").unwrap();
+                    }
                 }
+
+                return true; // Variant (or its fields) was printed
             }
         }
         // Mark as printed even if item lookup failed
@@ -3685,15 +3892,17 @@ impl<'a> DocPrinter<'a> {
         for id in self.selected_ids {
             if !self.printed_ids.contains(id) {
                 // Skip impl items and use items as they are handled implicitly or ignored
+                // Also skip struct fields as they are handled within their containers
                 if let Some(item) = self.krate.index.get(id) {
-                    // Also skip items without names (like unnamed tuple fields often represented by '0')
-                    if !matches!(item.inner, ItemEnum::Impl(_) | ItemEnum::Use { .. })
-                        && item.name.is_some()
+                    if !matches!(
+                        item.inner,
+                        ItemEnum::Impl(_) | ItemEnum::Use { .. } | ItemEnum::StructField(_)
+                    ) && item.name.is_some()
                     {
                         unprinted_ids.push(*id);
                     }
-                    // If it doesn't have a name but is selected & unprinted, mark it printed now to avoid the warning
-                    else if item.name.is_none() {
+                    // If it doesn't have a name or is a StructField but is selected & unprinted, mark it printed now to avoid the warning
+                    else if item.name.is_none() || matches!(item.inner, ItemEnum::StructField(_)) {
                         self.printed_ids.insert(*id);
                     }
                 } else {
