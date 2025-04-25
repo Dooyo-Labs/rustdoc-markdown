@@ -238,8 +238,8 @@ impl IdGraph {
     }
 
     /// Filters the graph to keep only edges that are part of a path leading to the target_leaf_id.
-    /// Returns a tuple: (filtered_graph, reachable_nodes_set).
-    fn filter_to_leaf(&self, target_leaf_id: Id) -> (IdGraph, HashSet<Id>) {
+    /// Returns a new `IdGraph` containing only the filtered edges.
+    fn filter_to_leaf(&self, target_leaf_id: Id) -> IdGraph {
         let mut filtered_graph = IdGraph::new();
         let mut reachable_nodes = HashSet::new(); // Nodes that can reach the target
         let mut queue = VecDeque::new();
@@ -248,6 +248,9 @@ impl IdGraph {
         if self.reverse_adjacency.contains_key(&target_leaf_id) {
             reachable_nodes.insert(target_leaf_id);
             queue.push_back(target_leaf_id);
+        } else {
+            // Target ID doesn't exist or has no incoming edges in the original graph
+            return filtered_graph; // Return empty graph
         }
 
         while let Some(current_id) = queue.pop_front() {
@@ -279,7 +282,7 @@ impl IdGraph {
             }
         }
 
-        (filtered_graph, reachable_nodes)
+        filtered_graph // Return the newly constructed filtered graph
     }
 }
 
@@ -324,7 +327,6 @@ fn dump_node(
     krate: &Crate,
     writer: &mut BufWriter<File>,
     visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
-    reachable_nodes: Option<&HashSet<Id>>, // Optional set of nodes on path to target_leaf_id
     indent: usize,
     prefix: &str, // Prefix like "├── " or "└── "
     parent_label: Option<&EdgeLabel>, // Label connecting this node to its parent
@@ -358,14 +360,7 @@ fn dump_node(
 
     // Get children from the potentially filtered graph and sort them
     if let Some(children) = graph.get_children(&node_id) {
-        let mut sorted_children = children
-            .iter()
-            .filter(|(child_id, _)| {
-                // If filtering by leaf (--dump-to-id), only consider children present in the reachable_nodes set
-                reachable_nodes.map_or(true, |set| set.contains(child_id))
-            })
-            .cloned() // Clone after filtering
-            .collect::<Vec<_>>();
+        let mut sorted_children = children.to_vec(); // Clone to sort
 
         // Sort by target Id primarily, then label for stability
         sorted_children.sort_by_key(|(target_id, label)| (target_id.0, format!("{}", label)));
@@ -379,14 +374,13 @@ fn dump_node(
             };
             let child_indent = indent + 4; // Indent children further
 
-            // Recurse with the same mutable visited set and the reachable_nodes filter
+            // Recurse with the same mutable visited set
             dump_node(
                 *child_id,
                 graph, // Pass the same graph down
                 krate,
                 writer,
                 visited, // Pass mutable reference down
-                reachable_nodes, // Pass the filter set down
                 child_indent,
                 new_prefix,
                 Some(child_label),
@@ -402,7 +396,6 @@ fn dump_graph_subset(
     graph: &IdGraph, // Use the potentially filtered graph
     krate: &Crate,
     root_ids: &HashSet<Id>,
-    reachable_nodes: Option<&HashSet<Id>>, // Pass the filter set if --dump-to-id was used
     output_path: &FilePath,
     dump_description: &str,
 ) -> Result<()> {
@@ -428,17 +421,14 @@ fn dump_graph_subset(
         let mut all_nodes: Vec<_> = graph.adjacency.keys().cloned().collect();
         all_nodes.sort_by_key(|id| id.0);
         for node_id in all_nodes {
-            // Check if already visited AND if it's reachable (if filtering)
-            if !visited.contains(&node_id)
-                && reachable_nodes.map_or(true, |set| set.contains(&node_id))
-            {
+            // Check if already visited
+            if !visited.contains(&node_id) {
                 dump_node(
                     node_id,
                     graph,
                     krate,
                     &mut writer,
                     &mut visited, // Pass mutable reference
-                    reachable_nodes, // Pass filter set
                     0,
                     "", // No prefix for top-level nodes in fallback
                     None,
@@ -448,17 +438,14 @@ fn dump_graph_subset(
     } else {
         writeln!(writer, "Graph Roots ({}):", dump_description)?;
         for root_id in sorted_roots {
-            // Check if already visited AND if it's reachable (if filtering)
-            if !visited.contains(&root_id)
-                && reachable_nodes.map_or(true, |set| set.contains(&root_id))
-            {
+            // Check if already visited
+            if !visited.contains(&root_id) {
                 dump_node(
                     root_id,
                     graph,
                     krate,
                     &mut writer,
                     &mut visited, // Pass mutable reference
-                    reachable_nodes, // Pass filter set
                     0,
                     "", // No prefix for root nodes
                     None,
@@ -4392,37 +4379,28 @@ async fn main() -> Result<()> {
     let (selected_ids, full_graph) = select_items(&krate, &args.paths)?;
 
     // --- Graph Dumping ---
-    // Determine the graph to dump and the set of nodes reachable from the leaf (if --dump-to-id)
-    let (graph_to_dump, reachable_nodes_opt) = if let Some(target_leaf_id) = args.dump_to_id {
+    // Determine the graph to dump. If --dump-to-id is used, filter the graph first.
+    let graph_to_dump = if let Some(target_leaf_id) = args.dump_to_id {
         info!(
             "Filtering graph to include only paths leading to leaf ID: {}",
             target_leaf_id.0
         );
-        if !full_graph.reverse_adjacency.contains_key(&target_leaf_id) {
+        let filtered_graph = full_graph.filter_to_leaf(target_leaf_id);
+        if filtered_graph.edges.is_empty() && !full_graph.edges.is_empty() {
             warn!(
-                "Target leaf ID {} for --dump-to-id not found as a target node in the graph. Dump will be empty.",
+                "Target leaf ID {} for --dump-to-id not found or no paths lead to it in the graph. Dump will be empty.",
                 target_leaf_id.0
             );
-            (IdGraph::new(), Some(HashSet::new())) // Empty graph, empty reachable set
-        } else {
-            let (filtered_graph, reachable_nodes) = full_graph.filter_to_leaf(target_leaf_id);
-            (filtered_graph, Some(reachable_nodes)) // Use filtered graph and reachable set
         }
+        filtered_graph // Use the filtered graph for dumping
     } else {
-        (full_graph.clone(), None) // Use full graph, no reachable set needed
+        full_graph.clone() // Use the full graph if no filtering needed
     };
 
-    // Perform dumps based on arguments, using the potentially filtered graph and reachable nodes filter
+    // Perform dumps based on arguments, using the potentially filtered graph
     if let Some(dump_path) = &args.dump_graph {
         let roots = graph_to_dump.find_roots();
-        dump_graph_subset(
-            &graph_to_dump,
-            &krate,
-            &roots,
-            reachable_nodes_opt.as_ref(), // Pass reachable nodes as Option<&HashSet>
-            dump_path,
-            "full",
-        )?;
+        dump_graph_subset(&graph_to_dump, &krate, &roots, dump_path, "full")?;
     }
 
     if let Some(dump_path) = &args.dump_modules {
@@ -4441,7 +4419,6 @@ async fn main() -> Result<()> {
             &graph_to_dump,
             &krate,
             &module_roots,
-            reachable_nodes_opt.as_ref(), // Pass reachable nodes
             dump_path,
             "modules",
         )?;
@@ -4452,25 +4429,20 @@ async fn main() -> Result<()> {
         // Check if the single root exists in the potentially filtered graph's nodes
         let root_exists_in_graph = graph_to_dump.adjacency.contains_key(&root_id)
             || graph_to_dump.reverse_adjacency.contains_key(&root_id);
-        // Also check if the root is reachable if filtering is active
-        let root_is_reachable =
-            reachable_nodes_opt.as_ref().map_or(true, |set| set.contains(&root_id));
 
-        if root_exists_in_graph && root_is_reachable {
+        if root_exists_in_graph {
             dump_graph_subset(
                 &graph_to_dump,
                 &krate,
                 &roots,
-                reachable_nodes_opt.as_ref(), // Pass reachable nodes
                 dump_path,
                 &format!("ID {}", root_id.0),
             )?;
         } else {
             warn!(
-                "Root ID {} provided via --dump-from-id not found in the {}graph{}. Dump file will be empty.",
+                "Root ID {} provided via --dump-from-id not found in the {}graph. Dump file will be empty.",
                 root_id.0,
                 if args.dump_to_id.is_some() { "filtered " } else { "" },
-                if !root_is_reachable && args.dump_to_id.is_some() { format!(" or is not on a path to target ID {}", args.dump_to_id.unwrap().0) } else { "".to_string() }
             );
             // Create an empty file
             File::create(dump_path)?;
