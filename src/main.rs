@@ -2096,7 +2096,24 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints the "Fields" section for a struct.
+    /// Checks if any selected field within a struct has documentation.
+    fn has_documented_fields(&self, s: &Struct) -> bool {
+        let field_ids = match &s.kind {
+            StructKind::Plain { fields, .. } => fields.clone(),
+            StructKind::Tuple(fields) => fields.iter().filter_map(|opt_id| *opt_id).collect(),
+            StructKind::Unit => vec![],
+        };
+        field_ids.iter().any(|field_id| {
+            self.selected_ids.contains(field_id)
+                && self
+                    .krate
+                    .index
+                    .get(field_id)
+                    .map_or(false, |item| item.docs.as_ref().map_or(false, |d| !d.trim().is_empty()))
+        })
+    }
+
+    /// Prints the "Fields" section for a struct, only if needed.
     fn print_struct_fields(&mut self, _item: &Item, s: &Struct) {
         let fields_to_print: Vec<Id> = match &s.kind {
             StructKind::Plain { fields, .. } => fields.clone(),
@@ -2111,52 +2128,63 @@ impl<'a> DocPrinter<'a> {
             }
         );
 
-        if !fields_to_print.is_empty() || has_stripped {
-            writeln!(
-                self.output,
-                "{} Fields\n",                      // Add newline after header
-                "#".repeat(self.current_level + 3)  // Fields section level is #### (base + 3)
-            )
-            .unwrap();
-            for field_id in &fields_to_print {
-                self.print_field_details(field_id);
-            }
-            if has_stripped {
-                writeln!(self.output, "\n_[Private fields hidden]_").unwrap();
-            }
+        let has_docs = self.has_documented_fields(s);
+
+        if !has_docs && !has_stripped {
+            // Skip Fields section entirely if no fields have docs and none are stripped
+            return;
+        }
+
+        // Print the header only if there are docs or stripped fields
+        writeln!(
+            self.output,
+            "{} Fields\n",                      // Add newline after header
+            "#".repeat(self.current_level + 3)  // Fields section level is #### (base + 3)
+        )
+        .unwrap();
+
+        for field_id in &fields_to_print {
+            // Pass has_docs hint to variant printer
+            self.print_field_details(field_id);
+        }
+        if has_stripped {
+            writeln!(self.output, "\n_[Private fields hidden]_").unwrap();
         }
     }
 
-    /// Prints the details for a single struct field.
+    /// Prints the details for a single struct field, only if it has documentation.
     fn print_field_details(&mut self, field_id: &Id) {
         if !self.selected_ids.contains(field_id) {
             return;
         } // Skip unselected
-          // Avoid printing if already handled elsewhere (though unlikely for fields)
-          // if !self.printed_ids.insert(*field_id) { return; }
 
         if let Some(item) = self.krate.index.get(field_id) {
-            if let ItemEnum::StructField(_field_type) = &item.inner {
-                let name = item.name.as_deref().unwrap_or("_");
-                let field_header_level = self.current_level + 4; // Field level is ##### (base + 4)
-                                                                 // Header: ##### `field_name`
-                writeln!(
-                    self.output,
-                    "{} `{}`\n", // Add newline after header
-                    "#".repeat(field_header_level),
-                    name
-                )
-                .unwrap();
-                // Docs (with adjusted headers)
-                if let Some(docs) = &item.docs {
-                    if !docs.trim().is_empty() {
-                        let adjusted_docs =
-                            adjust_markdown_headers(docs.trim(), field_header_level);
-                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                    }
+            // Only proceed if the field has documentation
+            if let Some(docs) = &item.docs {
+                if docs.trim().is_empty() {
+                    return; // Skip fields without docs
                 }
-                // Type (optional, could add here if needed)
-                // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
+
+                if let ItemEnum::StructField(_field_type) = &item.inner {
+                    let name = item.name.as_deref().unwrap_or("_");
+                    let field_header_level = self.current_level + 4; // Field level is ##### (base + 4)
+
+                    // Header: ##### `field_name`
+                    writeln!(
+                        self.output,
+                        "{} `{}`\n", // Add newline after header
+                        "#".repeat(field_header_level),
+                        name
+                    )
+                    .unwrap();
+
+                    // Docs (with adjusted headers - we already checked non-empty)
+                    let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
+                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+
+                    // Type (optional, could add here if needed)
+                    // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
+                }
             }
         }
     }
