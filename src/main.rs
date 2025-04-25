@@ -35,7 +35,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
-use std::io::{BufReader, Cursor, Write as IoWrite}; // Use IoWrite alias
+use std::io::{BufReader, BufWriter, Write as IoWrite}; // Use IoWrite alias
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
@@ -64,6 +64,10 @@ struct Args {
     /// Path to write the generated documentation (defaults to stdout)
     #[arg(long)]
     output: Option<PathBuf>, // New argument for output file
+
+    /// Path to dump the full dependency graph
+    #[arg(long)]
+    dump_graph: Option<PathBuf>,
 
     /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
     /// Paths starting with '::' imply the root of the current crate.
@@ -143,6 +147,11 @@ struct Edge {
 #[derive(Debug, Default)]
 struct IdGraph {
     edges: HashSet<Edge>, // Use HashSet to avoid duplicate edges
+    // Add an adjacency list representation for easier traversal (target -> Vec<(source, label)>)
+    // Note: We build the forward graph (source -> targets) for dependency finding.
+    // For finding roots (no incoming edges), we analyze the final edge set.
+    // For tree printing, we need source -> Vec<(target, label)>
+    adjacency: HashMap<Id, Vec<(Id, EdgeLabel)>>,
 }
 
 impl IdGraph {
@@ -157,16 +166,35 @@ impl IdGraph {
             let edge = Edge {
                 source,
                 target,
-                label,
+                label: label.clone(),
             };
-            // debug!("Adding graph edge: {} -> {} ({})", format_id_path(&source, krate), format_id_path(&target, krate), edge.label);
-            self.edges.insert(edge);
-        } else {
-            // debug!(
-            //     "Skipping graph edge (external target?): {} -> {:?} ({})",
-            //     format_id_path(&source, krate), target, label
-            // );
+            if self.edges.insert(edge) {
+                // Also update the adjacency list for forward traversal (needed for dump)
+                self.adjacency
+                    .entry(source)
+                    .or_default()
+                    .push((target, label));
+            }
         }
+    }
+
+    /// Finds all direct children of a node (source -> targets).
+    fn get_children(&self, source_id: &Id) -> Option<&Vec<(Id, EdgeLabel)>> {
+        self.adjacency.get(source_id)
+    }
+
+    /// Finds all nodes that have no incoming edges *from within the graph*.
+    fn find_roots(&self) -> HashSet<Id> {
+        let mut all_nodes: HashSet<Id> = HashSet::new();
+        let mut targets: HashSet<Id> = HashSet::new();
+
+        for edge in &self.edges {
+            all_nodes.insert(edge.source);
+            all_nodes.insert(edge.target);
+            targets.insert(edge.target);
+        }
+
+        all_nodes.difference(&targets).cloned().collect()
     }
 
     #[allow(dead_code)] // Keep for future debugging use
@@ -179,6 +207,156 @@ impl IdGraph {
 }
 
 // --- End ID Graph Structures ---
+
+// --- Graph Dumping Logic ---
+
+/// Helper to get item info string (name, path, kind)
+fn get_item_info_string(id: &Id, krate: &Crate) -> String {
+    let name_str = krate
+        .index
+        .get(id)
+        .and_then(|item| item.name.as_deref())
+        .unwrap_or("{unnamed}");
+    let path_str = krate
+        .paths
+        .get(id)
+        .map(|p| p.path.join("::"))
+        .unwrap_or_else(|| "{no_path}".to_string());
+    let kind_str = krate
+        .index
+        .get(id)
+        .map(|item| format!("{:?}", DocPrinter::infer_item_kind(item))) // Reuse infer_item_kind
+        .or_else(|| {
+            krate
+                .paths
+                .get(id)
+                .map(|summary| format!("{:?}", summary.kind))
+        })
+        .unwrap_or_else(|| "{UnknownKind}".to_string());
+
+    format!(
+        "Id({}): {} (Path: {}, Kind: {})",
+        id.0, name_str, path_str, kind_str
+    )
+}
+
+/// Recursive function to dump the graph structure.
+fn dump_node(
+    node_id: Id,
+    graph: &IdGraph,
+    krate: &Crate,
+    writer: &mut BufWriter<File>,
+    visited: &mut HashSet<Id>, // Keep track of visited nodes *within this traversal path*
+    indent: usize,
+    prefix: &str,             // Prefix like "├── " or "└── "
+    parent_label: Option<&EdgeLabel>, // Label connecting this node to its parent
+) -> Result<()> {
+    // Format the current node information
+    let node_info = get_item_info_string(&node_id, krate);
+    let label_info = parent_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
+    writeln!(
+        writer,
+        "{}{}{}{}",
+        " ".repeat(indent),
+        prefix,
+        node_info,
+        label_info
+    )?;
+
+    // Prevent infinite loops in cyclic graphs
+    if !visited.insert(node_id) {
+        writeln!(writer, "{}{}[... cycle detected ...]", " ".repeat(indent + 4), " ")?;
+        return Ok(());
+    }
+
+    // Get children and sort them for consistent output
+    if let Some(children) = graph.get_children(&node_id) {
+        let mut sorted_children = children.clone();
+        // Sort by target Id primarily, then label for stability
+        sorted_children.sort_by_key(|(target_id, label)| (target_id.0, format!("{}", label)));
+
+        let num_children = sorted_children.len();
+        for (i, (child_id, child_label)) in sorted_children.iter().enumerate() {
+            let new_prefix = if i == num_children - 1 {
+                "└── "
+            } else {
+                "├── "
+            };
+            let child_indent = indent + 4; // Indent children further
+
+            // Recurse
+            dump_node(
+                *child_id,
+                graph,
+                krate,
+                writer,
+                &mut visited.clone(), // Pass a clone of visited set for each branch
+                child_indent,
+                new_prefix,
+                Some(child_label),
+            )?;
+        }
+    }
+
+    // Backtrack (remove from visited set for this path) - implicitly handled by passing clone
+    // visited.remove(&node_id);
+
+    Ok(())
+}
+
+/// Dumps the dependency graph to a file in a tree-like format.
+fn dump_graph_to_file(graph: &IdGraph, krate: &Crate, output_path: &FilePath) -> Result<()> {
+    info!("Dumping dependency graph to: {}", output_path.display());
+    let file = File::create(output_path)
+        .with_context(|| format!("Failed to create graph dump file: {}", output_path.display()))?;
+    let mut writer = BufWriter::new(file);
+
+    let roots = graph.find_roots();
+    let mut sorted_roots: Vec<_> = roots.into_iter().collect();
+    // Sort roots by Id for consistent output
+    sorted_roots.sort_by_key(|id| id.0);
+
+    if sorted_roots.is_empty() && !graph.edges.is_empty() {
+        writeln!(writer, "Warning: Graph has edges but no root nodes found (potentially a cycle at the top level or only external references). Dumping all nodes alphabetically:")?;
+        // Fallback: dump all nodes if no roots found
+        let mut all_nodes: Vec<_> = graph.adjacency.keys().cloned().collect();
+        all_nodes.sort_by_key(|id| id.0);
+        for node_id in all_nodes {
+            dump_node(
+                node_id,
+                graph,
+                krate,
+                &mut writer,
+                &mut HashSet::new(),
+                0,
+                "", // No prefix for top-level nodes in fallback
+                None,
+            )?;
+        }
+    } else {
+        writeln!(writer, "Graph Roots:")?;
+        for root_id in sorted_roots {
+            dump_node(
+                root_id,
+                graph,
+                krate,
+                &mut writer,
+                &mut HashSet::new(),
+                0,
+                "", // No prefix for root nodes
+                None,
+            )?;
+        }
+    }
+
+    writer
+        .flush()
+        .with_context(|| format!("Failed to write graph to file: {}", output_path.display()))?;
+    info!("Successfully dumped graph to {}", output_path.display());
+    Ok(())
+}
+
+// --- End Graph Dumping Logic ---
 
 async fn find_best_version(
     client: &reqwest::Client,
@@ -564,7 +742,12 @@ fn find_type_dependencies(
             for poly_trait in &dyn_trait.traits {
                 if krate.index.contains_key(&poly_trait.trait_.id) {
                     if dependencies.insert(poly_trait.trait_.id) {
-                        graph.add_edge(source_id, poly_trait.trait_.id, EdgeLabel::DynTraitBound, krate);
+                        graph.add_edge(
+                            source_id,
+                            poly_trait.trait_.id,
+                            EdgeLabel::DynTraitBound,
+                            krate,
+                        );
                     }
                 }
                 // Check generic param defs within the poly trait
@@ -581,7 +764,14 @@ fn find_type_dependencies(
         }
         Type::ImplTrait(bounds) => {
             for bound in bounds {
-                find_generic_bound_dependencies(bound, source_id, krate, dependencies, graph, EdgeLabel::ImplTraitBound);
+                find_generic_bound_dependencies(
+                    bound,
+                    source_id,
+                    krate,
+                    dependencies,
+                    graph,
+                    EdgeLabel::ImplTraitBound,
+                );
             }
         }
         Type::FunctionPointer(fp) => {
@@ -892,18 +1082,22 @@ fn find_generic_param_def_dependencies(
 }
 
 /// Selects items based on path filters and recursively includes their dependencies.
+/// Builds the graph for *all* items in the crate, regardless of filtering.
 fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, IdGraph)> {
     let mut selected_ids: HashSet<Id> = HashSet::new();
     let mut graph = IdGraph::new(); // Instantiate the graph
 
+    // --- Build the full graph first ---
+    info!("Building full dependency graph...");
+    for id in krate.index.keys() {
+        build_graph_for_item(*id, krate, &mut graph);
+    }
+    info!("Built full graph with {} edges.", graph.edges.len());
+
+    // --- Now select items based on filters ---
     if user_paths.is_empty() {
         info!("No path filters specified, selecting all items.");
-        // If selecting all, we still need to build the graph for all items
         selected_ids.extend(krate.index.keys().cloned());
-        // Iterate through all items to build the graph relationships
-        for id in krate.index.keys() {
-            build_graph_for_item(*id, krate, &mut graph);
-        }
         return Ok((selected_ids, graph));
     }
 
@@ -952,7 +1146,8 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, Id
             "No items matched the provided path filters: {:?}",
             user_paths
         );
-        return Ok((selected_ids, graph)); // Return empty set and empty graph
+        // Still return the full graph even if selection is empty
+        return Ok((selected_ids, graph));
     }
 
     info!(
@@ -960,24 +1155,26 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, Id
         selected_ids.len()
     );
 
-    // Iterative dependency selection and graph building
+    // --- Iterative dependency selection (using the pre-built graph) ---
     let mut queue: VecDeque<Id> = selected_ids.iter().cloned().collect();
-    let mut processed_for_deps = HashSet::new();
+    let mut visited_for_selection = HashSet::new(); // Keep track of visited nodes during selection traversal
 
     while let Some(id) = queue.pop_front() {
-        if !processed_for_deps.insert(id) {
-            continue; // Already processed this item for dependencies
+        if !visited_for_selection.insert(id) {
+            continue; // Already processed this item for dependency selection
         }
 
-        // Find dependencies for this item and add edges to the graph
-        let item_deps = build_graph_for_item(id, krate, &mut graph);
-
-        // Add newly found dependencies to the queue if they aren't already selected
-        for dep_id in item_deps {
-            // Check if dep_id exists in krate.index before adding
-            if krate.index.contains_key(&dep_id) && selected_ids.insert(dep_id) {
-                debug!("Adding dependency {:?} from item {:?}", dep_id, id);
-                queue.push_back(dep_id);
+        // Find dependencies using the graph's adjacency list
+        if let Some(children) = graph.get_children(&id) {
+            for (dep_id, _label) in children {
+                // Check if dep_id exists in krate.index before adding
+                if krate.index.contains_key(dep_id) && selected_ids.insert(*dep_id) {
+                    debug!(
+                        "Including dependency {:?} from item {:?}",
+                        dep_id, id
+                    );
+                    queue.push_back(*dep_id);
+                }
             }
         }
     }
@@ -986,7 +1183,7 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, Id
         "Selected {} items after including dependencies.",
         selected_ids.len()
     );
-    info!("Built dependency graph with {} edges.", graph.edges.len());
+
     Ok((selected_ids, graph))
 }
 
@@ -2427,7 +2624,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     // Fallback for inferring ItemKind if not found in paths map (should be equivalent to index anyway)
-    fn infer_item_kind(&self, item: &Item) -> ItemKind {
+    fn infer_item_kind(item: &Item) -> ItemKind {
         match item.inner {
             ItemEnum::Module(_) => ItemKind::Module,
             ItemEnum::ExternCrate { .. } => ItemKind::ExternCrate,
@@ -2570,7 +2767,9 @@ impl<'a> DocPrinter<'a> {
                     .krate
                     .index
                     .get(field_id)
-                    .map_or(false, |item| item.docs.as_ref().map_or(false, |d| !d.trim().is_empty()))
+                    .map_or(false, |item| {
+                        item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
+                    })
         })
     }
 
@@ -2755,7 +2954,9 @@ impl<'a> DocPrinter<'a> {
                     .krate
                     .index
                     .get(variant_id)
-                    .map_or(false, |item| item.docs.as_ref().map_or(false, |d| !d.trim().is_empty()))
+                    .map_or(false, |item| {
+                        item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
+                    })
         })
     }
 
@@ -3160,7 +3361,8 @@ impl<'a> DocPrinter<'a> {
     /// `section_level` is the header level of the "Associated Constants/Types/Functions" section (e.g., 4).
     fn print_associated_item_summary(&mut self, assoc_item_id: &Id, section_level: usize) {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
-            if let Some(summary) = self.generate_associated_item_summary(assoc_item_id, section_level)
+            if let Some(summary) =
+                self.generate_associated_item_summary(assoc_item_id, section_level)
             {
                 let declaration = generate_item_declaration(item, self.krate);
                 let assoc_item_header_level = section_level + 1; // Assoc Item level is section_level + 1
@@ -3183,7 +3385,12 @@ impl<'a> DocPrinter<'a> {
 
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
-    fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item, item_level: usize) {
+    fn print_item_implementations(
+        &mut self,
+        impl_ids: &[Id],
+        target_item: &Item,
+        item_level: usize,
+    ) {
         let target_name = target_item.name.as_deref().unwrap_or_else(|| {
             match &target_item.inner {
                 ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
@@ -3252,7 +3459,8 @@ impl<'a> DocPrinter<'a> {
                             });
 
                         if is_simple {
-                            let cleaned_path = clean_trait_path(&format_path(trait_path, self.krate));
+                            let cleaned_path =
+                                clean_trait_path(&format_path(trait_path, self.krate));
                             simple_impl_data.push((impl_item, imp, cleaned_path));
                         } else {
                             // Check printed_ids *before* adding to generic list
@@ -3311,7 +3519,12 @@ impl<'a> DocPrinter<'a> {
 
     /// Prints implementors *of* a trait.
     /// `item_level` is the header level of the trait itself (e.g., 3 for `###`).
-    fn print_trait_implementors(&mut self, impl_ids: &[Id], _trait_item: &Item, item_level: usize) {
+    fn print_trait_implementors(
+        &mut self,
+        impl_ids: &[Id],
+        _trait_item: &Item,
+        item_level: usize,
+    ) {
         let implementors: Vec<&Item> = impl_ids
             .iter()
             .filter_map(|id| self.krate.index.get(id))
@@ -3702,7 +3915,7 @@ impl<'a> DocPrinter<'a> {
                             if let Some(item) = self.krate.index.get(id) {
                                 // Handle nested modules recursively (but only if not the crate root's contents)
                                 if !is_crate_root {
-                                    if let ItemEnum::Module(sub_module_data) = &item.inner {
+                                    if let ItemEnum::Module(_sub_module_data) = &item.inner {
                                         // Check printed_ids again before recursing
                                         if !self.printed_ids.contains(id) {
                                             let mod_name =
@@ -4052,6 +4265,11 @@ async fn main() -> Result<()> {
 
     // --- Select Items & Build Graph ---
     let (selected_ids, graph) = select_items(&krate, &args.paths)?;
+
+    // --- Dump Graph if requested ---
+    if let Some(dump_path) = &args.dump_graph {
+        dump_graph_to_file(&graph, &krate, dump_path)?;
+    }
 
     // --- Generate Documentation ---
     let documentation =
