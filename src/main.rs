@@ -67,28 +67,25 @@ struct Args {
     #[arg(long)]
     output: Option<PathBuf>, // New argument for output file
 
-    /// Path to dump the full dependency graph (all roots)
+    /// Enable dependency graph dumping and specify the output file.
     #[arg(long)]
     dump_graph: Option<PathBuf>,
 
-    /// Path to dump the dependency graph starting from module roots
-    #[arg(long)]
-    dump_modules: Option<PathBuf>,
+    /// Dump graph starting only from module roots (requires --dump-graph).
+    #[arg(long, requires = "dump_graph")]
+    dump_modules: bool,
 
-    /// Dump graph starting from this ID
-    #[arg(long, value_parser = parse_id)]
+    /// Dump graph starting only from this ID (requires --dump-graph). Takes precedence over --dump-modules.
+    #[arg(long, value_parser = parse_id, requires = "dump_graph")]
     dump_from_id: Option<Id>,
 
-    /// File path for dump-from-id output (required if dump-from-id is used)
-    #[arg(long, requires = "dump_from_id")]
-    dump_file: Option<PathBuf>,
-
-    /// Filter graph dump to only include paths leading to this leaf ID
-    #[arg(long, value_parser = parse_id)]
+    /// Filter graph dump to only include paths leading to this leaf ID (requires --dump-graph).
+    #[arg(long, value_parser = parse_id, requires = "dump_graph")]
     dump_to_id: Option<Id>,
 
-    /// Limit the maximum depth of the dumped graph (0 means root only, 1 means root and direct children, etc.)
-    #[arg(long)]
+    /// Limit the maximum depth of the dumped graph (requires --dump-graph).
+    /// 0 means root only, 1 means root and direct children, etc.
+    #[arg(long, requires = "dump_graph")]
     dump_max_depth: Option<usize>,
 
     /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
@@ -4393,11 +4390,6 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // Validate dump_from_id and dump_file pairing
-    if args.dump_from_id.is_some() && args.dump_file.is_none() {
-        bail!("--dump-file is required when using --dump-from-id");
-    }
-
     let client = reqwest::Client::builder()
         .user_agent(format!(
             "crate-doc-extractor/{} (github.com/ai-sandbox/aidocs-rust)", // Updated repo
@@ -4447,82 +4439,74 @@ async fn main() -> Result<()> {
     let (selected_ids, full_graph) = select_items(&krate, &args.paths)?;
 
     // --- Graph Dumping ---
-    // Determine the graph to dump. If --dump-to-id is used, filter the graph first.
-    let graph_to_dump = if let Some(target_leaf_id) = args.dump_to_id {
-        info!(
-            "Filtering graph to include only paths leading to leaf ID: {}",
-            target_leaf_id.0
-        );
-        let filtered_graph = full_graph.filter_to_leaf(target_leaf_id);
-        if filtered_graph.edges.is_empty() && !full_graph.edges.is_empty() {
-            warn!(
-                "Target leaf ID {} for --dump-to-id not found or no paths lead to it in the graph. Dump will be empty.",
+    if let Some(dump_output_path) = &args.dump_graph {
+        // Determine the graph to dump based on --dump-to-id
+        let graph_to_dump = if let Some(target_leaf_id) = args.dump_to_id {
+            info!(
+                "Filtering graph to include only paths leading to leaf ID: {}",
                 target_leaf_id.0
             );
-        }
-        filtered_graph // Use the filtered graph for dumping
-    } else {
-        full_graph.clone() // Use the full graph if no filtering needed
-    };
+            let filtered_graph = full_graph.filter_to_leaf(target_leaf_id);
+            if filtered_graph.edges.is_empty() && !full_graph.edges.is_empty() {
+                warn!(
+                    "Target leaf ID {} for --dump-to-id not found or no paths lead to it in the graph. Dump will be empty.",
+                    target_leaf_id.0
+                );
+            }
+            filtered_graph // Use the filtered graph for dumping
+        } else {
+            full_graph.clone() // Use the full graph if no filtering needed
+        };
 
-    // Perform dumps based on arguments, using the potentially filtered graph
-    if let Some(dump_path) = &args.dump_graph {
-        let roots = graph_to_dump.find_roots();
-        dump_graph_subset(
-            &graph_to_dump,
-            &krate,
-            &roots,
-            dump_path,
-            "full",
-            args.dump_max_depth,
-        )?;
-    }
+        // Determine roots and description based on --dump-from-id and --dump-modules
+        let (root_ids, dump_description) = if let Some(root_id) = args.dump_from_id {
+            // --dump-from-id takes precedence
+            let roots: HashSet<Id> = [root_id].into_iter().collect();
+            let description = format!("ID {}", root_id.0);
+            // Check if the specified root exists in the *graph_to_dump*
+            let root_exists_in_graph = graph_to_dump.adjacency.contains_key(&root_id)
+                || graph_to_dump.reverse_adjacency.contains_key(&root_id);
+            if !root_exists_in_graph {
+                warn!(
+                    "Root ID {} provided via --dump-from-id not found in the {}graph. Dump file will be empty.",
+                    root_id.0,
+                    if args.dump_to_id.is_some() { "filtered " } else { "" },
+                );
+                // Create an empty file and skip dumping
+                File::create(dump_output_path)?;
+                (HashSet::new(), description) // Set roots to empty to skip dump_graph_subset logic
+            } else {
+                (roots, description)
+            }
+        } else if args.dump_modules {
+            // --dump-modules is used
+            let module_roots: HashSet<Id> = krate
+                .index
+                .iter()
+                .filter(|(_, item)| matches!(item.inner, ItemEnum::Module(_)))
+                .map(|(id, _)| *id)
+                // Only include module roots that actually exist in the potentially filtered graph's nodes
+                .filter(|id| {
+                    graph_to_dump.adjacency.contains_key(id)
+                        || graph_to_dump.reverse_adjacency.contains_key(id)
+                })
+                .collect();
+            (module_roots, "modules".to_string())
+        } else {
+            // Default: dump all roots
+            (graph_to_dump.find_roots(), "full".to_string())
+        };
 
-    if let Some(dump_path) = &args.dump_modules {
-        let module_roots: HashSet<Id> = krate
-            .index
-            .iter()
-            .filter(|(_, item)| matches!(item.inner, ItemEnum::Module(_)))
-            .map(|(id, _)| *id)
-            // Only include module roots that actually exist in the potentially filtered graph's nodes
-            .filter(|id| {
-                graph_to_dump.adjacency.contains_key(id)
-                    || graph_to_dump.reverse_adjacency.contains_key(id)
-            })
-            .collect();
-        dump_graph_subset(
-            &graph_to_dump,
-            &krate,
-            &module_roots,
-            dump_path,
-            "modules",
-            args.dump_max_depth,
-        )?;
-    }
-
-    if let (Some(root_id), Some(dump_path)) = (args.dump_from_id, &args.dump_file) {
-        let roots: HashSet<Id> = [root_id].into_iter().collect();
-        // Check if the single root exists in the potentially filtered graph's nodes
-        let root_exists_in_graph = graph_to_dump.adjacency.contains_key(&root_id)
-            || graph_to_dump.reverse_adjacency.contains_key(&root_id);
-
-        if root_exists_in_graph {
+        // Dump the subset if root_ids is not empty (handles the case where dump_from_id root didn't exist)
+        if !root_ids.is_empty() {
             dump_graph_subset(
                 &graph_to_dump,
                 &krate,
-                &roots,
-                dump_path,
-                &format!("ID {}", root_id.0),
+                &root_ids,
+                dump_output_path,
+                &dump_description,
                 args.dump_max_depth,
             )?;
-        } else {
-            warn!(
-                "Root ID {} provided via --dump-from-id not found in the {}graph. Dump file will be empty.",
-                root_id.0,
-                if args.dump_to_id.is_some() { "filtered " } else { "" },
-            );
-            // Create an empty file
-            File::create(dump_path)?;
         }
     }
 
