@@ -27,13 +27,13 @@ use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
-    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Module, Path, PolyTrait,
-    Primitive, Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
-};
+    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
+    Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+}; // Removed Module import
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 // Removed unused imports
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque}; // Added BTreeMap
+use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
 use std::fmt::Write;
 use std::fs::File;
 // Removed unused Hash import
@@ -2696,7 +2696,7 @@ impl<'a> DocPrinter<'a> {
 
         // Level for the assoc items section *within* the impl block's context (usually not printed explicitly)
         // We need it for the detail printer level calculation
-        let assoc_item_section_level = _section_level + 1; // e.g., 4 + 1 = 5
+        // Remove unused variable: let assoc_item_section_level = _section_level + 1; // e.g., 4 + 1 = 5
 
         for assoc_item_id in &imp.items {
             if !self.selected_ids.contains(assoc_item_id) {
@@ -2891,7 +2891,7 @@ impl<'a> DocPrinter<'a> {
         if let Some(module_item) = self.krate.index.get(module_id) {
             if let ItemEnum::Module(module_data) = &module_item.inner {
                 // Group selected items by kind within this module
-                let mut items_by_kind: BTreeMap<ItemKind, Vec<Id>> = BTreeMap::new(); // Use BTreeMap for ordered kinds
+                let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new(); // Use HashMap instead of BTreeMap
                 for id in &module_data.items {
                     if !self.selected_ids.contains(id) || self.printed_ids.contains(id) {
                         continue; // Skip unselected or already printed items
@@ -3179,7 +3179,7 @@ impl<'a> DocPrinter<'a> {
                 }
             } else {
                 // Group by kind and log counts
-                let mut counts_by_kind: BTreeMap<ItemKind, usize> = BTreeMap::new();
+                let mut counts_by_kind: HashMap<ItemKind, usize> = HashMap::new(); // Use HashMap
                 for id in &unprinted_ids {
                     if let Some(kind) = self.get_item_kind(id) {
                         *counts_by_kind.entry(kind).or_insert(0) += 1;
@@ -3189,7 +3189,11 @@ impl<'a> DocPrinter<'a> {
                     "Skipped printing {} items not fitting into standard sections (use --include-other to see them):",
                     unprinted_ids.len()
                 );
-                for (kind, count) in counts_by_kind {
+                // Convert HashMap to Vec for sorting before printing warnings
+                let mut sorted_counts: Vec<_> = counts_by_kind.into_iter().collect();
+                sorted_counts.sort_by_key(|(kind, _)| format!("{:?}", kind)); // Sort by debug representation for consistency
+
+                for (kind, count) in sorted_counts {
                     warn!("  - {:?}: {}", kind, count);
                 }
             }
