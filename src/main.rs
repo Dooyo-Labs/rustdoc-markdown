@@ -2464,15 +2464,20 @@ impl<'a> DocPrinter<'a> {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
                     if let Some(trait_path) = &imp.trait_ {
                         let trait_name = clean_trait_path(&format_path(trait_path, self.krate));
-                        writeln!(self.output, "- `{}`", trait_name).unwrap(); // List item marker
+                        // Print list item marker and trait name
+                        writeln!(self.output, "- `{}`", trait_name).unwrap();
+                        // Add a blank line after the list item marker
+                        writeln!(self.output).unwrap();
 
                         if let Some(impl_block_str) =
                             self.generate_impl_trait_block(impl_item, imp)
                         {
-                            // Indent the generated code block by 4 spaces for list context
-                            let indented_block = indent_string(&impl_block_str, 4);
-                            // Wrap the indented block in the code fence
-                            writeln!(self.output, "```rust\n{}\n```\n", indented_block).unwrap();
+                            // Format the entire code block with fences
+                            let full_code_block = format!("```rust\n{}\n```", impl_block_str);
+                            // Indent the entire block (including fences) by 4 spaces
+                            let indented_block = indent_string(&full_code_block, 4);
+                            // Print the indented block followed by a newline
+                            writeln!(self.output, "{}\n", indented_block).unwrap();
                         }
                     }
                 }
