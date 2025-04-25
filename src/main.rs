@@ -246,11 +246,32 @@ fn dump_node(
     graph: &IdGraph,
     krate: &Crate,
     writer: &mut BufWriter<File>,
-    visited: &mut HashSet<Id>, // Keep track of visited nodes *within this traversal path*
+    visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
     indent: usize,
-    prefix: &str,             // Prefix like "├── " or "└── "
+    prefix: &str, // Prefix like "├── " or "└── "
     parent_label: Option<&EdgeLabel>, // Label connecting this node to its parent
 ) -> Result<()> {
+    // Prevent infinite loops and redundant printing using the *shared* visited set
+    if !visited.insert(node_id) {
+        // If already visited, print cycle indicator if it's a direct child
+        if indent > 0 {
+            // Check if this node ID is actually referenced by the caller (to avoid printing cycle for unrelated already-visited nodes)
+            // This check is complex to add here. The current behavior is acceptable: it might show a cycle marker
+            // even if the direct parent wasn't the one causing the cycle, but it avoids infinite loops.
+            let node_info = get_item_info_string(&node_id, krate);
+            let label_info = parent_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
+            writeln!(
+                writer,
+                "{}{}{} {} [... cycle or previously visited ...]",
+                " ".repeat(indent),
+                prefix,
+                node_info,
+                label_info
+            )?;
+        }
+        return Ok(());
+    }
+
     // Format the current node information
     let node_info = get_item_info_string(&node_id, krate);
     let label_info = parent_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
@@ -262,12 +283,6 @@ fn dump_node(
         node_info,
         label_info
     )?;
-
-    // Prevent infinite loops in cyclic graphs
-    if !visited.insert(node_id) {
-        writeln!(writer, "{}{}[... cycle detected ...]", " ".repeat(indent + 4), " ")?;
-        return Ok(());
-    }
 
     // Get children and sort them for consistent output
     if let Some(children) = graph.get_children(&node_id) {
@@ -284,13 +299,13 @@ fn dump_node(
             };
             let child_indent = indent + 4; // Indent children further
 
-            // Recurse
+            // Recurse with the same mutable visited set
             dump_node(
                 *child_id,
                 graph,
                 krate,
                 writer,
-                &mut visited.clone(), // Pass a clone of visited set for each branch
+                visited, // Pass mutable reference down
                 child_indent,
                 new_prefix,
                 Some(child_label),
@@ -298,8 +313,7 @@ fn dump_node(
         }
     }
 
-    // Backtrack (remove from visited set for this path) - implicitly handled by passing clone
-    // visited.remove(&node_id);
+    // Note: No need to remove from visited set here, as we want to track visited nodes globally across the dump.
 
     Ok(())
 }
@@ -310,6 +324,9 @@ fn dump_graph_to_file(graph: &IdGraph, krate: &Crate, output_path: &FilePath) ->
     let file = File::create(output_path)
         .with_context(|| format!("Failed to create graph dump file: {}", output_path.display()))?;
     let mut writer = BufWriter::new(file);
+
+    // Use a single visited set for the entire dump process
+    let mut visited = HashSet::new();
 
     let roots = graph.find_roots();
     let mut sorted_roots: Vec<_> = roots.into_iter().collect();
@@ -322,30 +339,36 @@ fn dump_graph_to_file(graph: &IdGraph, krate: &Crate, output_path: &FilePath) ->
         let mut all_nodes: Vec<_> = graph.adjacency.keys().cloned().collect();
         all_nodes.sort_by_key(|id| id.0);
         for node_id in all_nodes {
-            dump_node(
-                node_id,
-                graph,
-                krate,
-                &mut writer,
-                &mut HashSet::new(),
-                0,
-                "", // No prefix for top-level nodes in fallback
-                None,
-            )?;
+            // Check if already visited before starting dump from this node (in case of multiple disconnected components or cycles)
+            if !visited.contains(&node_id) {
+                dump_node(
+                    node_id,
+                    graph,
+                    krate,
+                    &mut writer,
+                    &mut visited, // Pass mutable reference
+                    0,
+                    "", // No prefix for top-level nodes in fallback
+                    None,
+                )?;
+            }
         }
     } else {
         writeln!(writer, "Graph Roots:")?;
         for root_id in sorted_roots {
-            dump_node(
-                root_id,
-                graph,
-                krate,
-                &mut writer,
-                &mut HashSet::new(),
-                0,
-                "", // No prefix for root nodes
-                None,
-            )?;
+            // Check if already visited before starting dump from this root (shouldn't happen for true roots, but good practice)
+            if !visited.contains(&root_id) {
+                dump_node(
+                    root_id,
+                    graph,
+                    krate,
+                    &mut writer,
+                    &mut visited, // Pass mutable reference
+                    0,
+                    "", // No prefix for root nodes
+                    None,
+                )?;
+            }
         }
     }
 
@@ -2502,6 +2525,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
         .join(", ");
     write!(code, "{}", args_str).unwrap();
     if f.sig.is_c_variadic {
+        // Correctly write to the 'code' buffer
         write!(code, ", ...").unwrap();
     }
     write!(code, ")").unwrap();
