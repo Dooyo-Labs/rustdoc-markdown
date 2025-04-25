@@ -2553,8 +2553,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             writeln!(self.output, "_Error: Item details not found in index._\n").unwrap();
-            // Print graph context if available
-            self.print_graph_context(id, item_header_level);
+            // Graph context is handled by the caller (finalize) for "Other" items
         }
     }
 
@@ -3541,11 +3540,21 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints graph context for an unprinted item.
-    fn print_graph_context(&mut self, id: &Id, item_level: usize) {
-        let incoming_edges = self.graph.find_incoming_edges(id);
+    /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
+    fn print_graph_context(&mut self, id: &Id, _item_level: usize) {
+        let incoming_edges: Vec<&Edge> = self.graph.find_incoming_edges(id);
         if !incoming_edges.is_empty() {
             writeln!(self.output, "_Referenced by:_").unwrap();
-            for edge in incoming_edges {
+            // Sort edges for consistent output
+            let mut sorted_edges = incoming_edges;
+            sorted_edges.sort_by_key(|edge| {
+                (
+                    format_id_path(&edge.source, self.krate),
+                    format!("{:?}", edge.label),
+                )
+            });
+
+            for edge in sorted_edges {
                 let source_path = format_id_path(&edge.source, self.krate);
                 writeln!(
                     self.output,
@@ -3700,10 +3709,12 @@ impl<'a> DocPrinter<'a> {
                     "Found {} selected items that were not printed in the main structure. Including them in the 'Other' section.",
                     unprinted_ids.len()
                 );
+                let other_section_level = self.base_level + 1;
+                let other_item_level = other_section_level + 1;
                 writeln!(
                     self.output,
                     "\n{} Other", // Use ## level for this section
-                    "#".repeat(self.base_level + 1)
+                    "#".repeat(other_section_level)
                 )
                 .unwrap();
 
@@ -3718,8 +3729,10 @@ impl<'a> DocPrinter<'a> {
                 for id in &unprinted_ids {
                     let path_str = format_id_path(id, self.krate);
                     warn!("Including unprinted item in 'Other' section: {}", path_str);
-                    // Print item details normally (will include graph context if index lookup fails)
-                    self.print_item_details(id, self.base_level + 2); // Print details at ### level
+                    // Print item details normally (will include placeholder if index lookup fails)
+                    self.print_item_details(id, other_item_level); // Print details at ### level
+                                                                    // Always print graph context afterwards for items in "Other"
+                    self.print_graph_context(id, other_item_level);
                 }
             } else {
                 // Group by kind and log counts
