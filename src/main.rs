@@ -9,6 +9,7 @@
 //! semver = "1.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
+//! std = "1.0"
 //! tar = "0.4"
 //! tempfile = "3.8"
 //! tokio = { version = "1.34", features = ["full"] }
@@ -37,6 +38,7 @@ use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
+use std::str::FromStr; // Import FromStr for Id parsing
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -65,9 +67,25 @@ struct Args {
     #[arg(long)]
     output: Option<PathBuf>, // New argument for output file
 
-    /// Path to dump the full dependency graph
+    /// Path to dump the full dependency graph (all roots)
     #[arg(long)]
     dump_graph: Option<PathBuf>,
+
+    /// Path to dump the dependency graph starting from module roots
+    #[arg(long)]
+    dump_modules: Option<PathBuf>,
+
+    /// Dump graph starting from this ID
+    #[arg(long, value_parser = parse_id)]
+    dump_from_id: Option<Id>,
+
+    /// File path for dump-from-id output (required if dump-from-id is used)
+    #[arg(long, requires = "dump_from_id")]
+    dump_file: Option<PathBuf>,
+
+    /// Filter graph dump to only include paths leading to this leaf ID
+    #[arg(long, value_parser = parse_id)]
+    dump_to_id: Option<Id>,
 
     /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
     /// Paths starting with '::' imply the root of the current crate.
@@ -78,6 +96,13 @@ struct Args {
     /// Include items that don't fit standard categories in a final 'Other' section.
     #[arg(long)]
     include_other: bool,
+}
+
+/// Parses a string into an `Id`.
+fn parse_id(s: &str) -> Result<Id, String> {
+    s.parse::<u32>()
+        .map(Id)
+        .map_err(|_| format!("Invalid ID: '{}'. Must be a non-negative integer.", s))
 }
 
 #[derive(Deserialize, Debug)]
@@ -144,7 +169,7 @@ struct Edge {
     label: EdgeLabel,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)] // Add Clone
 struct IdGraph {
     edges: HashSet<Edge>, // Use HashSet to avoid duplicate edges
     // Add an adjacency list representation for easier traversal (target -> Vec<(source, label)>)
@@ -152,6 +177,8 @@ struct IdGraph {
     // For finding roots (no incoming edges), we analyze the final edge set.
     // For tree printing, we need source -> Vec<(target, label)>
     adjacency: HashMap<Id, Vec<(Id, EdgeLabel)>>,
+    // Reverse adjacency list for filtering (target -> Vec<(source, label)>)
+    reverse_adjacency: HashMap<Id, Vec<(Id, EdgeLabel)>>,
 }
 
 impl IdGraph {
@@ -173,7 +200,12 @@ impl IdGraph {
                 self.adjacency
                     .entry(source)
                     .or_default()
-                    .push((target, label));
+                    .push((target, label.clone()));
+                // Update reverse adjacency list
+                self.reverse_adjacency
+                    .entry(target)
+                    .or_default()
+                    .push((source, label));
             }
         }
     }
@@ -203,6 +235,51 @@ impl IdGraph {
             .iter()
             .filter(|edge| edge.target == *target_id)
             .collect()
+    }
+
+    /// Filters the graph to keep only edges that are part of a path leading to the target_leaf_id.
+    /// Returns a new IdGraph containing only the relevant edges.
+    fn filter_to_leaf(&self, target_leaf_id: Id) -> IdGraph {
+        let mut filtered_graph = IdGraph::new();
+        let mut reachable_nodes = HashSet::new(); // Nodes that can reach the target
+        let mut queue = VecDeque::new();
+
+        // Start BFS from the target node using the reverse adjacency list
+        if self.reverse_adjacency.contains_key(&target_leaf_id) {
+            reachable_nodes.insert(target_leaf_id);
+            queue.push_back(target_leaf_id);
+        }
+
+        while let Some(current_id) = queue.pop_front() {
+            if let Some(parents) = self.reverse_adjacency.get(&current_id) {
+                for (parent_id, _) in parents {
+                    if reachable_nodes.insert(*parent_id) {
+                        queue.push_back(*parent_id);
+                    }
+                }
+            }
+        }
+
+        // Now, add edges from the original graph *only if both* source and target are in reachable_nodes
+        for edge in &self.edges {
+            if reachable_nodes.contains(&edge.source) && reachable_nodes.contains(&edge.target) {
+                // Manually add to filtered graph components (avoiding add_edge's krate check)
+                if filtered_graph.edges.insert(edge.clone()) {
+                    filtered_graph
+                        .adjacency
+                        .entry(edge.source)
+                        .or_default()
+                        .push((edge.target, edge.label.clone()));
+                    filtered_graph
+                        .reverse_adjacency
+                        .entry(edge.target)
+                        .or_default()
+                        .push((edge.source, edge.label.clone()));
+                }
+            }
+        }
+
+        filtered_graph
     }
 }
 
@@ -243,7 +320,7 @@ fn get_item_info_string(id: &Id, krate: &Crate) -> String {
 /// Recursive function to dump the graph structure.
 fn dump_node(
     node_id: Id,
-    graph: &IdGraph,
+    graph: &IdGraph, // Use the potentially filtered graph
     krate: &Crate,
     writer: &mut BufWriter<File>,
     visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
@@ -284,7 +361,7 @@ fn dump_node(
         label_info
     )?;
 
-    // Get children and sort them for consistent output
+    // Get children from the potentially filtered graph and sort them
     if let Some(children) = graph.get_children(&node_id) {
         let mut sorted_children = children.clone();
         // Sort by target Id primarily, then label for stability
@@ -302,7 +379,7 @@ fn dump_node(
             // Recurse with the same mutable visited set
             dump_node(
                 *child_id,
-                graph,
+                graph, // Pass the same graph down
                 krate,
                 writer,
                 visited, // Pass mutable reference down
@@ -318,9 +395,19 @@ fn dump_node(
     Ok(())
 }
 
-/// Dumps the dependency graph to a file in a tree-like format.
-fn dump_graph_to_file(graph: &IdGraph, krate: &Crate, output_path: &FilePath) -> Result<()> {
-    info!("Dumping dependency graph to: {}", output_path.display());
+/// Dumps a subset of the dependency graph to a file based on specified roots.
+fn dump_graph_subset(
+    graph: &IdGraph, // Use the potentially filtered graph
+    krate: &Crate,
+    root_ids: &HashSet<Id>,
+    output_path: &FilePath,
+    dump_description: &str,
+) -> Result<()> {
+    info!(
+        "Dumping {} graph to: {}",
+        dump_description,
+        output_path.display()
+    );
     let file = File::create(output_path)
         .with_context(|| format!("Failed to create graph dump file: {}", output_path.display()))?;
     let mut writer = BufWriter::new(file);
@@ -328,18 +415,17 @@ fn dump_graph_to_file(graph: &IdGraph, krate: &Crate, output_path: &FilePath) ->
     // Use a single visited set for the entire dump process
     let mut visited = HashSet::new();
 
-    let roots = graph.find_roots();
-    let mut sorted_roots: Vec<_> = roots.into_iter().collect();
+    let mut sorted_roots: Vec<_> = root_ids.iter().cloned().collect();
     // Sort roots by Id for consistent output
     sorted_roots.sort_by_key(|id| id.0);
 
     if sorted_roots.is_empty() && !graph.edges.is_empty() {
-        writeln!(writer, "Warning: Graph has edges but no root nodes found (potentially a cycle at the top level or only external references). Dumping all nodes alphabetically:")?;
+        writeln!(writer, "Warning: Graph has edges but no {} roots found (potentially due to filtering or cycles). Dumping all nodes alphabetically:", dump_description)?;
         // Fallback: dump all nodes if no roots found
         let mut all_nodes: Vec<_> = graph.adjacency.keys().cloned().collect();
         all_nodes.sort_by_key(|id| id.0);
         for node_id in all_nodes {
-            // Check if already visited before starting dump from this node (in case of multiple disconnected components or cycles)
+            // Check if already visited before starting dump from this node
             if !visited.contains(&node_id) {
                 dump_node(
                     node_id,
@@ -354,9 +440,9 @@ fn dump_graph_to_file(graph: &IdGraph, krate: &Crate, output_path: &FilePath) ->
             }
         }
     } else {
-        writeln!(writer, "Graph Roots:")?;
+        writeln!(writer, "Graph Roots ({}):", dump_description)?;
         for root_id in sorted_roots {
-            // Check if already visited before starting dump from this root (shouldn't happen for true roots, but good practice)
+            // Check if already visited before starting dump from this root
             if !visited.contains(&root_id) {
                 dump_node(
                     root_id,
@@ -4242,6 +4328,12 @@ async fn main() -> Result<()> {
     rustup_toolchain::install(NIGHTLY_RUST_VERSION).unwrap();
 
     let args = Args::parse();
+
+    // Validate dump_from_id and dump_file pairing
+    if args.dump_from_id.is_some() && args.dump_file.is_none() {
+        bail!("--dump-file is required when using --dump-from-id");
+    }
+
     let client = reqwest::Client::builder()
         .user_agent(format!(
             "crate-doc-extractor/{} (github.com/ai-sandbox/aidocs-rust)", // Updated repo
@@ -4288,16 +4380,87 @@ async fn main() -> Result<()> {
     info!("Found {} items in the paths map.", krate.paths.len());
 
     // --- Select Items & Build Graph ---
-    let (selected_ids, graph) = select_items(&krate, &args.paths)?;
+    let (selected_ids, full_graph) = select_items(&krate, &args.paths)?;
 
-    // --- Dump Graph if requested ---
+    // --- Graph Dumping ---
+    // Determine which graph to use (potentially filtered)
+    let graph_to_dump = if let Some(target_leaf_id) = args.dump_to_id {
+        info!(
+            "Filtering graph to include only paths leading to leaf ID: {}",
+            target_leaf_id.0
+        );
+        if !full_graph.reverse_adjacency.contains_key(&target_leaf_id) {
+            warn!(
+                "Target leaf ID {} for --dump-to-id not found as a target node in the graph.",
+                target_leaf_id.0
+            );
+            IdGraph::new() // Use an empty graph if the target isn't reachable
+        } else {
+            full_graph.filter_to_leaf(target_leaf_id)
+        }
+    } else {
+        full_graph.clone() // Clone the full graph if no filtering is needed
+    };
+
+    // Perform dumps based on arguments, using the potentially filtered graph
     if let Some(dump_path) = &args.dump_graph {
-        dump_graph_to_file(&graph, &krate, dump_path)?;
+        let roots = graph_to_dump.find_roots();
+        dump_graph_subset(&graph_to_dump, &krate, &roots, dump_path, "full")?;
+    }
+
+    if let Some(dump_path) = &args.dump_modules {
+        let module_roots: HashSet<Id> = krate
+            .index
+            .iter()
+            .filter(|(_, item)| matches!(item.inner, ItemEnum::Module(_)))
+            .map(|(id, _)| *id)
+            // Only include module roots that actually exist in the potentially filtered graph's nodes
+            .filter(|id| {
+                graph_to_dump.adjacency.contains_key(id)
+                    || graph_to_dump.reverse_adjacency.contains_key(id)
+            })
+            .collect();
+        dump_graph_subset(
+            &graph_to_dump,
+            &krate,
+            &module_roots,
+            dump_path,
+            "modules",
+        )?;
+    }
+
+    if let (Some(root_id), Some(dump_path)) = (args.dump_from_id, &args.dump_file) {
+        let roots: HashSet<Id> = [root_id].into_iter().collect();
+        // Check if the single root exists in the potentially filtered graph
+        if graph_to_dump.adjacency.contains_key(&root_id)
+            || graph_to_dump.reverse_adjacency.contains_key(&root_id)
+        {
+            dump_graph_subset(
+                &graph_to_dump,
+                &krate,
+                &roots,
+                dump_path,
+                &format!("ID {}", root_id.0),
+            )?;
+        } else {
+            warn!(
+                "Root ID {} provided via --dump-from-id not found in the {}graph. Dump file will be empty.",
+                root_id.0,
+                if args.dump_to_id.is_some() {
+                    "filtered "
+                } else {
+                    ""
+                }
+            );
+            // Create an empty file
+            File::create(dump_path)?;
+        }
     }
 
     // --- Generate Documentation ---
+    // Use the *full* graph for documentation generation context, even if dumps were filtered
     let documentation =
-        generate_documentation(&krate, &selected_ids, &graph, args.include_other)?;
+        generate_documentation(&krate, &selected_ids, &full_graph, args.include_other)?;
 
     // --- Output Documentation ---
     if let Some(output_file_path) = args.output {
