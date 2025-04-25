@@ -951,6 +951,46 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<HashSet<Id>> {
 
 // --- Formatting Helpers ---
 
+/// Adjusts the markdown header levels in a string.
+/// Increases the level of each header (e.g., `#` -> `###`) based on the base level.
+/// Caps the maximum level at 6 (`######`).
+fn adjust_markdown_headers(markdown: &str, base_level: usize) -> String {
+    let mut adjusted_markdown = String::new();
+    for line in markdown.lines() {
+        if line.starts_with('#') {
+            let mut level = 0;
+            for char in line.chars() {
+                if char == '#' {
+                    level += 1;
+                } else {
+                    break;
+                }
+            }
+            // Ensure the first character after # is a space for valid markdown header
+            if line.chars().nth(level) == Some(' ') {
+                let new_level = std::cmp::min(base_level + level, 6); // Cap at level 6
+                let adjusted_line = format!(
+                    "{} {}",
+                    "#".repeat(new_level),
+                    line[level..].trim_start() // Get content after #s
+                );
+                adjusted_markdown.push_str(&adjusted_line);
+            } else {
+                // Not a valid header line, keep it as is
+                adjusted_markdown.push_str(line);
+            }
+        } else {
+            adjusted_markdown.push_str(line);
+        }
+        adjusted_markdown.push('\n'); // Add newline back
+    }
+    // Remove trailing newline if the original didn't have one (or if it was empty)
+    if !markdown.ends_with('\n') && !markdown.is_empty() {
+        adjusted_markdown.pop();
+    }
+    adjusted_markdown
+}
+
 /// Indents each line of a string by the specified amount.
 fn indent_string(s: &str, amount: usize) -> String {
     let prefix = " ".repeat(amount);
@@ -1990,12 +2030,13 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(id) {
             let declaration = generate_item_declaration(item, self.krate);
+            let item_header_level = self.current_level + 2; // Item level is ### (base + 2)
 
             // Print Header (### `declaration`)
             writeln!(
                 self.output,
-                "\n{} `{}`\n",                      // Add newline after header
-                "#".repeat(self.current_level + 2), // Item level is ###
+                "\n{} `{}`\n", // Add newline after header
+                "#".repeat(item_header_level),
                 declaration
             )
             .unwrap();
@@ -2026,10 +2067,11 @@ impl<'a> DocPrinter<'a> {
                 writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
             }
 
-            // Print Documentation
+            // Print Documentation (with adjusted headers)
             if let Some(docs) = &item.docs {
                 if !docs.trim().is_empty() {
-                    writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                    let adjusted_docs = adjust_markdown_headers(docs.trim(), item_header_level);
+                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                 }
             }
 
@@ -2073,7 +2115,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Fields\n",                      // Add newline after header
-                "#".repeat(self.current_level + 3)  // Fields section level is ####
+                "#".repeat(self.current_level + 3)  // Fields section level is #### (base + 3)
             )
             .unwrap();
             for field_id in &fields_to_print {
@@ -2096,18 +2138,21 @@ impl<'a> DocPrinter<'a> {
         if let Some(item) = self.krate.index.get(field_id) {
             if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_");
-                // Header: ##### `field_name`
+                let field_header_level = self.current_level + 4; // Field level is ##### (base + 4)
+                                                                 // Header: ##### `field_name`
                 writeln!(
                     self.output,
-                    "{} `{}`\n",                        // Add newline after header
-                    "#".repeat(self.current_level + 4), // Field level is #####
+                    "{} `{}`\n", // Add newline after header
+                    "#".repeat(field_header_level),
                     name
                 )
                 .unwrap();
-                // Docs
+                // Docs (with adjusted headers)
                 if let Some(docs) = &item.docs {
                     if !docs.trim().is_empty() {
-                        writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                        let adjusted_docs =
+                            adjust_markdown_headers(docs.trim(), field_header_level);
+                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                     }
                 }
                 // Type (optional, could add here if needed)
@@ -2122,7 +2167,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Variants\n",                    // Add newline after header
-                "#".repeat(self.current_level + 3)  // Variants section level is ####
+                "#".repeat(self.current_level + 3)  // Variants section level is #### (base + 3)
             )
             .unwrap();
             for variant_id in &e.variants {
@@ -2145,18 +2190,21 @@ impl<'a> DocPrinter<'a> {
         if let Some(item) = self.krate.index.get(variant_id) {
             if let ItemEnum::Variant(variant_data) = &item.inner {
                 let signature = format_variant_signature(item, variant_data, self.krate);
-                // Header: ##### `VariantSignature`
+                let variant_header_level = self.current_level + 4; // Variant level is ##### (base + 4)
+                                                                   // Header: ##### `VariantSignature`
                 writeln!(
                     self.output,
-                    "{} `{}`\n",                        // Add newline after header
-                    "#".repeat(self.current_level + 4), // Variant level is #####
+                    "{} `{}`\n", // Add newline after header
+                    "#".repeat(variant_header_level),
                     signature
                 )
                 .unwrap();
-                // Docs
+                // Docs (with adjusted headers)
                 if let Some(docs) = &item.docs {
                     if !docs.trim().is_empty() {
-                        writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                        let adjusted_docs =
+                            adjust_markdown_headers(docs.trim(), variant_header_level);
+                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                     }
                 }
             }
@@ -2172,7 +2220,7 @@ impl<'a> DocPrinter<'a> {
         writeln!(
             self.output,
             "{} Associated Items\n",            // Add newline after header
-            "#".repeat(self.current_level + 3)  // Associated Items section is ####
+            "#".repeat(self.current_level + 3)  // Associated Items section is #### (base + 3)
         )
         .unwrap();
 
@@ -2199,7 +2247,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Associated Constants\n",
-                "#".repeat(self.current_level + 4) // #####
+                "#".repeat(self.current_level + 4) // ##### (base + 4)
             )
             .unwrap();
             for id in assoc_consts {
@@ -2210,7 +2258,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Associated Types\n",
-                "#".repeat(self.current_level + 4) // #####
+                "#".repeat(self.current_level + 4) // ##### (base + 4)
             )
             .unwrap();
             for id in assoc_types {
@@ -2221,7 +2269,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Associated Functions\n",
-                "#".repeat(self.current_level + 4) // #####
+                "#".repeat(self.current_level + 4) // ##### (base + 4)
             )
             .unwrap();
             for id in assoc_fns {
@@ -2231,13 +2279,14 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
-    /// Does NOT include the markdown header.
+    /// Does NOT include the markdown header. Includes docs with adjusted headers.
     fn generate_associated_item_summary(&mut self, assoc_item_id: &Id) -> Option<String> {
         if !self.selected_ids.contains(assoc_item_id) {
             return None;
         }
         if let Some(item) = self.krate.index.get(assoc_item_id) {
             let mut summary = String::new();
+            let assoc_item_header_level = self.current_level + 4; // Level where item header will be printed (base + 4)
 
             // Add code block for associated functions if they have attrs/where clauses
             if let ItemEnum::Function(f) = &item.inner {
@@ -2252,10 +2301,12 @@ impl<'a> DocPrinter<'a> {
                 }
             }
 
-            // Print Documentation
+            // Print Documentation (with adjusted headers)
             if let Some(docs) = &item.docs {
                 if !docs.trim().is_empty() {
-                    writeln!(summary, "{}\n", docs.trim()).unwrap();
+                    let adjusted_docs =
+                        adjust_markdown_headers(docs.trim(), assoc_item_header_level);
+                    writeln!(summary, "{}\n", adjusted_docs).unwrap();
                 }
             }
 
@@ -2296,11 +2347,12 @@ impl<'a> DocPrinter<'a> {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
             if let Some(summary) = self.generate_associated_item_summary(assoc_item_id) {
                 let declaration = generate_item_declaration(item, self.krate);
-                // Print Header (##### `declaration`) - Note: using +4 level assuming parent is ####
+                let assoc_item_header_level = self.current_level + 4; // Assoc Item level is ##### (base + 4)
+                                                                      // Print Header (##### `declaration`)
                 writeln!(
                     self.output,
-                    "{} `{}`\n",                        // Add newline after header
-                    "#".repeat(self.current_level + 4), // Assoc Item level is #####
+                    "{} `{}`\n", // Add newline after header
+                    "#".repeat(assoc_item_header_level),
                     declaration
                 )
                 .unwrap();
@@ -2337,7 +2389,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Implementations for `{}`\n", // Added target name, Add newline after header
-                "#".repeat(self.current_level + 3), // #### Section Header
+                "#".repeat(self.current_level + 3), // #### Section Header (base + 3)
                 target_name
             )
             .unwrap();
@@ -2357,7 +2409,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Trait Implementations for `{}`\n", // Added target name, Add newline after header
-                "#".repeat(self.current_level + 3),    // #### Section Header
+                "#".repeat(self.current_level + 3),    // #### Section Header (base + 3)
                 target_name
             )
             .unwrap();
@@ -2442,7 +2494,7 @@ impl<'a> DocPrinter<'a> {
             writeln!(
                 self.output,
                 "{} Implementors\n",                // Add newline after header
-                "#".repeat(self.current_level + 3)  // #### Section Header
+                "#".repeat(self.current_level + 3)  // #### Section Header (base + 3)
             )
             .unwrap();
 
@@ -2450,18 +2502,21 @@ impl<'a> DocPrinter<'a> {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
                     // Only print the header for the implementation here
                     let impl_header = self.format_impl_decl(imp);
-                    // Print the impl block header (##### `impl ...`)
+                    let impl_header_level = self.current_level + 4; // Impl block level is ##### (base + 4)
+                                                                    // Print the impl block header (##### `impl ...`)
                     writeln!(
                         self.output,
-                        "{} `{}`\n",                        // Add newline after header
-                        "#".repeat(self.current_level + 4), // Impl block level is #####
-                        impl_header.trim()                  // Trim potential trailing space
+                        "{} `{}`\n", // Add newline after header
+                        "#".repeat(impl_header_level),
+                        impl_header.trim() // Trim potential trailing space
                     )
                     .unwrap();
-                    // Optionally, print docs for the impl block itself if available
+                    // Optionally, print docs for the impl block itself if available (with adjusted headers)
                     if let Some(docs) = &impl_item.docs {
                         if !docs.trim().is_empty() {
-                            writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                            let adjusted_docs =
+                                adjust_markdown_headers(docs.trim(), impl_header_level);
+                            writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                         }
                     }
                     // We don't print the associated items here, just list the implementor
@@ -2617,15 +2672,24 @@ impl<'a> DocPrinter<'a> {
         }
 
         let impl_header = self.format_impl_decl(imp);
+        let impl_header_level = self.current_level + 4; // Impl block level is ##### (base + 4)
 
         // Print the impl block header (##### `impl ...`)
         writeln!(
             self.output,
-            "{} `{}`\n",                        // Add newline after header
-            "#".repeat(self.current_level + 4), // Impl block level is #####
+            "{} `{}`\n", // Add newline after header
+            "#".repeat(impl_header_level),
             impl_header.trim() // Trim potential trailing space if no where clause added
         )
         .unwrap();
+
+        // Print impl block docs (with adjusted headers)
+        if let Some(docs) = &impl_item.docs {
+            if !docs.trim().is_empty() {
+                let adjusted_docs = adjust_markdown_headers(docs.trim(), impl_header_level);
+                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+            }
+        }
 
         // Print associated items within this impl block
         let mut assoc_consts = vec![];
@@ -2762,7 +2826,7 @@ impl<'a> DocPrinter<'a> {
                     writeln!(
                         self.output,
                         "\n{} {}",
-                        "#".repeat(self.current_level + 1), // Group level is ##
+                        "#".repeat(self.current_level + 1), // Group level is ## (base + 1)
                         header_name
                     )
                     .unwrap();
@@ -2776,26 +2840,29 @@ impl<'a> DocPrinter<'a> {
                             // Check printed_ids again before recursing
                             if !self.printed_ids.contains(id) {
                                 let mod_name = item.name.as_deref().unwrap_or("{unnamed}");
+                                let module_header_level = self.current_level + 2; // Module level is ### (base + 2)
                                 writeln!(
                                     self.output,
                                     "\n{} `mod {}`\n", // Module header uses ###
-                                    "#".repeat(self.current_level + 2),
+                                    "#".repeat(module_header_level),
                                     mod_name
                                 )
                                 .unwrap();
                                 self.printed_ids.insert(*id); // Mark printed *before* recursion
 
-                                // Print module docs
+                                // Print module docs (with adjusted headers)
                                 if let Some(docs) = &item.docs {
                                     if !docs.trim().is_empty() {
-                                        writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                                        let adjusted_docs =
+                                            adjust_markdown_headers(docs.trim(), module_header_level);
+                                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                                     }
                                 }
 
                                 let previous_level = self.current_level;
-                                self.current_level += 1;
+                                self.current_level += 1; // Increase level for contents *within* module
                                 self.print_module_contents(sub_module);
-                                self.current_level = previous_level;
+                                self.current_level = previous_level; // Restore level
                             }
                         } else {
                             // Print other item types using the detail printer
@@ -2812,22 +2879,24 @@ impl<'a> DocPrinter<'a> {
         let root_item = self.krate.index.get(&self.krate.root).unwrap(); // Assume root exists
         let crate_name = root_item.name.as_deref().unwrap_or("Unknown Crate");
         let crate_version = self.krate.crate_version.as_deref().unwrap_or("");
+        let crate_header_level = self.current_level; // Base level (usually 1)
 
         // Print Crate Header (# Crate Name (Version))
         writeln!(
             self.output,
             "{} {} API ({})\n", // Add newline after header
-            "#".repeat(self.current_level),
+            "#".repeat(crate_header_level),
             crate_name,
             crate_version
         )
         .unwrap();
         self.printed_ids.insert(self.krate.root); // Mark root as printed
 
-        // Print Crate Documentation
+        // Print Crate Documentation (with adjusted headers)
         if let Some(docs) = &root_item.docs {
             if !docs.trim().is_empty() {
-                writeln!(self.output, "{}\n", docs.trim()).unwrap();
+                let adjusted_docs = adjust_markdown_headers(docs.trim(), crate_header_level);
+                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
             }
         }
 
@@ -2858,7 +2927,7 @@ impl<'a> DocPrinter<'a> {
             );
             writeln!(
                 self.output,
-                "\n{} Other Items", // Use ## level for this section
+                "\n{} Other Items", // Use ## level for this section (base + 1)
                 "#".repeat(self.current_level + 1)
             )
             .unwrap();
