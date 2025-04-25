@@ -245,11 +245,14 @@ impl IdGraph {
         let mut queue = VecDeque::new();
 
         // Start BFS from the target node using the reverse adjacency list
-        if self.reverse_adjacency.contains_key(&target_leaf_id) {
+        // Check existence in reverse_adjacency OR adjacency (node might exist but have no incoming edges)
+        if self.reverse_adjacency.contains_key(&target_leaf_id)
+            || self.adjacency.contains_key(&target_leaf_id)
+        {
             reachable_nodes.insert(target_leaf_id);
             queue.push_back(target_leaf_id);
         } else {
-            // Target ID doesn't exist or has no incoming edges in the original graph
+            // Target ID doesn't exist in the original graph's node set
             return filtered_graph; // Return empty graph
         }
 
@@ -323,69 +326,94 @@ fn get_item_info_string(id: &Id, krate: &Crate) -> String {
 /// Recursive function to dump the graph structure.
 fn dump_node(
     node_id: Id,
-    graph: &IdGraph, // Use the potentially filtered graph
+    graph: &IdGraph,           // Use the potentially filtered graph
     krate: &Crate,
     writer: &mut BufWriter<File>,
     visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
+    path_to_target: &mut HashSet<Id>, // Tracks current path to target leaf
     indent: usize,
-    prefix: &str, // Prefix like "├── " or "└── "
+    prefix: &str,             // Prefix like "├── " or "└── "
     parent_label: Option<&EdgeLabel>, // Label connecting this node to its parent
+    is_root_call: bool, // Flag to know if this is the initial call for a root
 ) -> Result<()> {
-    // Prevent infinite loops and redundant printing using the *shared* visited set
+    // Track current node in the path being explored towards the target
+    let inserted_in_path = path_to_target.insert(node_id);
+
+    // Determine if this node has already been visited *globally*
     let is_newly_visited = visited.insert(node_id);
 
-    // Format the current node information
-    let node_info = get_item_info_string(&node_id, krate);
-    let label_info = parent_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
-    let cycle_marker = if !is_newly_visited && indent > 0 {
-        " [... cycle or previously visited ...]"
-    } else {
-        ""
-    };
+    // Determine if we should print this node
+    // Print if:
+    // 1. It's the root of the current dump traversal (is_root_call is true)
+    // 2. OR it's newly visited globally
+    // 3. OR it's already visited globally BUT it's part of the current path to the target
+    let should_print = is_root_call || is_newly_visited || path_to_target.contains(&node_id);
 
-    writeln!(
-        writer,
-        "{}{}{}{}{}",
-        " ".repeat(indent),
-        prefix,
-        node_info,
-        label_info,
-        cycle_marker
-    )?;
+    if should_print {
+        // Format the current node information
+        let node_info = get_item_info_string(&node_id, krate);
+        let label_info = parent_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
+        // Add cycle marker only if globally visited before AND relevant to current path
+        let cycle_marker = if !is_newly_visited && path_to_target.contains(&node_id) && !is_root_call {
+            " [... cycle or previously visited on current path ...]"
+        } else if !is_newly_visited && !is_root_call {
+            // This case should ideally not be reached often if filtering works, but indicates a visited node NOT on the current path
+            " [... previously visited (not on current path) ...]" // This might still be printed if filter is off
+        } else {
+            ""
+        };
 
-    // If this node was already visited in this dump traversal, stop recursing
-    if !is_newly_visited {
-        return Ok(());
+
+        writeln!(
+            writer,
+            "{}{}{}{}{}",
+            " ".repeat(indent),
+            prefix,
+            node_info,
+            label_info,
+            cycle_marker
+        )?;
     }
 
-    // Get children from the potentially filtered graph and sort them
-    if let Some(children) = graph.get_children(&node_id) {
-        let mut sorted_children = children.to_vec(); // Clone to sort
+    // Recurse only if newly visited globally
+    // (If !is_newly_visited, we've already explored its children from a previous encounter)
+    if is_newly_visited {
+        // Get children from the potentially filtered graph and sort them
+        if let Some(children) = graph.get_children(&node_id) {
+            let mut sorted_children = children.to_vec(); // Clone to sort
 
-        // Sort by target Id primarily, then label for stability
-        sorted_children.sort_by_key(|(target_id, label)| (target_id.0, format!("{}", label)));
+            // Sort by target Id primarily, then label for stability
+            sorted_children.sort_by_key(|(target_id, label)| (target_id.0, format!("{}", label)));
 
-        let num_children = sorted_children.len();
-        for (i, (child_id, child_label)) in sorted_children.iter().enumerate() {
-            let new_prefix = if i == num_children - 1 {
-                "└── "
-            } else {
-                "├── "
-            };
-            let child_indent = indent + 4; // Indent children further
+            let num_children = sorted_children.len();
+            for (i, (child_id, child_label)) in sorted_children.iter().enumerate() {
+                let new_prefix = if i == num_children - 1 {
+                    "└── "
+                } else {
+                    "├── "
+                };
+                let child_indent = indent + 4; // Indent children further
 
-            // Recurse with the same mutable visited set
-            dump_node(
-                *child_id,
-                graph, // Pass the same graph down
-                krate,
-                writer,
-                visited, // Pass mutable reference down
-                child_indent,
-                new_prefix,
-                Some(child_label),
-            )?;
+                // Recurse with the same mutable visited set and path_to_target set
+                dump_node(
+                    *child_id,
+                    graph, // Pass the same graph down
+                    krate,
+                    writer,
+                    visited,         // Pass mutable reference down
+                    path_to_target, // Pass mutable reference down
+                    child_indent,
+                    new_prefix,
+                    Some(child_label),
+                    false, // Not a root call anymore
+                )?;
+            }
         }
+    }
+
+    // Backtrack: Remove current node from the path_to_target set *if* it was added by this call
+    if inserted_in_path {
+        path_to_target.remove(&node_id);
     }
 
     Ok(())
@@ -408,7 +436,7 @@ fn dump_graph_subset(
         .with_context(|| format!("Failed to create graph dump file: {}", output_path.display()))?;
     let mut writer = BufWriter::new(file);
 
-    // Use a single visited set for the entire dump process
+    // Use a single visited set for the entire dump process across all roots
     let mut visited = HashSet::new();
 
     let mut sorted_roots: Vec<_> = root_ids.iter().cloned().collect();
@@ -421,34 +449,42 @@ fn dump_graph_subset(
         let mut all_nodes: Vec<_> = graph.adjacency.keys().cloned().collect();
         all_nodes.sort_by_key(|id| id.0);
         for node_id in all_nodes {
-            // Check if already visited
+            // Check if already visited globally
             if !visited.contains(&node_id) {
+                // Initialize an empty path_to_target for this arbitrary root start
+                let mut path_to_target = HashSet::new();
                 dump_node(
                     node_id,
                     graph,
                     krate,
                     &mut writer,
-                    &mut visited, // Pass mutable reference
+                    &mut visited,     // Pass shared mutable visited set
+                    &mut path_to_target, // Pass new mutable path set
                     0,
                     "", // No prefix for top-level nodes in fallback
                     None,
+                    true, // It's a root call in this fallback context
                 )?;
             }
         }
     } else {
         writeln!(writer, "Graph Roots ({}):", dump_description)?;
         for root_id in sorted_roots {
-            // Check if already visited
+            // Check if already visited globally before starting a new root traversal
             if !visited.contains(&root_id) {
+                // Initialize a path_to_target set for *each* root dump traversal
+                let mut path_to_target = HashSet::new();
                 dump_node(
                     root_id,
                     graph,
                     krate,
                     &mut writer,
-                    &mut visited, // Pass mutable reference
+                    &mut visited,     // Pass shared mutable visited set
+                    &mut path_to_target, // Pass new mutable path set for this root
                     0,
                     "", // No prefix for root nodes
                     None,
+                    true, // It's a root call
                 )?;
             }
         }
