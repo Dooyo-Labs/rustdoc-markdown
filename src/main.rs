@@ -1154,7 +1154,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{}{}", // Fixed: Added 5th placeholder
+                            "{}{}{}{}{}",
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1169,7 +1169,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{}{}", // Fixed: Added 5th placeholder
+                            "{}{}{}{}{}",
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
@@ -1484,7 +1484,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
             let auto = if t.is_auto { "auto " } else { "" };
             // Include param generics in trait header
             format!(
-                "{}{}{}{}{}", // Fixed: Added 5th placeholder
+                "{}{}{}{}{}",
                 auto,
                 unsafe_kw,
                 "trait ",
@@ -1562,7 +1562,6 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
 
 /// Generates the `struct { ... }` code block.
 fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String {
-    // Fixed: Use item.name instead of s.name
     let name = item
         .name
         .as_deref()
@@ -1642,7 +1641,6 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
 
 /// Generates the `enum { ... }` code block.
 fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
-    // Fixed: Use item.name instead of e.name
     let name = item.name.as_deref().expect("Enum item should have a name");
     let mut code = String::new();
     write!(code, "pub enum {}", name).unwrap();
@@ -1687,7 +1685,6 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
 
 /// Generates the full trait declaration code block.
 fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
-    // Fixed: Use item.name instead of t.name
     let name = item.name.as_deref().expect("Trait item should have a name");
     let mut code = String::new();
 
@@ -1809,7 +1806,6 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
 
 /// Generates the full function signature for a code block.
 fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> String {
-    // Fixed: Use item.name instead of f.name
     let name = item.name.as_deref().expect("Function should have a name");
     let mut code = String::new();
 
@@ -2320,7 +2316,6 @@ impl<'a> DocPrinter<'a> {
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
         let target_name = target_item.name.as_deref().unwrap_or_else(|| {
-            // Fixed: Correctly handle primitive name extraction
             match &target_item.inner {
                 ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
                 _ => "{unknown_primitive}", // Should not happen if called correctly
@@ -2424,6 +2419,7 @@ impl<'a> DocPrinter<'a> {
                         {
                             // Indent the generated code block by 4 spaces for list context
                             let indented_block = indent_string(&impl_block_str, 4);
+                            // Wrap the indented block in the code fence
                             writeln!(self.output, "```rust\n{}\n```\n", indented_block).unwrap();
                         }
                     }
