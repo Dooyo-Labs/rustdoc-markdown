@@ -32,15 +32,14 @@ use rustdoc_types::{
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
-// Removed unused imports
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
-use std::fmt::Write;
+use std::fmt::Write as FmtWrite; // Use FmtWrite alias
 use std::fs::File;
-// Removed unused Hash import
-use std::io::{BufReader, Cursor};
+use std::io::{BufReader, Cursor, Write as IoWrite}; // Use IoWrite alias
 use std::path::{Path as FilePath, PathBuf};
 use tar::Archive;
 use tracing::{debug, info, warn};
+use tracing_subscriber::EnvFilter;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 
@@ -58,9 +57,13 @@ struct Args {
     #[arg(long)]
     include_prerelease: bool,
 
-    /// Output directory for crate documentation build artifacts
+    /// Build directory for crate documentation artifacts
     #[arg(long, default_value = ".ai/docs/rust/build")]
-    output_dir: String,
+    build_dir: String, // Renamed from output_dir
+
+    /// Path to write the generated documentation (defaults to stdout)
+    #[arg(long)]
+    output: Option<PathBuf>, // New argument for output file
 
     /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
     /// Paths starting with '::' imply the root of the current crate.
@@ -185,10 +188,10 @@ async fn find_best_version(
 async fn download_and_unpack_crate(
     client: &reqwest::Client,
     krate: &CrateVersion,
-    output_path: &FilePath,
+    build_path: &FilePath, // Renamed from output_path
 ) -> Result<PathBuf> {
     let crate_dir_name = format!("{}-{}", krate.crate_name, krate.num);
-    let target_dir = output_path.join(crate_dir_name);
+    let target_dir = build_path.join(crate_dir_name); // Use build_path
 
     if target_dir.exists() {
         info!(
@@ -3218,9 +3221,11 @@ fn generate_documentation(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize logging based on RUST_LOG env var (e.g., RUST_LOG=info,crate_doc_extractor=debug)
+    // Initialize logging: default to 'info' if RUST_LOG is not set, write to stderr
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(env_filter)
+        .with_writer(std::io::stderr) // Ensure logs go to stderr
         .init();
 
     // Install the required nightly toolchain
@@ -3247,15 +3252,11 @@ async fn main() -> Result<()> {
         target_version.num, target_version.crate_name
     );
 
-    let output_path = PathBuf::from(args.output_dir);
-    std::fs::create_dir_all(&output_path).with_context(|| {
-        format!(
-            "Failed to create output directory: {}",
-            output_path.display()
-        )
-    })?;
+    let build_path = PathBuf::from(args.build_dir); // Use build_dir
+    std::fs::create_dir_all(&build_path)
+        .with_context(|| format!("Failed to create build directory: {}", build_path.display()))?;
 
-    let crate_dir = download_and_unpack_crate(&client, &target_version, &output_path).await?;
+    let crate_dir = download_and_unpack_crate(&client, &target_version, &build_path).await?;
 
     // Use the *actual* crate name from the API response, as it might differ in casing
     let actual_crate_name = &target_version.crate_name;
@@ -3283,8 +3284,23 @@ async fn main() -> Result<()> {
     let documentation = generate_documentation(&krate, &selected_ids, args.include_other)?;
 
     // --- Output Documentation ---
-    // For now, just print to stdout
-    print!("{}", documentation); // Use print! to avoid extra newline at the end
+    if let Some(output_file_path) = args.output {
+        info!("Writing documentation to file: {}", output_file_path.display());
+        let mut file = File::create(&output_file_path).with_context(|| {
+            format!("Failed to create output file: {}", output_file_path.display())
+        })?;
+        file.write_all(documentation.as_bytes())
+            .with_context(|| {
+                format!("Failed to write to output file: {}", output_file_path.display())
+            })?;
+        info!(
+            "Successfully wrote documentation to {}",
+            output_file_path.display()
+        );
+    } else {
+        info!("Printing documentation to stdout.");
+        print!("{}", documentation); // Use print! to avoid extra newline at the end
+    }
 
     Ok(())
 }
