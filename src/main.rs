@@ -36,7 +36,7 @@ use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BT
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
 use std::io::{BufReader, Cursor, Write as IoWrite}; // Use IoWrite alias
-use std.path::{Path as FilePath, PathBuf};
+use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -3677,7 +3677,7 @@ impl<'a> DocPrinter<'a> {
             if !self.printed_ids.contains(id) {
                 // Skip impl items and use items as they are handled implicitly or ignored
                 if let Some(item) = self.krate.index.get(id) {
-                    // Also skip items without names (like tuple fields often represented by '0')
+                    // Also skip items without names (like unnamed tuple fields often represented by '0')
                     if !matches!(item.inner, ItemEnum::Impl(_) | ItemEnum::Use { .. })
                         && item.name.is_some()
                     {
