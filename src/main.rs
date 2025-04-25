@@ -2482,13 +2482,6 @@ impl<'a> DocPrinter<'a> {
         // --- Inherent Impls ---
         if !inherent_impls.is_empty() {
             // REMOVED: Inherent Impls header
-            // writeln!(
-            //     self.output,
-            //     "{} Implementations for `{}`\n", // Add newline after header
-            //     "#".repeat(impl_section_level),
-            //     target_name
-            // )
-            // .unwrap();
             for impl_item in inherent_impls {
                 // Check printed_ids *before* printing the block
                 if self.printed_ids.contains(&impl_item.id) {
@@ -2893,9 +2886,12 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the contents of a specific module (identified by its ID).
+    /// `current_level` dictates the markdown header level for sections within this module (e.g., 3 for `###`).
     fn print_module_contents(&mut self, module_id: &Id, current_level: usize) {
         if let Some(module_item) = self.krate.index.get(module_id) {
             if let ItemEnum::Module(module_data) = &module_item.inner {
+                let is_crate_root = module_item.id == self.krate.root;
+
                 // Group selected items by kind within this module
                 let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new(); // Use HashMap instead of BTreeMap
                 for id in &module_data.items {
@@ -2904,13 +2900,15 @@ impl<'a> DocPrinter<'a> {
                     }
                     if let Some(kind) = self.get_item_kind(id) {
                         // Skip kinds handled implicitly within others for grouping
+                        // Also skip modules when printing the special "::" crate root contents
                         match kind {
                             ItemKind::Impl
                             | ItemKind::Variant
                             | ItemKind::StructField
                             | ItemKind::AssocConst
                             | ItemKind::AssocType
-                            | ItemKind::Use => continue, // Skip Use items here too
+                            | ItemKind::Use => continue,
+                            ItemKind::Module if is_crate_root => continue, // Skip submodules when printing root "::"
                             _ => {}
                         }
                         items_by_kind.entry(kind).or_default().push(*id);
@@ -2929,7 +2927,7 @@ impl<'a> DocPrinter<'a> {
                     (ItemKind::Macro, "Macros"), // Includes ProcMacros displayed as Macro
                     (ItemKind::ProcAttribute, "Attribute Macros"),
                     (ItemKind::ProcDerive, "Derive Macros"),
-                    (ItemKind::Module, "Submodules"), // Changed header name
+                    (ItemKind::Module, "Submodules"), // Only printed if NOT crate root
                     (ItemKind::Struct, "Structs"),
                     (ItemKind::Enum, "Enums"),
                     (ItemKind::Union, "Unions"),
@@ -2940,7 +2938,6 @@ impl<'a> DocPrinter<'a> {
                     (ItemKind::Static, "Statics"),
                     (ItemKind::Constant, "Constants"),
                     (ItemKind::ExternCrate, "External Crates"),
-                    // (ItemKind::Use, "Imports"), // REMOVED Use/Imports section
                     (ItemKind::ExternType, "External Types"),
                     (ItemKind::Primitive, "Primitives"), // Unlikely unless re-exported
                 ];
@@ -2966,36 +2963,42 @@ impl<'a> DocPrinter<'a> {
                         // Print items of this kind
                         for id in ids {
                             if let Some(item) = self.krate.index.get(id) {
-                                // Handle nested modules recursively
-                                if let ItemEnum::Module(sub_module_data) = &item.inner {
-                                    // Check printed_ids again before recursing
-                                    if !self.printed_ids.contains(id) {
-                                        let mod_name = item.name.as_deref().unwrap_or("{unnamed}");
-                                        writeln!(
-                                            self.output,
-                                            "\n{} `mod {}`\n", // Module header uses item_detail_level
-                                            "#".repeat(item_detail_level),
-                                            mod_name
-                                        )
-                                        .unwrap();
-                                        self.printed_ids.insert(*id); // Mark printed *before* recursion
+                                // Handle nested modules recursively (but only if not the crate root's contents)
+                                if !is_crate_root {
+                                    if let ItemEnum::Module(sub_module_data) = &item.inner {
+                                        // Check printed_ids again before recursing
+                                        if !self.printed_ids.contains(id) {
+                                            let mod_name =
+                                                item.name.as_deref().unwrap_or("{unnamed}");
+                                            writeln!(
+                                                self.output,
+                                                "\n{} `mod {}`\n", // Module header uses item_detail_level
+                                                "#".repeat(item_detail_level),
+                                                mod_name
+                                            )
+                                            .unwrap();
+                                            self.printed_ids.insert(*id); // Mark printed *before* recursion
 
-                                        // Print module docs (with adjusted headers)
-                                        if let Some(docs) = &item.docs {
-                                            if !docs.trim().is_empty() {
-                                                let adjusted_docs = adjust_markdown_headers(
-                                                    docs.trim(),
-                                                    item_detail_level,
-                                                );
-                                                writeln!(self.output, "{}\n", adjusted_docs)
-                                                    .unwrap();
+                                            // Print module docs (with adjusted headers)
+                                            if let Some(docs) = &item.docs {
+                                                if !docs.trim().is_empty() {
+                                                    let adjusted_docs = adjust_markdown_headers(
+                                                        docs.trim(),
+                                                        item_detail_level,
+                                                    );
+                                                    writeln!(self.output, "{}\n", adjusted_docs)
+                                                        .unwrap();
+                                                }
                                             }
+                                            // Recurse for the submodule's contents
+                                            self.print_module_contents(id, item_detail_level); // Pass item_detail_level as new base
                                         }
-                                        // Recurse for the submodule's contents
-                                        self.print_module_contents(id, item_detail_level); // Pass item_detail_level as new base
+                                    } else {
+                                        // Print other item types using the detail printer
+                                        self.print_item_details(id, item_detail_level);
                                     }
                                 } else {
-                                    // Print other item types using the detail printer
+                                    // If it's the crate root, just print the item details directly
                                     self.print_item_details(id, item_detail_level);
                                 }
                             }
@@ -3022,7 +3025,7 @@ impl<'a> DocPrinter<'a> {
             crate_version
         )
         .unwrap();
-        self.printed_ids.insert(self.krate.root); // Mark root as printed (its contents are handled below)
+        // We *don't* mark the root ID as printed yet, as its contents go in "::"
 
         // Print Crate Documentation (with adjusted headers)
         if let Some(docs) = &root_item.docs {
@@ -3037,7 +3040,7 @@ impl<'a> DocPrinter<'a> {
             let top_level_items = &root_module_data.items;
             let section_level = crate_header_level + 1; // ## (level 2) for top-level sections
 
-            // Combine Macro kinds
+            // --- Macros Section (Level 2) ---
             let macro_ids: Vec<&Id> = top_level_items
                 .iter()
                 .filter(|id| self.selected_ids.contains(id))
@@ -3056,84 +3059,63 @@ impl<'a> DocPrinter<'a> {
                     self.krate.index.get(id).and_then(|item| item.name.clone())
                 });
                 for id in sorted_macros {
-                    self.print_item_details(id, section_level + 1);
+                    self.print_item_details(id, section_level + 1); // Macro details at level 3
                 }
             }
 
-            // Modules Section
-            let module_ids: Vec<&Id> = top_level_items
+            // --- Modules Section (Level 2) ---
+            writeln!(self.output, "\n{} Modules", "#".repeat(section_level)).unwrap();
+            let module_header_level = section_level + 1; // ### (level 3) for module headers
+
+            // Print special "::" module first
+            writeln!(
+                self.output,
+                "\n{} `::` (Crate Root)\n", // Module header uses level 3
+                "#".repeat(module_header_level)
+            )
+            .unwrap();
+            self.print_module_contents(&self.krate.root, module_header_level); // Print root contents starting at level 3
+            self.printed_ids.insert(self.krate.root); // Now mark root ID as printed
+
+            // Find and print actual submodules
+            let submodule_ids: Vec<&Id> = top_level_items
                 .iter()
                 .filter(|id| self.selected_ids.contains(id))
                 .filter(|id| self.get_item_kind(id) == Some(ItemKind::Module))
                 .collect();
 
-            if !module_ids.is_empty() {
-                writeln!(self.output, "\n{} Modules", "#".repeat(section_level)).unwrap();
-                let mut sorted_modules = module_ids;
-                sorted_modules.sort_by_key(|id| {
-                    self.krate.index.get(id).and_then(|item| item.name.clone())
-                });
-                for id in sorted_modules {
-                    // Print module header first
-                    if let Some(item) = self.krate.index.get(id) {
-                        if !self.printed_ids.contains(id) {
-                            let mod_name = item.name.as_deref().unwrap_or("{unnamed}");
-                            let mod_header_level = section_level + 1; // ###
-                            writeln!(
-                                self.output,
-                                "\n{} `mod {}`\n",
-                                "#".repeat(mod_header_level),
-                                mod_name
-                            )
-                            .unwrap();
-                            self.printed_ids.insert(*id); // Mark module as printed *before* printing contents
+            let mut sorted_submodules = submodule_ids;
+            sorted_submodules.sort_by_key(|id| {
+                self.krate.index.get(id).and_then(|item| item.name.clone())
+            });
 
-                            // Print module docs
-                            if let Some(docs) = &item.docs {
-                                if !docs.trim().is_empty() {
-                                    let adjusted_docs =
-                                        adjust_markdown_headers(docs.trim(), mod_header_level);
-                                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                                }
+            for id in sorted_submodules {
+                if let Some(item) = self.krate.index.get(id) {
+                    // Check printed_ids again just in case (should be redundant here)
+                    if !self.printed_ids.contains(id) {
+                        let mod_name = item.name.as_deref().unwrap_or("{unnamed}");
+                        writeln!(
+                            self.output,
+                            "\n{} `mod {}`\n",
+                            "#".repeat(module_header_level),
+                            mod_name
+                        )
+                        .unwrap();
+                        self.printed_ids.insert(*id); // Mark module as printed *before* printing contents
+
+                        // Print module docs
+                        if let Some(docs) = &item.docs {
+                            if !docs.trim().is_empty() {
+                                let adjusted_docs =
+                                    adjust_markdown_headers(docs.trim(), module_header_level);
+                                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                             }
-                            // Print module contents
-                            self.print_module_contents(id, mod_header_level); // Start contents at level + 1
                         }
+                        // Print module contents
+                        self.print_module_contents(id, module_header_level); // Start contents at level 3
                     }
                 }
             }
-
-            // Other Top-Level Sections
-            self.print_items_of_kind(
-                top_level_items,
-                ItemKind::Static,
-                "Statics",
-                section_level,
-            );
-            self.print_items_of_kind(
-                top_level_items,
-                ItemKind::Constant,
-                "Constants", // Renamed from Consts
-                section_level,
-            );
-            self.print_items_of_kind(
-                top_level_items,
-                ItemKind::Struct,
-                "Structs",
-                section_level,
-            );
-            self.print_items_of_kind(top_level_items, ItemKind::Enum, "Enums", section_level);
-            self.print_items_of_kind(top_level_items, ItemKind::Trait, "Traits", section_level);
-            self.print_items_of_kind(
-                top_level_items,
-                ItemKind::Function,
-                "Functions",
-                section_level,
-            );
-            // Add Union, TypeAlias, TraitAlias if needed as top-level sections
-            // self.print_items_of_kind(top_level_items, ItemKind::Union, "Unions", section_level);
-            // self.print_items_of_kind(top_level_items, ItemKind::TypeAlias, "Type Aliases", section_level);
-            // self.print_items_of_kind(top_level_items, ItemKind::TraitAlias, "Trait Aliases", section_level);
         }
 
         // --- Handle "Other" Items ---
