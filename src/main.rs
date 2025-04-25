@@ -35,7 +35,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write as IoWrite}; // Use IoWrite alias
+use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
@@ -476,7 +476,7 @@ async fn download_and_unpack_crate(
     let response = client.get(&url).send().await?.error_for_status()?;
 
     let content = response.bytes().await?;
-    let reader = Cursor::new(content);
+    let reader = Cursor::new(content); // Cursor is now in scope
 
     info!("Unpacking crate to: {}", target_dir.display());
     std::fs::create_dir_all(&target_dir)
@@ -2502,7 +2502,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
         .join(", ");
     write!(code, "{}", args_str).unwrap();
     if f.sig.is_c_variadic {
-        write!(code, ", ...").unwrap();
+        write!(decl, ", ...").unwrap();
     }
     write!(code, ")").unwrap();
 
@@ -2619,7 +2619,7 @@ impl<'a> DocPrinter<'a> {
         self.krate
             .index
             .get(id)
-            .map(|item| self.infer_item_kind(item))
+            .map(|item| DocPrinter::infer_item_kind(item)) // Use associated function syntax
             .or_else(|| self.krate.paths.get(id).map(|summary| summary.kind))
     }
 
