@@ -2161,51 +2161,73 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints the "Variants" section for an enum.
+    /// Checks if any selected variant within an enum has documentation.
+    fn has_documented_variants(&self, e: &Enum) -> bool {
+        e.variants.iter().any(|variant_id| {
+            self.selected_ids.contains(variant_id)
+                && self
+                    .krate
+                    .index
+                    .get(variant_id)
+                    .map_or(false, |item| item.docs.as_ref().map_or(false, |d| !d.trim().is_empty()))
+        })
+    }
+
+    /// Prints the "Variants" section for an enum, only if needed.
     fn print_enum_variants(&mut self, _item: &Item, e: &Enum) {
-        if !e.variants.is_empty() || e.has_stripped_variants {
-            writeln!(
-                self.output,
-                "{} Variants\n",                    // Add newline after header
-                "#".repeat(self.current_level + 3)  // Variants section level is #### (base + 3)
-            )
-            .unwrap();
-            for variant_id in &e.variants {
-                self.print_variant_details(variant_id);
-            }
-            if e.has_stripped_variants {
-                writeln!(self.output, "\n_[Private variants hidden]_").unwrap();
-            }
+        let has_docs = self.has_documented_variants(e);
+
+        if !has_docs && !e.has_stripped_variants {
+            // Skip Variants section entirely if no variants have docs and none are stripped
+            return;
+        }
+
+        // Print the header only if there are docs or stripped variants
+        writeln!(
+            self.output,
+            "{} Variants\n",                    // Add newline after header
+            "#".repeat(self.current_level + 3)  // Variants section level is #### (base + 3)
+        )
+        .unwrap();
+
+        for variant_id in &e.variants {
+            // Pass has_docs hint to variant printer
+            self.print_variant_details(variant_id);
+        }
+        if e.has_stripped_variants {
+            writeln!(self.output, "\n_[Private variants hidden]_").unwrap();
         }
     }
 
-    /// Prints the details for a single enum variant.
+    /// Prints the details for a single enum variant, only if it has documentation.
     fn print_variant_details(&mut self, variant_id: &Id) {
         if !self.selected_ids.contains(variant_id) {
             return;
         } // Skip unselected
-          // Avoid printing if already handled elsewhere
-          // if !self.printed_ids.insert(*variant_id) { return; }
 
         if let Some(item) = self.krate.index.get(variant_id) {
-            if let ItemEnum::Variant(variant_data) = &item.inner {
-                let signature = format_variant_signature(item, variant_data, self.krate);
-                let variant_header_level = self.current_level + 4; // Variant level is ##### (base + 4)
-                                                                   // Header: ##### `VariantSignature`
-                writeln!(
-                    self.output,
-                    "{} `{}`\n", // Add newline after header
-                    "#".repeat(variant_header_level),
-                    signature
-                )
-                .unwrap();
-                // Docs (with adjusted headers)
-                if let Some(docs) = &item.docs {
-                    if !docs.trim().is_empty() {
-                        let adjusted_docs =
-                            adjust_markdown_headers(docs.trim(), variant_header_level);
-                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                    }
+            // Only proceed if the variant has documentation
+            if let Some(docs) = &item.docs {
+                if docs.trim().is_empty() {
+                    return; // Skip variants without docs
+                }
+
+                if let ItemEnum::Variant(variant_data) = &item.inner {
+                    let signature = format_variant_signature(item, variant_data, self.krate);
+                    let variant_header_level = self.current_level + 4; // Variant level is ##### (base + 4)
+
+                    // Header: ##### `VariantSignature`
+                    writeln!(
+                        self.output,
+                        "{} `{}`\n", // Add newline after header
+                        "#".repeat(variant_header_level),
+                        signature
+                    )
+                    .unwrap();
+
+                    // Docs (with adjusted headers - we already checked non-empty)
+                    let adjusted_docs = adjust_markdown_headers(docs.trim(), variant_header_level);
+                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                 }
             }
         }
