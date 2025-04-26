@@ -29,7 +29,7 @@ use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
-    Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+    Struct, StructKind, Term, Trait, Type, Use, Variant, VariantKind, WherePredicate, // Added Use
 };
 use semver::{Version, VersionReq};
 use serde::Deserialize;
@@ -37,7 +37,7 @@ use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BT
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
-use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
+use std.path::{Path as FilePath, PathBuf}; // Corrected use statement
 use std::str::FromStr; // Import FromStr for Id parsing
 use tar::Archive;
 use tracing::{debug, info, warn};
@@ -125,7 +125,7 @@ struct CrateVersion {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum EdgeLabel {
-    Contains,          // Module contains Item
+    Contains,          // Module contains Item (original structure)
     ReferencesType,    // Item references Type ID (e.g., field type, return type)
     GenericArgument,   // Path uses Type ID as generic arg
     AssociatedType,    // Item references Associated Type ID
@@ -155,6 +155,7 @@ enum EdgeLabel {
     PredicateEqRhs,    // Where Predicate Eq references RHS Term ID
     DynTraitBound,     // DynTrait references Trait ID
     ImplTraitBound,    // ImplTrait references Bound/Trait ID
+    UseTarget,         // Use item references target item/module ID
 }
 
 impl Display for EdgeLabel {
@@ -291,6 +292,140 @@ impl IdGraph {
 }
 
 // --- End ID Graph Structures ---
+
+// --- Module Resolution Structures ---
+
+#[derive(Debug, Clone)]
+enum ResolutionState {
+    Unresolved,
+    Resolving,
+    Resolved(HashSet<Id>),
+}
+
+type ResolutionCache = HashMap<Id, ResolutionState>;
+
+/// Represents a module with its fully resolved items after handling 'use' statements.
+#[derive(Debug, Clone)]
+struct ResolvedModule {
+    id: Id,
+    /// The fully resolved set of item IDs directly accessible within this module.
+    items: HashSet<Id>,
+}
+
+/// Recursively resolves items for a module, handling `use` statements and cycles.
+fn resolve_module_items(
+    module_id: Id,
+    krate: &Crate,
+    cache: &mut ResolutionCache,
+) -> HashSet<Id> {
+    // Check cache for cycle or previous result
+    match cache.get(&module_id) {
+        Some(ResolutionState::Resolving) => {
+            debug!("Cycle detected resolving module ID: {:?}", module_id);
+            return HashSet::new(); // Break cycle
+        }
+        Some(ResolutionState::Resolved(items)) => {
+            return items.clone();
+        }
+        Some(ResolutionState::Unresolved) | None => {
+            // Continue resolution
+        }
+    }
+
+    // Mark as resolving
+    cache.insert(module_id, ResolutionState::Resolving);
+    debug!("Resolving module ID: {:?}", module_id);
+
+    let mut resolved_items = HashSet::new();
+
+    // Get the original module definition
+    if let Some(module_item) = krate.index.get(&module_id) {
+        if let ItemEnum::Module(module_data) = &module_item.inner {
+            for item_id in &module_data.items {
+                if let Some(item) = krate.index.get(item_id) {
+                    match &item.inner {
+                        ItemEnum::Use(use_item) => {
+                            if let Some(target_id) = use_item.id {
+                                if use_item.is_glob {
+                                    // Glob import: Recursively resolve the target module/enum/etc.
+                                    // Check if target_id points to a Module. Glob imports
+                                    // can also be used on Enums, but we primarily care
+                                    // about module imports here for bringing items into scope.
+                                    if let Some(target_item) = krate.index.get(&target_id) {
+                                        if matches!(target_item.inner, ItemEnum::Module(_)) {
+                                            debug!(
+                                                "Glob import from {:?} to {:?} in module {:?}",
+                                                target_id, item_id, module_id
+                                            );
+                                            let imported_items =
+                                                resolve_module_items(target_id, krate, cache);
+                                            resolved_items.extend(imported_items);
+                                        } else {
+                                            // Glob import from something not a module (e.g., Enum)
+                                            // Just add the enum ID itself for now.
+                                            resolved_items.insert(target_id);
+                                        }
+                                    }
+                                } else {
+                                    // Single item import: Add the target ID directly
+                                    resolved_items.insert(target_id);
+                                }
+                            }
+                            // Ignore use items with id: None (primitive re-exports) for resolution
+                        }
+                        _ => {
+                            // Not a use statement, add the item ID directly
+                            resolved_items.insert(*item_id);
+                        }
+                    }
+                }
+            }
+        } else {
+            warn!("Module ID {:?} not found in crate index.", module_id);
+        }
+    }
+
+    // Mark as resolved and cache the result
+    debug!(
+        "Resolved module ID {:?} with {} items.",
+        module_id,
+        resolved_items.len()
+    );
+    cache.insert(
+        module_id,
+        ResolutionState::Resolved(resolved_items.clone()),
+    );
+    resolved_items
+}
+
+/// Builds an index of all modules with their items resolved after handling 'use' statements.
+fn build_resolved_module_index(krate: &Crate) -> HashMap<Id, ResolvedModule> {
+    info!("Building resolved module index...");
+    let mut resolved_index = HashMap::new();
+    let mut cache: ResolutionCache = HashMap::new();
+
+    for (id, item) in &krate.index {
+        if let ItemEnum::Module(_) = &item.inner {
+            if !resolved_index.contains_key(id) {
+                let resolved_items = resolve_module_items(*id, krate, &mut cache);
+                resolved_index.insert(
+                    *id,
+                    ResolvedModule {
+                        id: *id,
+                        items: resolved_items,
+                    },
+                );
+            }
+        }
+    }
+    info!(
+        "Built resolved module index for {} modules.",
+        resolved_index.len()
+    );
+    resolved_index
+}
+
+// --- End Module Resolution Structures ---
 
 // --- Graph Dumping Logic ---
 
@@ -1253,7 +1388,11 @@ fn find_generic_param_def_dependencies(
 
 /// Selects items based on path filters and recursively includes their dependencies.
 /// Builds the graph for *all* items in the crate, regardless of filtering.
-fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, IdGraph)> {
+fn select_items(
+    krate: &Crate,
+    user_paths: &[String],
+    resolved_modules: &HashMap<Id, ResolvedModule>,
+) -> Result<(HashSet<Id>, IdGraph)> {
     let mut selected_ids: HashSet<Id> = HashSet::new();
     let mut graph = IdGraph::new(); // Instantiate the graph
 
@@ -1288,24 +1427,32 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, Id
 
     info!("Normalized path filters: {:?}", normalized_filters);
 
-    // Initial selection based on paths
-    for (id, item_summary) in &krate.paths {
-        // We only care about items from the local crate for initial selection (crate_id 0)
-        if item_summary.crate_id == 0 {
-            let mut qualified_item_path = item_summary.path.clone();
-            // Ensure the path starts with the crate name if it doesn't already
-            if !qualified_item_path.is_empty() && qualified_item_path[0] != normalized_crate_name {
-                qualified_item_path.insert(0, normalized_crate_name.clone());
-            }
+    // Initial selection based on paths matching items in resolved modules
+    // Iterate through resolved modules instead of krate.paths directly
+    for resolved_mod in resolved_modules.values() {
+        for item_id in &resolved_mod.items {
+            // Get the summary for the item (if it exists) to check its path
+            if let Some(item_summary) = krate.paths.get(item_id) {
+                // We only care about items from the local crate for initial selection (crate_id 0)
+                if item_summary.crate_id == 0 {
+                    let mut qualified_item_path = item_summary.path.clone();
+                    // Ensure the path starts with the crate name if it doesn't already
+                    if !qualified_item_path.is_empty()
+                        && qualified_item_path[0] != normalized_crate_name
+                    {
+                        qualified_item_path.insert(0, normalized_crate_name.clone());
+                    }
 
-            for filter in &normalized_filters {
-                if path_matches(&qualified_item_path, filter) {
-                    debug!(
-                        "Path filter {:?} matched item {:?} ({:?})",
-                        filter, qualified_item_path, id
-                    );
-                    selected_ids.insert(*id);
-                    break; // No need to check other filters for this item
+                    for filter in &normalized_filters {
+                        if path_matches(&qualified_item_path, filter) {
+                            debug!(
+                                "Path filter {:?} matched item {:?} ({:?}) via module {:?}",
+                                filter, qualified_item_path, item_id, resolved_mod.id
+                            );
+                            selected_ids.insert(*item_id);
+                            // No break here, an item might be reachable via multiple modules/paths
+                        }
+                    }
                 }
             }
         }
@@ -1321,7 +1468,7 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, Id
     }
 
     info!(
-        "Initially selected {} items based on path filters.",
+        "Initially selected {} items based on path filters and resolved modules.",
         selected_ids.len()
     );
 
@@ -1339,10 +1486,7 @@ fn select_items(krate: &Crate, user_paths: &[String]) -> Result<(HashSet<Id>, Id
             for (dep_id, _label) in children {
                 // Check if dep_id exists in krate.index before adding
                 if krate.index.contains_key(dep_id) && selected_ids.insert(*dep_id) {
-                    debug!(
-                        "Including dependency {:?} from item {:?}",
-                        dep_id, id
-                    );
+                    debug!("Including dependency {:?} from item {:?}", dep_id, id);
                     queue.push_back(*dep_id);
                 }
             }
@@ -1378,8 +1522,20 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
             ItemEnum::Module(m) => {
                 for item_id in &m.items {
                     if krate.index.contains_key(item_id) {
-                        if item_deps.insert(*item_id) {
-                            graph.add_edge(source_id, *item_id, EdgeLabel::Contains, krate);
+                        // Note: This edge represents the *original* module structure
+                        // Resolution of 'use' happens separately for documentation generation.
+                        graph.add_edge(source_id, *item_id, EdgeLabel::Contains, krate);
+                        // Do NOT add to item_deps here, Contains edge handles it.
+                        // Dependency resolution follows the graph edges later.
+                    }
+                }
+            }
+            ItemEnum::Use(use_item) => {
+                // Add edge from Use item to its target ID (if it exists)
+                if let Some(target_id) = use_item.id {
+                    if krate.index.contains_key(&target_id) {
+                        if item_deps.insert(target_id) {
+                            graph.add_edge(source_id, target_id, EdgeLabel::UseTarget, krate);
                         }
                     }
                 }
@@ -1728,8 +1884,7 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
             | ItemEnum::Macro(_)
             | ItemEnum::ProcMacro(_)
             | ItemEnum::Primitive(_)
-            | ItemEnum::ExternCrate { .. }
-            | ItemEnum::Use { .. } => {}
+            | ItemEnum::ExternCrate { .. } => {}
         }
     }
     item_deps
@@ -2376,10 +2531,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
         ItemEnum::ExternCrate {
             name: crate_name, ..
         } => format!("extern crate {}", crate_name),
-        ItemEnum::Use(u) => {
-            // TODO: format Use statement better - this shouldn't be printed anyway
-            format!("use {}", u.name)
-        }
+        ItemEnum::Use(_) => format!("use {}", name), // Basic format for Use items
         ItemEnum::ExternType => format!("extern type {}", name),
         ItemEnum::Variant(v) => format_variant_signature(item, v, krate), // Use helper
         ItemEnum::StructField(_) => name.to_string(),                     // Field name only for header
@@ -2760,6 +2912,7 @@ fn clean_trait_path(path_str: &str) -> String {
 struct DocPrinter<'a> {
     krate: &'a Crate,
     selected_ids: &'a HashSet<Id>,
+    resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
     graph: &'a IdGraph, // Add graph reference
     include_other: bool,
     printed_ids: HashSet<Id>,
@@ -2771,13 +2924,15 @@ impl<'a> DocPrinter<'a> {
     fn new(
         krate: &'a Crate,
         selected_ids: &'a HashSet<Id>,
+        resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
         graph: &'a IdGraph, // Add graph parameter
         include_other: bool,
     ) -> Self {
         DocPrinter {
             krate,
             selected_ids,
-            graph, // Store graph reference
+            resolved_modules, // Store resolved modules
+            graph,            // Store graph reference
             include_other,
             printed_ids: HashSet::new(),
             output: String::new(),
@@ -2799,7 +2954,7 @@ impl<'a> DocPrinter<'a> {
         match item.inner {
             ItemEnum::Module(_) => ItemKind::Module,
             ItemEnum::ExternCrate { .. } => ItemKind::ExternCrate,
-            ItemEnum::Use { .. } => ItemKind::Use, // Renamed
+            ItemEnum::Use { .. } => ItemKind::Use, // Keep Use kind for completeness
             ItemEnum::Union(_) => ItemKind::Union,
             ItemEnum::Struct(_) => ItemKind::Struct,
             ItemEnum::StructField(_) => ItemKind::StructField,
@@ -2810,7 +2965,6 @@ impl<'a> DocPrinter<'a> {
             ItemEnum::TraitAlias(_) => ItemKind::TraitAlias,
             ItemEnum::Impl { .. } => ItemKind::Impl,
             ItemEnum::TypeAlias(_) => ItemKind::TypeAlias,
-            // ItemEnum::OpaqueTy removed
             ItemEnum::Constant { .. } => ItemKind::Constant, // Use struct pattern
             ItemEnum::Static(_) => ItemKind::Static,
             ItemEnum::ExternType => ItemKind::ExternType, // Renamed
@@ -2834,6 +2988,11 @@ impl<'a> DocPrinter<'a> {
         }
 
         if let Some(item) = self.krate.index.get(id) {
+            // Skip printing details for 'Use' items, they are handled by resolution
+            if matches!(item.inner, ItemEnum::Use(_)) {
+                return;
+            }
+
             let declaration = generate_item_declaration(item, self.krate);
             let item_header_level = current_level; // Use provided level directly
 
@@ -4007,126 +4166,127 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the contents of a specific module (identified by its ID).
+    /// Uses the `resolved_modules` index to get the list of items.
     /// `current_level` dictates the markdown header level for sections within this module (e.g., 3 for `###`).
     fn print_module_contents(&mut self, module_id: &Id, current_level: usize) {
-        if let Some(module_item) = self.krate.index.get(module_id) {
-            if let ItemEnum::Module(module_data) = &module_item.inner {
-                let is_crate_root = module_item.id == self.krate.root;
+        // Get the original module item for name/docs/root check
+        let original_module_item = self.krate.index.get(module_id).unwrap(); // Assume it exists
+        let is_crate_root = original_module_item.id == self.krate.root;
 
-                // Group selected items by kind within this module
-                let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new(); // Use HashMap instead of BTreeMap
-                for id in &module_data.items {
-                    if !self.selected_ids.contains(id) || self.printed_ids.contains(id) {
-                        continue; // Skip unselected or already printed items
-                    }
-                    if let Some(kind) = self.get_item_kind(id) {
-                        // Skip kinds handled implicitly within others for grouping
-                        // Also skip modules when printing the special "::" crate root contents
-                        match kind {
-                            ItemKind::Impl
-                            | ItemKind::Variant
-                            | ItemKind::StructField
-                            | ItemKind::AssocConst
-                            | ItemKind::AssocType
-                            | ItemKind::Use => continue,
-                            ItemKind::Module if is_crate_root => continue, // Skip submodules when printing root "::"
-                            _ => {}
-                        }
-                        items_by_kind.entry(kind).or_default().push(*id);
-                    }
+        // Get the resolved items for this module
+        if let Some(resolved_module) = self.resolved_modules.get(module_id) {
+            // Group selected items by kind within this module's *resolved* items
+            let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new();
+            for id in &resolved_module.items {
+                // Check if the item is selected and hasn't been printed yet
+                if !self.selected_ids.contains(id) || self.printed_ids.contains(id) {
+                    continue;
                 }
-
-                // Sort items by name within each kind
-                for ids in items_by_kind.values_mut() {
-                    ids.sort_by_key(|id| {
-                        self.krate.index.get(id).and_then(|item| item.name.clone())
-                    });
+                // Get the item kind from the main krate index
+                if let Some(kind) = self.get_item_kind(id) {
+                    // Skip kinds handled implicitly or that shouldn't be grouped here
+                    match kind {
+                        ItemKind::Impl
+                        | ItemKind::Variant
+                        | ItemKind::StructField
+                        | ItemKind::AssocConst
+                        | ItemKind::AssocType
+                        | ItemKind::Use => continue, // Use items are resolved, not printed directly
+                        ItemKind::Module if is_crate_root => continue, // Skip submodules when printing root "::" contents
+                        _ => {}
+                    }
+                    items_by_kind.entry(kind).or_default().push(*id);
                 }
+            }
 
-                // Defined printing order for sections WITHIN a module
-                let print_order = [
-                    (ItemKind::Macro, "Macros"), // Includes ProcMacros displayed as Macro
-                    (ItemKind::ProcAttribute, "Attribute Macros"),
-                    (ItemKind::ProcDerive, "Derive Macros"),
-                    (ItemKind::Module, "Submodules"), // Only printed if NOT crate root
-                    (ItemKind::Struct, "Structs"),
-                    (ItemKind::Enum, "Enums"),
-                    (ItemKind::Union, "Unions"),
-                    (ItemKind::Trait, "Traits"),
-                    (ItemKind::Function, "Functions"),
-                    (ItemKind::TypeAlias, "Type Aliases"),
-                    (ItemKind::TraitAlias, "Trait Aliases"),
-                    (ItemKind::Static, "Statics"),
-                    (ItemKind::Constant, "Constants"),
-                    (ItemKind::ExternCrate, "External Crates"),
-                    (ItemKind::ExternType, "External Types"),
-                    (ItemKind::Primitive, "Primitives"), // Unlikely unless re-exported
-                ];
+            // Sort items by name within each kind
+            for ids in items_by_kind.values_mut() {
+                ids.sort_by_key(|id| {
+                    self.krate.index.get(id).and_then(|item| item.name.clone())
+                });
+            }
 
-                let section_header_level = current_level + 1; // Sections within module are current_level + 1
+            // Defined printing order for sections WITHIN a module
+            let print_order = [
+                (ItemKind::Macro, "Macros"), // Includes ProcMacros displayed as Macro
+                (ItemKind::ProcAttribute, "Attribute Macros"),
+                (ItemKind::ProcDerive, "Derive Macros"),
+                (ItemKind::Module, "Submodules"), // Only printed if NOT crate root
+                (ItemKind::Struct, "Structs"),
+                (ItemKind::Enum, "Enums"),
+                (ItemKind::Union, "Unions"),
+                (ItemKind::Trait, "Traits"),
+                (ItemKind::Function, "Functions"),
+                (ItemKind::TypeAlias, "Type Aliases"),
+                (ItemKind::TraitAlias, "Trait Aliases"),
+                (ItemKind::Static, "Statics"),
+                (ItemKind::Constant, "Constants"),
+                (ItemKind::ExternCrate, "External Crates"),
+                (ItemKind::ExternType, "External Types"),
+                (ItemKind::Primitive, "Primitives"), // Unlikely unless re-exported
+            ];
 
-                for (kind, header_name) in print_order {
-                    if let Some(ids) = items_by_kind.get(&kind) {
-                        if ids.is_empty() {
-                            continue;
-                        } // Skip empty sections
+            let section_header_level = current_level + 1; // Sections within module are current_level + 1
 
-                        writeln!(
-                            self.output,
-                            "\n{} {}",
-                            "#".repeat(section_header_level),
-                            header_name // Use the specific header name
-                        )
-                        .unwrap();
+            for (kind, header_name) in print_order {
+                if let Some(ids) = items_by_kind.get(&kind) {
+                    if ids.is_empty() {
+                        continue;
+                    } // Skip empty sections
 
-                        let item_detail_level = section_header_level + 1; // Items within section are +1 level
+                    writeln!(
+                        self.output,
+                        "\n{} {}",
+                        "#".repeat(section_header_level),
+                        header_name // Use the specific header name
+                    )
+                    .unwrap();
 
-                        // Print items of this kind
-                        for id in ids {
-                            if let Some(item) = self.krate.index.get(id) {
-                                // Handle nested modules recursively (but only if not the crate root's contents)
-                                if !is_crate_root {
-                                    if let ItemEnum::Module(_sub_module_data) = &item.inner {
-                                        // Check printed_ids again before recursing
-                                        if !self.printed_ids.contains(id) {
-                                            let mod_name =
-                                                item.name.as_deref().unwrap_or("{unnamed}");
-                                            writeln!(
-                                                self.output,
-                                                "\n{} `mod {}`\n", // Module header uses item_detail_level
-                                                "#".repeat(item_detail_level),
-                                                mod_name
-                                            )
-                                            .unwrap();
-                                            self.printed_ids.insert(*id); // Mark printed *before* recursion
+                    let item_detail_level = section_header_level + 1; // Items within section are +1 level
 
-                                            // Print module docs (with adjusted headers)
-                                            if let Some(docs) = &item.docs {
-                                                if !docs.trim().is_empty() {
-                                                    let adjusted_docs = adjust_markdown_headers(
-                                                        docs.trim(),
-                                                        item_detail_level,
-                                                    );
-                                                    writeln!(self.output, "{}\n", adjusted_docs)
-                                                        .unwrap();
-                                                }
-                                            }
-                                            // Recurse for the submodule's contents
-                                            self.print_module_contents(id, item_detail_level); // Pass item_detail_level as new base
+                    // Print items of this kind
+                    for id in ids {
+                        if let Some(item) = self.krate.index.get(id) {
+                            // Handle nested modules recursively (but only if not the crate root's contents)
+                            if !is_crate_root && matches!(item.inner, ItemEnum::Module(_)) {
+                                // Check printed_ids again before recursing
+                                if !self.printed_ids.contains(id) {
+                                    let mod_name = item.name.as_deref().unwrap_or("{unnamed}");
+                                    writeln!(
+                                        self.output,
+                                        "\n{} `mod {}`\n", // Module header uses item_detail_level
+                                        "#".repeat(item_detail_level),
+                                        mod_name
+                                    )
+                                    .unwrap();
+                                    self.printed_ids.insert(*id); // Mark printed *before* recursion
+
+                                    // Print module docs (with adjusted headers)
+                                    if let Some(docs) = &item.docs {
+                                        if !docs.trim().is_empty() {
+                                            let adjusted_docs = adjust_markdown_headers(
+                                                docs.trim(),
+                                                item_detail_level,
+                                            );
+                                            writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                                         }
-                                    } else {
-                                        // Print other item types using the detail printer
-                                        self.print_item_details(id, item_detail_level);
                                     }
-                                } else {
-                                    // If it's the crate root, just print the item details directly
-                                    self.print_item_details(id, item_detail_level);
+                                    // Recurse for the submodule's contents
+                                    self.print_module_contents(id, item_detail_level); // Pass item_detail_level as new base
                                 }
+                            } else {
+                                // Print other item types using the detail printer
+                                self.print_item_details(id, item_detail_level);
                             }
                         }
                     }
                 }
             }
+        } else {
+            warn!(
+                "Could not find resolved module data for ID: {:?}",
+                module_id
+            );
         }
     }
 
@@ -4189,8 +4349,9 @@ impl<'a> DocPrinter<'a> {
         }
 
         // --- Print Top-Level Sections ---
-        if let ItemEnum::Module(root_module_data) = &root_item.inner {
-            let top_level_items = &root_module_data.items;
+        // Use the resolved items for the root module
+        if let Some(resolved_root_module) = self.resolved_modules.get(&self.krate.root) {
+            let top_level_items: Vec<Id> = resolved_root_module.items.iter().cloned().collect(); // Convert HashSet to Vec for iteration
             let section_level = crate_header_level + 1; // ## (level 2) for top-level sections
 
             // --- Macros Section (Level 2) ---
@@ -4227,14 +4388,23 @@ impl<'a> DocPrinter<'a> {
                 "#".repeat(module_header_level)
             )
             .unwrap();
-            self.print_module_contents(&self.krate.root, module_header_level); // Print root contents starting at level 3
+            // Print contents of the root module using the resolved items
+            self.print_module_contents(&self.krate.root, module_header_level);
             self.printed_ids.insert(self.krate.root); // Now mark root ID as printed
 
-            // Find and print actual submodules
-            let submodule_ids: Vec<&Id> = top_level_items
-                .iter()
-                .filter(|id| self.selected_ids.contains(id))
-                .filter(|id| self.get_item_kind(id) == Some(ItemKind::Module))
+            // Find and print actual submodules (these were part of the original root module's items)
+            let submodule_ids: Vec<&Id> = self
+                .krate
+                .index
+                .get(&self.krate.root) // Get original root item
+                .map(|item| match &item.inner {
+                    ItemEnum::Module(data) => data.items.clone(), // Get original items list
+                    _ => vec![],
+                })
+                .unwrap_or_default()
+                .iter() // Iterate original items
+                .filter(|id| self.selected_ids.contains(id)) // Check selection
+                .filter(|id| self.get_item_kind(id) == Some(ItemKind::Module)) // Check kind
                 .collect();
 
             let mut sorted_submodules = submodule_ids;
@@ -4264,7 +4434,7 @@ impl<'a> DocPrinter<'a> {
                                 writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                             }
                         }
-                        // Print module contents
+                        // Print module contents (using resolved items for this submodule)
                         self.print_module_contents(id, module_header_level); // Start contents at level 3
                     }
                 }
@@ -4359,7 +4529,8 @@ impl<'a> DocPrinter<'a> {
 fn generate_documentation(
     krate: &Crate,
     selected_ids: &HashSet<Id>,
-    graph: &IdGraph, // Accept graph
+    resolved_modules: &HashMap<Id, ResolvedModule>, // Accept resolved modules
+    graph: &IdGraph,                                 // Accept graph
     include_other: bool,
 ) -> Result<String> {
     info!(
@@ -4370,7 +4541,7 @@ fn generate_documentation(
         return Ok("No items selected for documentation.".to_string());
     }
 
-    let printer = DocPrinter::new(krate, selected_ids, graph, include_other); // Pass graph to printer
+    let printer = DocPrinter::new(krate, selected_ids, resolved_modules, graph, include_other); // Pass resolved modules and graph
     let output = printer.finalize();
 
     Ok(output)
@@ -4435,8 +4606,11 @@ async fn main() -> Result<()> {
     info!("Found {} total items in the index.", krate.index.len());
     info!("Found {} items in the paths map.", krate.paths.len());
 
+    // --- Resolve Modules ---
+    let resolved_modules = build_resolved_module_index(&krate);
+
     // --- Select Items & Build Graph ---
-    let (selected_ids, full_graph) = select_items(&krate, &args.paths)?;
+    let (selected_ids, full_graph) = select_items(&krate, &args.paths, &resolved_modules)?;
 
     // --- Graph Dumping ---
     if let Some(dump_output_path) = &args.dump_graph {
@@ -4511,9 +4685,14 @@ async fn main() -> Result<()> {
     }
 
     // --- Generate Documentation ---
-    // Use the *full* graph for documentation generation context, even if dumps were filtered
-    let documentation =
-        generate_documentation(&krate, &selected_ids, &full_graph, args.include_other)?;
+    // Pass resolved modules and full graph to documentation generator
+    let documentation = generate_documentation(
+        &krate,
+        &selected_ids,
+        &resolved_modules, // Pass resolved modules
+        &full_graph,
+        args.include_other,
+    )?;
 
     // --- Output Documentation ---
     if let Some(output_file_path) = args.output {
