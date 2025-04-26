@@ -29,8 +29,8 @@ use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
-    Struct, StructKind, Term, Trait, Type, Use, Variant, VariantKind, WherePredicate, // Added Use
-};
+    Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+}; // Removed unused Use
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
@@ -38,7 +38,7 @@ use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
-use std::str::FromStr; // Import FromStr for Id parsing
+// Removed unused std::str::FromStr
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -4393,7 +4393,8 @@ impl<'a> DocPrinter<'a> {
             self.printed_ids.insert(self.krate.root); // Now mark root ID as printed
 
             // Find and print actual submodules (these were part of the original root module's items)
-            let submodule_ids: Vec<&Id> = self
+            // Introduce a 'let' binding for the vector returned by the map/unwrap chain
+            let original_root_items = self
                 .krate
                 .index
                 .get(&self.krate.root) // Get original root item
@@ -4401,8 +4402,10 @@ impl<'a> DocPrinter<'a> {
                     ItemEnum::Module(data) => data.items.clone(), // Get original items list
                     _ => vec![],
                 })
-                .unwrap_or_default()
-                .iter() // Iterate original items
+                .unwrap_or_default(); // This Vec<Id> now lives longer
+
+            let submodule_ids: Vec<&Id> = original_root_items
+                .iter() // Iterate over the longer-lived vector
                 .filter(|id| self.selected_ids.contains(id)) // Check selection
                 .filter(|id| self.get_item_kind(id) == Some(ItemKind::Module)) // Check kind
                 .collect();
