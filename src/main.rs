@@ -37,7 +37,7 @@ use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BT
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
-use std.path::{Path as FilePath, PathBuf}; // Corrected use statement
+use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use std::str::FromStr; // Import FromStr for Id parsing
 use tar::Archive;
 use tracing::{debug, info, warn};
