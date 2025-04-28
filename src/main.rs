@@ -30,7 +30,7 @@ use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
     Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
-}; // Removed unused Use
+};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
@@ -38,7 +38,6 @@ use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
-// Removed unused std::str::FromStr
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -97,6 +96,18 @@ struct Args {
     /// Include items that don't fit standard categories in a final 'Other' section.
     #[arg(long)]
     include_other: bool,
+
+    /// Space-separated list of features to activate
+    #[arg(long)]
+    features: Option<String>, // Vec<String>? Clap might handle space separation
+
+    /// Do not activate the `default` feature
+    #[arg(long)]
+    no_default_features: bool,
+
+    /// Build documentation for the specified target triple
+    #[arg(long)]
+    target: Option<String>,
 }
 
 /// Parses a string into an `Id`.
@@ -819,7 +830,13 @@ async fn download_and_unpack_crate(
     Ok(target_dir)
 }
 
-fn run_rustdoc(crate_dir: &FilePath, crate_name: &str) -> Result<PathBuf> {
+fn run_rustdoc(
+    crate_dir: &FilePath,
+    crate_name: &str,
+    features: Option<&str>,
+    no_default_features: bool,
+    target: Option<&str>,
+) -> Result<PathBuf> {
     let manifest_path = crate_dir.join("Cargo.toml");
     if !manifest_path.exists() {
         bail!(
@@ -840,12 +857,39 @@ fn run_rustdoc(crate_dir: &FilePath, crate_name: &str) -> Result<PathBuf> {
         return Ok(json_path);
     }
 
-    let builder = Builder::default()
+    let mut builder = Builder::default()
         .manifest_path(manifest_path)
         .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
         .target_dir(crate_dir.join("target/doc")) // Set the output directory
-        .package(crate_name) // Specify the package
-        .all_features(true); // Enable all features to get max docs
+        .package(crate_name); // Specify the package
+
+    // Apply feature flags
+    if let Some(features_str) = features {
+        let feature_list: Vec<String> =
+            features_str.split_whitespace().map(String::from).collect();
+        if !feature_list.is_empty() {
+            info!("Enabling features: {:?}", feature_list);
+            builder = builder.features(feature_list);
+        }
+    }
+    if no_default_features {
+        info!("Disabling default features.");
+        builder = builder.no_default_features(true);
+    } else {
+        // Default behavior of Builder is all_features(false) and no_default_features(false).
+        // We want all features *unless* specific features are requested or default is disabled.
+        // If no specific features requested AND default features are enabled (default case), enable all features.
+        if features.is_none() {
+            info!("No specific features requested and default features enabled; enabling all features.");
+            builder = builder.all_features(true);
+        }
+    }
+
+    // Apply target
+    if let Some(target_str) = target {
+        info!("Setting target: {}", target_str);
+        builder = builder.target(target_str.to_string());
+    }
 
     // Generate the JSON file
     match builder.build() {
@@ -4592,7 +4636,13 @@ async fn main() -> Result<()> {
 
     // Use the *actual* crate name from the API response, as it might differ in casing
     let actual_crate_name = &target_version.crate_name;
-    let json_output_path = run_rustdoc(&crate_dir, actual_crate_name)?;
+    let json_output_path = run_rustdoc(
+        &crate_dir,
+        actual_crate_name,
+        args.features.as_deref(),
+        args.no_default_features,
+        args.target.as_deref(),
+    )?;
 
     // --- Load Rustdoc JSON ---
     info!("Parsing rustdoc JSON: {}", json_output_path.display());
