@@ -391,9 +391,13 @@ fn resolve_module_items(
                     }
                 }
             }
-        } else {
-            warn!("Module ID {:?} not found in crate index.", module_id);
-        }
+        } // Module item might not have Module inner if it's a re-export target itself? No, index should contain the real item.
+          // Let's warn if the found item isn't a module.
+          // else {
+          //     warn!("Item with module ID {:?} is not actually a Module kind: {:?}", module_id, module_item.inner);
+          // }
+    } else {
+        warn!("Module ID {:?} not found in crate index.", module_id);
     }
 
     // Mark as resolved and cache the result
@@ -3049,6 +3053,18 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
+            // Print Source Location (if available)
+            if let Some(span) = &item.span {
+                writeln!(
+                    self.output,
+                    "_Source: `{}:{}:{}`_\n", // Italic, newline after
+                    span.filename.display(),
+                    span.begin.0 + 1, // Line numbers are 0-based
+                    span.begin.1 + 1  // Column numbers are 0-based
+                )
+                .unwrap();
+            }
+
             // Print Code Block for Struct/Enum/Trait/Function (if needed)
             let code_block = match &item.inner {
                 ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
@@ -3252,6 +3268,18 @@ impl<'a> DocPrinter<'a> {
                     )
                     .unwrap();
 
+                    // Print Source Location (if available) for field
+                    if let Some(span) = &item.span {
+                        writeln!(
+                            self.output,
+                            "_Source: `{}:{}:{}`_\n",
+                            span.filename.display(),
+                            span.begin.0 + 1,
+                            span.begin.1 + 1
+                        )
+                        .unwrap();
+                    }
+
                     // Docs (with adjusted headers - we already checked non-empty)
                     let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
                     writeln!(self.output, "{}\n", adjusted_docs).unwrap();
@@ -3304,6 +3332,18 @@ impl<'a> DocPrinter<'a> {
                         header_name
                     )
                     .unwrap();
+
+                    // Print Source Location (if available) for variant field
+                    if let Some(span) = &item.span {
+                        writeln!(
+                            self.output,
+                            "_Source: `{}:{}:{}`_\n",
+                            span.filename.display(),
+                            span.begin.0 + 1,
+                            span.begin.1 + 1
+                        )
+                        .unwrap();
+                    }
 
                     // Docs (with adjusted headers - we already checked non-empty)
                     let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
@@ -3552,6 +3592,18 @@ impl<'a> DocPrinter<'a> {
                 )
                 .unwrap();
 
+                // Print Source Location (if available) for variant
+                if let Some(span) = &item.span {
+                    writeln!(
+                        self.output,
+                        "_Source: `{}:{}:{}`_\n",
+                        span.filename.display(),
+                        span.begin.0 + 1,
+                        span.begin.1 + 1
+                    )
+                    .unwrap();
+                }
+
                 // Variant Docs (if present)
                 if let Some(docs) = &item.docs {
                     if !docs.trim().is_empty() {
@@ -3676,6 +3728,18 @@ impl<'a> DocPrinter<'a> {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
             let mut summary = String::new();
             let assoc_item_header_level = section_level + 1; // Level where item header will be printed (section_level + 1)
+
+            // Print Source Location (if available) for associated item
+            if let Some(span) = &item.span {
+                writeln!(
+                    summary,
+                    "_Source: `{}:{}:{}`_\n",
+                    span.filename.display(),
+                    span.begin.0 + 1,
+                    span.begin.1 + 1
+                )
+                .unwrap();
+            }
 
             // Add code block for associated functions if they have attrs/where clauses
             if let ItemEnum::Function(f) = &item.inner {
@@ -3929,6 +3993,17 @@ impl<'a> DocPrinter<'a> {
                         impl_header.trim() // Trim potential trailing space
                     )
                     .unwrap();
+                    // Print Source Location (if available) for impl block
+                    if let Some(span) = &impl_item.span {
+                        writeln!(
+                            self.output,
+                            "_Source: `{}:{}:{}`_\n",
+                            span.filename.display(),
+                            span.begin.0 + 1,
+                            span.begin.1 + 1
+                        )
+                        .unwrap();
+                    }
                     // Optionally, print docs for the impl block itself if available (with adjusted headers)
                     if let Some(docs) = &impl_item.docs {
                         if !docs.trim().is_empty() {
@@ -4113,6 +4188,18 @@ impl<'a> DocPrinter<'a> {
             impl_header.trim() // Trim potential trailing space if no where clause added
         )
         .unwrap();
+
+        // Print Source Location (if available) for impl block
+        if let Some(span) = &impl_item.span {
+            writeln!(
+                self.output,
+                "_Source: `{}:{}:{}`_\n",
+                span.filename.display(),
+                span.begin.0 + 1,
+                span.begin.1 + 1
+            )
+            .unwrap();
+        }
 
         // Print impl block docs (with adjusted headers)
         if let Some(docs) = &impl_item.docs {
@@ -4539,9 +4626,49 @@ impl<'a> DocPrinter<'a> {
                 for id in &unprinted_ids {
                     let path_str = format_id_path(id, self.krate);
                     warn!("Including unprinted item in 'Other' section: {}", path_str);
-                    // Print item details normally (will include placeholder if index lookup fails)
-                    self.print_item_details(id, other_item_level); // Print details at ### level
-                                                                    // Always print graph context afterwards for items in "Other"
+
+                    // Fetch the item to print its header and span
+                    if let Some(item) = self.krate.index.get(id) {
+                        let declaration = generate_item_declaration(item, self.krate);
+                        writeln!(
+                            self.output,
+                            "\n{} `{}`\n", // Add newline after header
+                            "#".repeat(other_item_level),
+                            declaration
+                        )
+                        .unwrap();
+
+                        // Print Source Location (if available) for this "Other" item
+                        if let Some(span) = &item.span {
+                            writeln!(
+                                self.output,
+                                "_Source: `{}:{}:{}`_\n", // Italic, newline after
+                                span.filename.display(),
+                                span.begin.0 + 1, // Line numbers are 0-based
+                                span.begin.1 + 1  // Column numbers are 0-based
+                            )
+                            .unwrap();
+                        }
+                        // Mark as printed *before* calling detail printer (which will check again)
+                        self.printed_ids.insert(*id);
+                        // Now print the rest of the details (docs, impls, etc.)
+                        self.print_item_details(id, other_item_level); // Re-print details (will skip header)
+                    } else {
+                        // Handle case where ID is selected but not in index (rare)
+                        writeln!(
+                            self.output,
+                            "\n{} `{}`\n",
+                            "#".repeat(other_item_level),
+                            path_str // Use path string as header
+                        )
+                        .unwrap();
+                        writeln!(
+                            self.output,
+                            "_Error: Item details not found in index._\n"
+                        )
+                        .unwrap();
+                    }
+                    // Always print graph context afterwards for items in "Other"
                     self.print_graph_context(id, other_item_level);
                 }
             } else {
