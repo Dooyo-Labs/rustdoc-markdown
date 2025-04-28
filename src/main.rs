@@ -3053,17 +3053,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
-            // Print Source Location (if available)
-            if let Some(span) = &item.span {
-                writeln!(
-                    self.output,
-                    "_Source: `{}:{}:{}`_\n", // Italic, newline after
-                    span.filename.display(),
-                    span.begin.0 + 1, // Line numbers are 0-based
-                    span.begin.1 + 1  // Column numbers are 0-based
-                )
-                .unwrap();
-            }
+            // DO NOT Print Source Location (if available) here. It's handled in `finalize` for "Other" items.
 
             // Print Code Block for Struct/Enum/Trait/Function (if needed)
             let code_block = match &item.inner {
@@ -3268,17 +3258,7 @@ impl<'a> DocPrinter<'a> {
                     )
                     .unwrap();
 
-                    // Print Source Location (if available) for field
-                    if let Some(span) = &item.span {
-                        writeln!(
-                            self.output,
-                            "_Source: `{}:{}:{}`_\n",
-                            span.filename.display(),
-                            span.begin.0 + 1,
-                            span.begin.1 + 1
-                        )
-                        .unwrap();
-                    }
+                    // DO NOT print source location for regular fields
 
                     // Docs (with adjusted headers - we already checked non-empty)
                     let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
@@ -3333,17 +3313,7 @@ impl<'a> DocPrinter<'a> {
                     )
                     .unwrap();
 
-                    // Print Source Location (if available) for variant field
-                    if let Some(span) = &item.span {
-                        writeln!(
-                            self.output,
-                            "_Source: `{}:{}:{}`_\n",
-                            span.filename.display(),
-                            span.begin.0 + 1,
-                            span.begin.1 + 1
-                        )
-                        .unwrap();
-                    }
+                    // DO NOT print source location for regular variant fields
 
                     // Docs (with adjusted headers - we already checked non-empty)
                     let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
@@ -3592,17 +3562,7 @@ impl<'a> DocPrinter<'a> {
                 )
                 .unwrap();
 
-                // Print Source Location (if available) for variant
-                if let Some(span) = &item.span {
-                    writeln!(
-                        self.output,
-                        "_Source: `{}:{}:{}`_\n",
-                        span.filename.display(),
-                        span.begin.0 + 1,
-                        span.begin.1 + 1
-                    )
-                    .unwrap();
-                }
+                // DO NOT Print Source Location for regular variants
 
                 // Variant Docs (if present)
                 if let Some(docs) = &item.docs {
@@ -3729,17 +3689,7 @@ impl<'a> DocPrinter<'a> {
             let mut summary = String::new();
             let assoc_item_header_level = section_level + 1; // Level where item header will be printed (section_level + 1)
 
-            // Print Source Location (if available) for associated item
-            if let Some(span) = &item.span {
-                writeln!(
-                    summary,
-                    "_Source: `{}:{}:{}`_\n",
-                    span.filename.display(),
-                    span.begin.0 + 1,
-                    span.begin.1 + 1
-                )
-                .unwrap();
-            }
+            // DO NOT Print Source Location for regular associated items
 
             // Add code block for associated functions if they have attrs/where clauses
             if let ItemEnum::Function(f) = &item.inner {
@@ -3993,17 +3943,9 @@ impl<'a> DocPrinter<'a> {
                         impl_header.trim() // Trim potential trailing space
                     )
                     .unwrap();
-                    // Print Source Location (if available) for impl block
-                    if let Some(span) = &impl_item.span {
-                        writeln!(
-                            self.output,
-                            "_Source: `{}:{}:{}`_\n",
-                            span.filename.display(),
-                            span.begin.0 + 1,
-                            span.begin.1 + 1
-                        )
-                        .unwrap();
-                    }
+
+                    // DO NOT print source location for regular trait implementor headers
+
                     // Optionally, print docs for the impl block itself if available (with adjusted headers)
                     if let Some(docs) = &impl_item.docs {
                         if !docs.trim().is_empty() {
@@ -4189,17 +4131,7 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Print Source Location (if available) for impl block
-        if let Some(span) = &impl_item.span {
-            writeln!(
-                self.output,
-                "_Source: `{}:{}:{}`_\n",
-                span.filename.display(),
-                span.begin.0 + 1,
-                span.begin.1 + 1
-            )
-            .unwrap();
-        }
+        // DO NOT print source location for regular impl blocks
 
         // Print impl block docs (with adjusted headers)
         if let Some(docs) = &impl_item.docs {
@@ -4638,7 +4570,7 @@ impl<'a> DocPrinter<'a> {
                         )
                         .unwrap();
 
-                        // Print Source Location (if available) for this "Other" item
+                        // Print Source Location (if available) ONLY for "Other" items
                         if let Some(span) = &item.span {
                             writeln!(
                                 self.output,
@@ -4652,7 +4584,8 @@ impl<'a> DocPrinter<'a> {
                         // Mark as printed *before* calling detail printer (which will check again)
                         self.printed_ids.insert(*id);
                         // Now print the rest of the details (docs, impls, etc.)
-                        self.print_item_details(id, other_item_level); // Re-print details (will skip header)
+                        // Note: print_item_details will now skip the span printing itself.
+                        self.print_item_details(id, other_item_level); // Re-print details (will skip header and span)
                     } else {
                         // Handle case where ID is selected but not in index (rare)
                         writeln!(
