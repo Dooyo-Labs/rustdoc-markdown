@@ -1940,6 +1940,11 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
 
 // --- Formatting Helpers ---
 
+/// Helper to check if an item has non-empty documentation.
+fn has_docs(item: &Item) -> bool {
+    item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
+}
+
 /// Adjusts the markdown header levels in a string.
 /// Increases the level of each header (e.g., `#` -> `###`) based on the base level.
 /// Caps the maximum level at 6 (`######`).
@@ -3053,8 +3058,6 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
-            // DO NOT Print Source Location (if available) here. It's handled in `finalize` for "Other" items.
-
             // Print Code Block for Struct/Enum/Trait/Function (if needed)
             let code_block = match &item.inner {
                 ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
@@ -3147,9 +3150,7 @@ impl<'a> DocPrinter<'a> {
                     .krate
                     .index
                     .get(field_id)
-                    .map_or(false, |item| {
-                        item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
-                    })
+                    .map_or(false, |item| has_docs(item))
         })
     }
 
@@ -3173,8 +3174,7 @@ impl<'a> DocPrinter<'a> {
             }
 
             if let Some(item) = self.krate.index.get(field_id) {
-                let has_docs = item.docs.as_ref().map_or(false, |d| !d.trim().is_empty());
-                if has_docs {
+                if has_docs(item) {
                     // Check if it's already printed to avoid double counting
                     if !self.printed_ids.contains(field_id) {
                         has_documented_field_to_print = true;
@@ -3236,38 +3236,35 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(field_id) {
             // Only proceed if the field has documentation
-            if let Some(docs) = &item.docs {
-                if docs.trim().is_empty() {
-                    // Already marked as printed in the first pass of print_struct_fields
-                    return false; // Skip fields without docs
-                }
+            if !has_docs(item) {
+                // Already marked as printed in the first pass of print_struct_fields
+                return false; // Skip fields without docs
+            }
 
-                // Mark as printed *before* printing details
-                self.printed_ids.insert(*field_id);
+            // Mark as printed *before* printing details
+            self.printed_ids.insert(*field_id);
 
-                if let ItemEnum::StructField(_field_type) = &item.inner {
-                    let name = item.name.as_deref().unwrap_or("_");
-                    let field_header_level = section_level + 1; // Field level is section_level + 1
+            if let ItemEnum::StructField(_field_type) = &item.inner {
+                let name = item.name.as_deref().unwrap_or("_");
+                let field_header_level = section_level + 1; // Field level is section_level + 1
 
-                    // Header: e.g., ##### `field_name`
-                    writeln!(
-                        self.output,
-                        "{} `{}`\n", // Add newline after header
-                        "#".repeat(field_header_level),
-                        name
-                    )
-                    .unwrap();
+                // Header: e.g., ##### `field_name`
+                writeln!(
+                    self.output,
+                    "{} `{}`\n", // Add newline after header
+                    "#".repeat(field_header_level),
+                    name
+                )
+                .unwrap();
 
-                    // DO NOT print source location for regular fields
+                // Docs (with adjusted headers - we already checked non-empty)
+                let adjusted_docs =
+                    adjust_markdown_headers(item.docs.as_deref().unwrap_or(""), field_header_level);
+                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
 
-                    // Docs (with adjusted headers - we already checked non-empty)
-                    let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
-                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-
-                    // Type (optional, could add here if needed)
-                    // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
-                    return true; // Field was printed
-                }
+                // Type (optional, could add here if needed)
+                // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
+                return true; // Field was printed
             }
         }
         // Mark as printed even if item lookup failed (shouldn't happen ideally)
@@ -3285,44 +3282,41 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(field_id) {
             // Only proceed if the field has documentation
-            if let Some(docs) = &item.docs {
-                if docs.trim().is_empty() {
-                    // If no docs, the ID should already be marked printed in print_variant_details
-                    return false;
-                }
+            if !has_docs(item) {
+                // If no docs, the ID should already be marked printed in print_variant_details
+                return false;
+            }
 
-                // Mark as printed *before* printing details
-                self.printed_ids.insert(*field_id);
+            // Mark as printed *before* printing details
+            self.printed_ids.insert(*field_id);
 
-                if let ItemEnum::StructField(_field_type) = &item.inner {
-                    let name = item.name.as_deref().unwrap_or("_"); // Might be _ for tuple fields
-                    let field_header_level = section_level + 1; // Field level is section_level + 1
+            if let ItemEnum::StructField(_field_type) = &item.inner {
+                let name = item.name.as_deref().unwrap_or("_"); // Might be _ for tuple fields
+                let field_header_level = section_level + 1; // Field level is section_level + 1
 
-                    // Header: e.g., ###### `field_name`
-                    // Use field index for tuple fields if name is "_" (name is often '0', '1' etc.)
-                    let header_name = if name == "_" || name.chars().all(|c| c.is_ascii_digit()) {
-                        format!("Field {}", name)
-                    } else {
-                        name.to_string()
-                    };
-                    writeln!(
-                        self.output,
-                        "{} `{}`\n", // Add newline after header
-                        "#".repeat(field_header_level),
-                        header_name
-                    )
-                    .unwrap();
+                // Header: e.g., ###### `field_name`
+                // Use field index for tuple fields if name is "_" (name is often '0', '1' etc.)
+                let header_name = if name == "_" || name.chars().all(|c| c.is_ascii_digit()) {
+                    format!("Field {}", name)
+                } else {
+                    name.to_string()
+                };
+                writeln!(
+                    self.output,
+                    "{} `{}`\n", // Add newline after header
+                    "#".repeat(field_header_level),
+                    header_name
+                )
+                .unwrap();
 
-                    // DO NOT print source location for regular variant fields
+                // Docs (with adjusted headers - we already checked non-empty)
+                let adjusted_docs =
+                    adjust_markdown_headers(item.docs.as_deref().unwrap_or(""), field_header_level);
+                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
 
-                    // Docs (with adjusted headers - we already checked non-empty)
-                    let adjusted_docs = adjust_markdown_headers(docs.trim(), field_header_level);
-                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-
-                    // Type (optional)
-                    // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
-                    return true; // Field was printed
-                }
+                // Type (optional)
+                // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
+                return true; // Field was printed
             }
         }
         // Mark as printed even if item lookup failed
@@ -3338,9 +3332,7 @@ impl<'a> DocPrinter<'a> {
                     .krate
                     .index
                     .get(variant_id)
-                    .map_or(false, |item| {
-                        item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
-                    })
+                    .map_or(false, |item| has_docs(item))
         })
     }
 
@@ -3358,7 +3350,6 @@ impl<'a> DocPrinter<'a> {
             }
 
             if let Some(item) = self.krate.index.get(variant_id) {
-                let has_docs = item.docs.as_ref().map_or(false, |d| !d.trim().is_empty());
                 let mut has_documented_field = false;
 
                 // Check fields within the variant
@@ -3373,12 +3364,7 @@ impl<'a> DocPrinter<'a> {
                                             .krate
                                             .index
                                             .get(field_id)
-                                            .map_or(false, |f_item| {
-                                                f_item
-                                                    .docs
-                                                    .as_ref()
-                                                    .map_or(false, |d| !d.trim().is_empty())
-                                            });
+                                            .map_or(false, |f_item| has_docs(f_item));
                                         if field_has_docs {
                                             if !self.printed_ids.contains(field_id) {
                                                 has_documented_field = true;
@@ -3400,12 +3386,7 @@ impl<'a> DocPrinter<'a> {
                                         .krate
                                         .index
                                         .get(field_id)
-                                        .map_or(false, |f_item| {
-                                            f_item
-                                                .docs
-                                                .as_ref()
-                                                .map_or(false, |d| !d.trim().is_empty())
-                                        });
+                                        .map_or(false, |f_item| has_docs(f_item));
                                     if field_has_docs {
                                         if !self.printed_ids.contains(field_id) {
                                             has_documented_field = true;
@@ -3422,7 +3403,7 @@ impl<'a> DocPrinter<'a> {
                     }
                 }
 
-                if has_docs || has_documented_field {
+                if has_docs(item) || has_documented_field {
                     // Check if the variant itself is already printed to avoid double counting
                     if !self.printed_ids.contains(variant_id) {
                         has_documented_variant_or_field_to_print = true;
@@ -3476,7 +3457,7 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(variant_id) {
             if let ItemEnum::Variant(variant_data) = &item.inner {
-                let has_variant_docs = item.docs.as_ref().map_or(false, |d| !d.trim().is_empty());
+                let has_variant_docs = has_docs(item);
                 let mut documented_fields = Vec::new();
                 let mut has_stripped_fields = false;
                 let mut printed_any_field = false;
@@ -3492,12 +3473,7 @@ impl<'a> DocPrinter<'a> {
                                         .krate
                                         .index
                                         .get(field_id)
-                                        .map_or(false, |f_item| {
-                                            f_item
-                                                .docs
-                                                .as_ref()
-                                                .map_or(false, |d| !d.trim().is_empty())
-                                        });
+                                        .map_or(false, |f_item| has_docs(f_item));
                                     if field_has_docs && !self.printed_ids.contains(field_id) {
                                         documented_fields.push(*field_id);
                                     } else {
@@ -3520,12 +3496,7 @@ impl<'a> DocPrinter<'a> {
                                     .krate
                                     .index
                                     .get(field_id)
-                                    .map_or(false, |f_item| {
-                                        f_item
-                                            .docs
-                                            .as_ref()
-                                            .map_or(false, |d| !d.trim().is_empty())
-                                    });
+                                    .map_or(false, |f_item| has_docs(f_item));
                                 if field_has_docs && !self.printed_ids.contains(field_id) {
                                     documented_fields.push(*field_id);
                                 } else {
@@ -3561,8 +3532,6 @@ impl<'a> DocPrinter<'a> {
                     signature
                 )
                 .unwrap();
-
-                // DO NOT Print Source Location for regular variants
 
                 // Variant Docs (if present)
                 if let Some(docs) = &item.docs {
@@ -3603,10 +3572,35 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
-    /// Prints the "Associated Items" section for a trait.
+    /// Prints the "Associated Items" section for a trait, only if any selected item has docs.
     /// `item_level` is the header level of the trait itself (e.g., 3 for `###`).
     fn print_trait_associated_items(&mut self, _item: &Item, t: &Trait, item_level: usize) {
-        if t.items.is_empty() {
+        let mut assoc_consts = vec![];
+        let mut assoc_types = vec![];
+        let mut assoc_fns = vec![];
+        let mut any_assoc_has_docs = false;
+
+        // Filter and categorize selected associated items
+        for item_id in &t.items {
+            if !self.selected_ids.contains(item_id) {
+                continue;
+            }
+            if let Some(assoc_item) = self.krate.index.get(item_id) {
+                let item_has_docs = has_docs(assoc_item);
+                if item_has_docs {
+                    any_assoc_has_docs = true; // Mark if any item has docs
+                }
+                match &assoc_item.inner {
+                    ItemEnum::AssocConst { .. } => assoc_consts.push((item_id, item_has_docs)),
+                    ItemEnum::AssocType { .. } => assoc_types.push((item_id, item_has_docs)),
+                    ItemEnum::Function(_) => assoc_fns.push((item_id, item_has_docs)),
+                    _ => {} // Ignore others
+                }
+            }
+        }
+
+        // If no selected associated item has documentation, skip the entire section
+        if !any_assoc_has_docs {
             return;
         }
 
@@ -3618,58 +3612,46 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        let mut assoc_consts = vec![];
-        let mut assoc_types = vec![];
-        let mut assoc_fns = vec![];
-
-        for item_id in &t.items {
-            if let Some(assoc_item) = self.krate.index.get(item_id) {
-                if !self.selected_ids.contains(item_id) {
-                    continue;
-                }
-                match &assoc_item.inner {
-                    ItemEnum::AssocConst { .. } => assoc_consts.push(item_id),
-                    ItemEnum::AssocType { .. } => assoc_types.push(item_id),
-                    ItemEnum::Function(_) => assoc_fns.push(item_id),
-                    _ => {} // Ignore others
-                }
-            }
-        }
-
         let sub_section_level = assoc_items_header_level + 1; // Sub-sections (Consts, Types, Fns) are item_level + 2
 
-        // Print in order: consts, types, fns
-        if !assoc_consts.is_empty() {
+        // Print in order: consts, types, fns, only if they have documented items
+        if assoc_consts.iter().any(|(_, has_docs)| *has_docs) {
             writeln!(
                 self.output,
                 "{} Associated Constants\n",
                 "#".repeat(sub_section_level)
             )
             .unwrap();
-            for id in assoc_consts {
-                self.print_associated_item_summary(id, sub_section_level);
+            for (id, has_item_docs) in assoc_consts {
+                if has_item_docs {
+                    self.print_associated_item_summary(id, sub_section_level);
+                }
             }
         }
-        if !assoc_types.is_empty() {
+        if assoc_types.iter().any(|(_, has_docs)| *has_docs) {
             writeln!(
                 self.output,
                 "{} Associated Types\n",
                 "#".repeat(sub_section_level)
             )
             .unwrap();
-            for id in assoc_types {
-                self.print_associated_item_summary(id, sub_section_level);
+            for (id, has_item_docs) in assoc_types {
+                if has_item_docs {
+                    self.print_associated_item_summary(id, sub_section_level);
+                }
             }
         }
-        if !assoc_fns.is_empty() {
+        if assoc_fns.iter().any(|(_, has_docs)| *has_docs) {
             writeln!(
                 self.output,
                 "{} Associated Functions\n",
                 "#".repeat(sub_section_level)
             )
             .unwrap();
-            for id in assoc_fns {
-                self.print_associated_item_summary(id, sub_section_level);
+            for (id, has_item_docs) in assoc_fns {
+                if has_item_docs {
+                    self.print_associated_item_summary(id, sub_section_level);
+                }
             }
         }
     }
@@ -3688,8 +3670,6 @@ impl<'a> DocPrinter<'a> {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
             let mut summary = String::new();
             let assoc_item_header_level = section_level + 1; // Level where item header will be printed (section_level + 1)
-
-            // DO NOT Print Source Location for regular associated items
 
             // Add code block for associated functions if they have attrs/where clauses
             if let ItemEnum::Function(f) = &item.inner {
@@ -3944,8 +3924,6 @@ impl<'a> DocPrinter<'a> {
                     )
                     .unwrap();
 
-                    // DO NOT print source location for regular trait implementor headers
-
                     // Optionally, print docs for the impl block itself if available (with adjusted headers)
                     if let Some(docs) = &impl_item.docs {
                         if !docs.trim().is_empty() {
@@ -4130,8 +4108,6 @@ impl<'a> DocPrinter<'a> {
             impl_header.trim() // Trim potential trailing space if no where clause added
         )
         .unwrap();
-
-        // DO NOT print source location for regular impl blocks
 
         // Print impl block docs (with adjusted headers)
         if let Some(docs) = &impl_item.docs {
