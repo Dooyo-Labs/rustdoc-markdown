@@ -3573,6 +3573,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the "Associated Items" section for a trait, only if any selected item has docs.
+    /// Also marks *all* selected associated items as printed, regardless of whether they have docs.
     /// `item_level` is the header level of the trait itself (e.g., 3 for `###`).
     fn print_trait_associated_items(&mut self, _item: &Item, t: &Trait, item_level: usize) {
         let mut assoc_consts = vec![];
@@ -3580,11 +3581,14 @@ impl<'a> DocPrinter<'a> {
         let mut assoc_fns = vec![];
         let mut any_assoc_has_docs = false;
 
-        // Filter and categorize selected associated items
+        // Filter and categorize selected associated items, and mark *all* selected ones as printed.
         for item_id in &t.items {
             if !self.selected_ids.contains(item_id) {
                 continue;
             }
+            // Mark the item as printed now, regardless of docs, to prevent it from going to "Other"
+            self.printed_ids.insert(*item_id);
+
             if let Some(assoc_item) = self.krate.index.get(item_id) {
                 let item_has_docs = has_docs(assoc_item);
                 if item_has_docs {
@@ -3599,7 +3603,7 @@ impl<'a> DocPrinter<'a> {
             }
         }
 
-        // If no selected associated item has documentation, skip the entire section
+        // If no selected associated item has documentation, skip printing the entire section
         if !any_assoc_has_docs {
             return;
         }
@@ -3625,6 +3629,7 @@ impl<'a> DocPrinter<'a> {
             for (id, has_item_docs) in assoc_consts {
                 if has_item_docs {
                     self.print_associated_item_summary(id, sub_section_level);
+                    // ID was already marked printed above
                 }
             }
         }
@@ -3638,6 +3643,7 @@ impl<'a> DocPrinter<'a> {
             for (id, has_item_docs) in assoc_types {
                 if has_item_docs {
                     self.print_associated_item_summary(id, sub_section_level);
+                    // ID was already marked printed above
                 }
             }
         }
@@ -3651,6 +3657,7 @@ impl<'a> DocPrinter<'a> {
             for (id, has_item_docs) in assoc_fns {
                 if has_item_docs {
                     self.print_associated_item_summary(id, sub_section_level);
+                    // ID was already marked printed above
                 }
             }
         }
