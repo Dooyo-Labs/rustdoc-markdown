@@ -1999,6 +1999,24 @@ fn indent_string(s: &str, amount: usize) -> String {
         .join("\n")
 }
 
+/// Cleans common prefixes like `core::marker::`, `core::ops::`, `alloc::`, `std::` from a path string.
+fn clean_trait_path(path_str: &str) -> String {
+    path_str
+        .replace("core::marker::", "")
+        .replace("core::ops::", "") // Add common core paths
+        .replace("core::fmt::", "")
+        .replace("core::cmp::", "")
+        .replace("core::clone::", "")
+        .replace("core::hash::", "")
+        // Keep core::option::Option ? Maybe not needed as often in where clauses.
+        .replace("core::", "") // General core removal last
+        .replace("alloc::string::", "") // Clean alloc paths too
+        .replace("alloc::vec::", "")
+        .replace("alloc::boxed::", "")
+        .replace("alloc::", "") // General alloc removal
+        .replace("std::", "") // Also clean std paths potentially used via prelude
+}
+
 fn format_id_path(id: &Id, krate: &Crate) -> String {
     krate
         .paths
@@ -2009,16 +2027,17 @@ fn format_id_path(id: &Id, krate: &Crate) -> String {
 
 fn format_path(path: &Path, krate: &Crate) -> String {
     let base_path = format_id_path(&path.id, krate);
-    // Use as_ref() to get Option<&GenericArgs> from Option<Box<GenericArgs>>
+    let cleaned_base_path = clean_trait_path(&base_path); // Clean the base path
+                                                          // Use as_ref() to get Option<&GenericArgs> from Option<Box<GenericArgs>>
     if let Some(args) = path.args.as_ref() {
         let args_str = format_generic_args(args, krate, true); // Angle brackets only
         if !args_str.is_empty() {
-            format!("{}<{}>", base_path, args_str)
+            format!("{}<{}>", cleaned_base_path, args_str) // Use cleaned path
         } else {
-            base_path
+            cleaned_base_path // Use cleaned path
         }
     } else {
-        base_path
+        cleaned_base_path // Use cleaned path
     }
 }
 
@@ -2962,11 +2981,6 @@ fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
     sig
 }
 
-/// Cleans core:: and core::marker:: prefixes from a trait path string.
-fn clean_trait_path(path_str: &str) -> String {
-    path_str.replace("core::marker::", "").replace("core::", "") // Replace core:: after marker::
-}
-
 struct DocPrinter<'a> {
     krate: &'a Crate,
     selected_ids: &'a HashSet<Id>,
@@ -3774,7 +3788,7 @@ impl<'a> DocPrinter<'a> {
 
 
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
-    /// Handles template mode for impl docs.
+    /// Handles template mode for impl docs. Handles blanket impls specially.
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
     fn print_item_implementations(
         &mut self,
@@ -3827,10 +3841,17 @@ impl<'a> DocPrinter<'a> {
             .unwrap();
 
             let mut simple_impl_data: Vec<(&Item, &Impl, String)> = Vec::new();
-            let mut generic_impl_items = Vec::new();
+            let mut generic_or_blanket_impls = Vec::new(); // Store items for later processing
 
-            for impl_item in trait_impls {
+            // First pass: Identify simple non-blanket impls
+            for impl_item in &trait_impls {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    // Check if it's a blanket impl first
+                    if imp.blanket_impl.is_some() {
+                        generic_or_blanket_impls.push(*impl_item);
+                        continue;
+                    }
+                    // Check if it's a simple non-blanket impl
                     if let Some(trait_path) = &imp.trait_ {
                         let is_simple = imp.generics.params.is_empty()
                             && imp.generics.where_predicates.is_empty()
@@ -3854,19 +3875,16 @@ impl<'a> DocPrinter<'a> {
                                 clean_trait_path(&format_path(trait_path, self.krate));
                             simple_impl_data.push((impl_item, imp, cleaned_path));
                         } else {
-                            // Check printed_ids *before* adding to generic list
-                            if !self.printed_ids.contains(&impl_item.id) {
-                                generic_impl_items.push(impl_item);
-                            }
+                            generic_or_blanket_impls.push(*impl_item);
                         }
                     }
                 }
             }
 
-            // Sort simple impls by their cleaned path string
+            // Sort simple non-blanket impls by their cleaned path string
             simple_impl_data.sort_by(|a, b| a.2.cmp(&b.2));
 
-            // Print simple impls as a list first AND mark their items as printed
+            // Print simple non-blanket impls as a list first AND mark their items as printed
             if !simple_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &simple_impl_data {
                     writeln!(self.output, "- `{}`", cleaned_path).unwrap();
@@ -3882,32 +3900,67 @@ impl<'a> DocPrinter<'a> {
                 writeln!(self.output).unwrap(); // Add blank line after list
             }
 
-            // Print generic impls (complex ones) using their dedicated block printer
-            for impl_item in generic_impl_items {
-                if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    if let Some(trait_path) = &imp.trait_ {
-                        let trait_name = clean_trait_path(&format_path(trait_path, self.krate));
-                        // Print list item marker and trait name
-                        writeln!(self.output, "- `{}`", trait_name).unwrap();
-                        // Add a blank line after the list item marker
-                        writeln!(self.output).unwrap();
+            // Sort generic/blanket impls for consistent output (e.g., by trait name)
+            generic_or_blanket_impls.sort_by_key(|item| {
+                if let ItemEnum::Impl(imp) = &item.inner {
+                    imp.trait_.as_ref().map(|p| format_path(p, self.krate))
+                } else {
+                    None // Should not happen
+                }
+            });
 
-                        if let Some(impl_block_str) =
-                            self.generate_impl_trait_block(impl_item, imp, impl_section_level)
-                        {
-                            // Format the entire code block with fences
-                            let full_code_block = format!("```rust\n{}\n```", impl_block_str);
-                            // Indent the entire block (including fences) by 4 spaces
-                            let indented_block = indent_string(&full_code_block, 4);
-                            // Print the indented block followed by a newline
-                            writeln!(self.output, "{}\n", indented_block).unwrap();
+            // Print blanket and generic/complex non-blanket impls
+            for impl_item in generic_or_blanket_impls {
+                // Skip if already printed (e.g., if it was somehow also simple)
+                if self.printed_ids.contains(&impl_item.id) {
+                    continue;
+                }
+
+                if let ItemEnum::Impl(imp) = &impl_item.inner {
+                    if let Some(trait_path) = &imp.trait_ { // Ensure it's a trait impl
+                        let cleaned_trait_path = clean_trait_path(&format_path(trait_path, self.krate));
+
+                        // Check for blanket implementation using blanket_impl field
+                        if imp.blanket_impl.is_some() {
+                            // Handle blanket impl
+                            writeln!(self.output, "- `{}`", cleaned_trait_path).unwrap();
+                            self.printed_ids.insert(impl_item.id); // Mark blanket impl printed
+
+                            if !imp.generics.where_predicates.is_empty() {
+                                let where_clause = format_generics_where_only(
+                                    &imp.generics.where_predicates,
+                                    self.krate,
+                                );
+                                // Format and indent the where clause
+                                let code_block = format!("```rust\n{}\n```", where_clause);
+                                let indented_block = indent_string(&code_block, 4);
+                                writeln!(self.output, "\n{}\n", indented_block).unwrap(); // Add newlines around block
+                            } else {
+                                // Add a blank line after the list item if no where clause
+                                writeln!(self.output).unwrap();
+                            }
+                            // Mark associated items printed for blanket impl
+                            for assoc_item_id in &imp.items {
+                                if self.selected_ids.contains(assoc_item_id) {
+                                    self.printed_ids.insert(*assoc_item_id);
+                                }
+                            }
+                        } else {
+                            // Handle complex/generic non-blanket impl
+                            writeln!(self.output, "- `{}`", cleaned_trait_path).unwrap();
+                            writeln!(self.output).unwrap(); // Blank line after list item
+                            // generate_impl_trait_block marks printed IDs internally
+                            if let Some(impl_block_str) = self.generate_impl_trait_block(impl_item, imp, impl_section_level) {
+                                let full_code_block = format!("```rust\n{}\n```", impl_block_str);
+                                let indented_block = indent_string(&full_code_block, 4);
+                                writeln!(self.output, "{}\n", indented_block).unwrap();
+                            }
                         }
                     }
                 }
             }
         }
     }
-
 
     /// Prints implementors *of* a trait. Handles template mode for the impl docs.
     /// `item_level` is the header level of the trait itself (e.g., 3 for `###`).
