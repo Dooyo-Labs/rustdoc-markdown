@@ -43,6 +43,7 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
+const TEMPLATE_PLACEHOLDER: &str = "*FILL IN WHAT YOU KNOW HERE*";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -108,6 +109,10 @@ struct Args {
     /// Build documentation for the specified target triple
     #[arg(long)]
     target: Option<String>,
+
+    /// Output a template instead of the actual documentation for items with docstrings.
+    #[arg(long)]
+    template: bool,
 }
 
 /// Parses a string into an `Id`.
@@ -2968,6 +2973,7 @@ struct DocPrinter<'a> {
     resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
     graph: &'a IdGraph, // Add graph reference
     include_other: bool,
+    template_mode: bool, // New flag for template mode
     printed_ids: HashSet<Id>,
     output: String,
     base_level: usize, // For markdown header levels
@@ -2980,6 +2986,7 @@ impl<'a> DocPrinter<'a> {
         resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
         graph: &'a IdGraph, // Add graph parameter
         include_other: bool,
+        template_mode: bool, // Add template mode flag
     ) -> Self {
         DocPrinter {
             krate,
@@ -2987,6 +2994,7 @@ impl<'a> DocPrinter<'a> {
             resolved_modules, // Store resolved modules
             graph,            // Store graph reference
             include_other,
+            template_mode, // Store template mode flag
             printed_ids: HashSet::new(),
             output: String::new(),
             base_level: 1, // Start top-level sections at # (level 1)
@@ -3030,6 +3038,28 @@ impl<'a> DocPrinter<'a> {
             ItemEnum::Primitive(_) => ItemKind::Primitive,
             ItemEnum::AssocConst { .. } => ItemKind::AssocConst,
             ItemEnum::AssocType { .. } => ItemKind::AssocType,
+        }
+    }
+
+    /// Prints the documentation string for an item, applying template mode if active.
+    fn print_docs(&mut self, item: &Item, header_level: usize) {
+        match (&item.docs, self.template_mode) {
+            // Template mode and docs exist: Print placeholder
+            (Some(_), true) => {
+                // Adjust placeholder like real docs (even though it's simple text)
+                let adjusted_placeholder = adjust_markdown_headers(TEMPLATE_PLACEHOLDER, header_level);
+                writeln!(self.output, "{}\n", adjusted_placeholder).unwrap();
+            }
+            // Not template mode or no docs: Print original docs if non-empty
+            (Some(docs), false) => {
+                if !docs.trim().is_empty() {
+                    let adjusted_docs = adjust_markdown_headers(docs.trim(), header_level);
+                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+                }
+                // If docs are Some but empty, print nothing (existing behavior)
+            }
+            // Docs are None: Print nothing
+            (None, _) => {}
         }
     }
 
@@ -3084,13 +3114,8 @@ impl<'a> DocPrinter<'a> {
                 writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
             }
 
-            // Print Documentation (with adjusted headers)
-            if let Some(docs) = &item.docs {
-                if !docs.trim().is_empty() {
-                    let adjusted_docs = adjust_markdown_headers(docs.trim(), item_header_level);
-                    writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                }
-            }
+            // Print Documentation (using the helper method)
+            self.print_docs(item, item_header_level);
 
             // Print Specific Sections
             match &item.inner {
@@ -3137,7 +3162,7 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Checks if any selected field within a struct has documentation.
+    /// Checks if any selected field within a struct has documentation or if template mode is on.
     fn has_documented_fields(&self, s: &Struct) -> bool {
         let field_ids = match &s.kind {
             StructKind::Plain { fields, .. } => fields.clone(),
@@ -3146,11 +3171,10 @@ impl<'a> DocPrinter<'a> {
         };
         field_ids.iter().any(|field_id| {
             self.selected_ids.contains(field_id)
-                && self
-                    .krate
-                    .index
-                    .get(field_id)
-                    .map_or(false, |item| has_docs(item))
+                && self.krate.index.get(field_id).map_or(false, |item| {
+                    // Consider it "documented" if template mode is on and docs are Some
+                    (self.template_mode && item.docs.is_some()) || has_docs(item)
+                })
         })
     }
 
@@ -3164,23 +3188,25 @@ impl<'a> DocPrinter<'a> {
             StructKind::Unit => vec![],
         };
 
-        let mut has_documented_field_to_print = false;
+        let mut has_printable_field = false;
         let mut printed_any_field = false;
 
-        // First pass: Mark undocumented fields as printed and check if any documented ones will be printed.
+        // First pass: Mark unselected/undocumented/non-templated fields printed and check if any are printable.
         for field_id in &all_field_ids {
             if !self.selected_ids.contains(field_id) {
                 continue; // Skip unselected fields
             }
 
             if let Some(item) = self.krate.index.get(field_id) {
-                if has_docs(item) {
+                let field_has_printable_docs =
+                    (self.template_mode && item.docs.is_some()) || has_docs(item);
+                if field_has_printable_docs {
                     // Check if it's already printed to avoid double counting
                     if !self.printed_ids.contains(field_id) {
-                        has_documented_field_to_print = true;
+                        has_printable_field = true;
                     }
                 } else {
-                    // Mark undocumented field as printed immediately
+                    // Mark non-printable field as printed immediately
                     self.printed_ids.insert(*field_id);
                 }
             } else {
@@ -3197,8 +3223,8 @@ impl<'a> DocPrinter<'a> {
             }
         );
 
-        // Only print the "Fields" section if there's a documented field to print or stripped fields exist
-        if !has_documented_field_to_print && !has_stripped {
+        // Only print the "Fields" section if there's a printable field or stripped fields exist
+        if !has_printable_field && !has_stripped {
             return;
         }
 
@@ -3210,7 +3236,7 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Second pass: Print details for documented fields
+        // Second pass: Print details for fields that have printable docs
         for field_id in &all_field_ids {
             if self.print_field_details(field_id, fields_header_level) {
                 printed_any_field = true;
@@ -3226,7 +3252,7 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints the details for a single struct field, only if it has documentation.
+    /// Prints the details for a single struct field, only if it has printable documentation.
     /// Returns true if the field was printed, false otherwise.
     /// `section_level` is the header level of the "Fields" section (e.g., 4 for `####`).
     fn print_field_details(&mut self, field_id: &Id, section_level: usize) -> bool {
@@ -3235,10 +3261,13 @@ impl<'a> DocPrinter<'a> {
         }
 
         if let Some(item) = self.krate.index.get(field_id) {
-            // Only proceed if the field has documentation
-            if !has_docs(item) {
-                // Already marked as printed in the first pass of print_struct_fields
-                return false; // Skip fields without docs
+            let field_has_printable_docs =
+                (self.template_mode && item.docs.is_some()) || has_docs(item);
+
+            // Only proceed if the field has printable documentation
+            if !field_has_printable_docs {
+                // Should already be marked printed in print_struct_fields
+                return false;
             }
 
             // Mark as printed *before* printing details
@@ -3257,10 +3286,8 @@ impl<'a> DocPrinter<'a> {
                 )
                 .unwrap();
 
-                // Docs (with adjusted headers - we already checked non-empty)
-                let adjusted_docs =
-                    adjust_markdown_headers(item.docs.as_deref().unwrap_or(""), field_header_level);
-                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+                // Print docs (using helper, handles template mode)
+                self.print_docs(item, field_header_level);
 
                 // Type (optional, could add here if needed)
                 // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
@@ -3272,7 +3299,7 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
-    /// Prints the details for a single enum variant field, only if it has documentation.
+    /// Prints the details for a single enum variant field, only if it has printable documentation.
     /// Returns true if the field was printed, false otherwise.
     /// `section_level` is the header level of the "Variant Fields" section (e.g., 5 for `#####`).
     fn print_variant_field_details(&mut self, field_id: &Id, section_level: usize) -> bool {
@@ -3281,8 +3308,11 @@ impl<'a> DocPrinter<'a> {
         }
 
         if let Some(item) = self.krate.index.get(field_id) {
-            // Only proceed if the field has documentation
-            if !has_docs(item) {
+            let field_has_printable_docs =
+                (self.template_mode && item.docs.is_some()) || has_docs(item);
+
+            // Only proceed if the field has printable documentation
+            if !field_has_printable_docs {
                 // If no docs, the ID should already be marked printed in print_variant_details
                 return false;
             }
@@ -3309,10 +3339,8 @@ impl<'a> DocPrinter<'a> {
                 )
                 .unwrap();
 
-                // Docs (with adjusted headers - we already checked non-empty)
-                let adjusted_docs =
-                    adjust_markdown_headers(item.docs.as_deref().unwrap_or(""), field_header_level);
-                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
+                // Print Docs (using helper, handles template mode)
+                self.print_docs(item, field_header_level);
 
                 // Type (optional)
                 // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
@@ -3324,92 +3352,92 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
-    /// Checks if any selected variant within an enum has documentation.
-    fn has_documented_variants(&self, e: &Enum) -> bool {
+    /// Checks if any selected variant or its fields have printable documentation.
+    fn has_printable_variants(&self, e: &Enum) -> bool {
         e.variants.iter().any(|variant_id| {
-            self.selected_ids.contains(variant_id)
-                && self
-                    .krate
-                    .index
-                    .get(variant_id)
-                    .map_or(false, |item| has_docs(item))
+            if !self.selected_ids.contains(variant_id) { return false; }
+            if let Some(item) = self.krate.index.get(variant_id) {
+                // Check variant itself
+                if (self.template_mode && item.docs.is_some()) || has_docs(item) { return true; }
+                // Check fields within the variant
+                if let ItemEnum::Variant(v) = &item.inner {
+                    let field_ids: Vec<Id> = match &v.kind {
+                        VariantKind::Plain => vec![],
+                        VariantKind::Tuple(fields) => fields.iter().filter_map(|opt_id| *opt_id).collect(),
+                        VariantKind::Struct { fields, .. } => fields.clone(),
+                    };
+                    for field_id in field_ids {
+                        if self.selected_ids.contains(&field_id) {
+                            if let Some(f_item) = self.krate.index.get(&field_id) {
+                                if (self.template_mode && f_item.docs.is_some()) || has_docs(f_item) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            false
         })
     }
 
+
     /// Prints the "Variants" section for an enum, only if needed.
-    /// Also marks variants *and their fields* without documentation as printed.
+    /// Also marks variants *and their fields* without printable documentation as printed.
     /// `item_level` is the header level of the enum itself (e.g., 3 for `###`).
     fn print_enum_variants(&mut self, _item: &Item, e: &Enum, item_level: usize) {
-        let mut has_documented_variant_or_field_to_print = false;
+        let mut has_printable_variant_or_field = false;
         let mut printed_any_variant = false;
 
-        // First pass: Mark undocumented variants/fields as printed and check if any documented ones will be printed.
+        // First pass: Mark non-printable variants/fields printed and check if any are printable.
         for variant_id in &e.variants {
             if !self.selected_ids.contains(variant_id) {
                 continue; // Skip unselected variants
             }
 
             if let Some(item) = self.krate.index.get(variant_id) {
-                let mut has_documented_field = false;
+                let variant_has_printable_docs =
+                    (self.template_mode && item.docs.is_some()) || has_docs(item);
+                let mut variant_has_printable_field = false;
 
                 // Check fields within the variant
                 if let ItemEnum::Variant(v) = &item.inner {
-                    match &v.kind {
-                        VariantKind::Plain => {} // No fields
-                        VariantKind::Tuple(fields) => {
-                            for field_id_opt in fields {
-                                if let Some(field_id) = field_id_opt {
-                                    if self.selected_ids.contains(field_id) {
-                                        let field_has_docs = self
-                                            .krate
-                                            .index
-                                            .get(field_id)
-                                            .map_or(false, |f_item| has_docs(f_item));
-                                        if field_has_docs {
-                                            if !self.printed_ids.contains(field_id) {
-                                                has_documented_field = true;
-                                            }
-                                        } else {
-                                            self.printed_ids.insert(*field_id); // Mark undocumented field printed
-                                        }
-                                    } else {
-                                        // Mark unselected field id printed if present in tuple
-                                        self.printed_ids.insert(*field_id);
-                                    }
+                    let field_ids: Vec<Id> = match &v.kind {
+                        VariantKind::Plain => vec![],
+                        VariantKind::Tuple(fields) => fields.iter().filter_map(|opt_id| *opt_id).collect(),
+                        VariantKind::Struct { fields, .. } => fields.clone(),
+                    };
+
+                    for field_id in field_ids {
+                        if self.selected_ids.contains(&field_id) {
+                            let field_has_printable_docs = self
+                                .krate
+                                .index
+                                .get(&field_id)
+                                .map_or(false, |f_item| {
+                                    (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
+                                });
+                            if field_has_printable_docs {
+                                if !self.printed_ids.contains(&field_id) {
+                                    variant_has_printable_field = true;
                                 }
+                            } else {
+                                self.printed_ids.insert(field_id); // Mark non-printable field printed
                             }
-                        }
-                        VariantKind::Struct { fields, .. } => {
-                            for field_id in fields {
-                                if self.selected_ids.contains(field_id) {
-                                    let field_has_docs = self
-                                        .krate
-                                        .index
-                                        .get(field_id)
-                                        .map_or(false, |f_item| has_docs(f_item));
-                                    if field_has_docs {
-                                        if !self.printed_ids.contains(field_id) {
-                                            has_documented_field = true;
-                                        }
-                                    } else {
-                                        self.printed_ids.insert(*field_id); // Mark undocumented field printed
-                                    }
-                                } else {
-                                    // Mark unselected field id printed
-                                    self.printed_ids.insert(*field_id);
-                                }
-                            }
+                        } else {
+                             // Mark unselected field id printed if present
+                            self.printed_ids.insert(field_id);
                         }
                     }
                 }
 
-                if has_docs(item) || has_documented_field {
+                if variant_has_printable_docs || variant_has_printable_field {
                     // Check if the variant itself is already printed to avoid double counting
                     if !self.printed_ids.contains(variant_id) {
-                        has_documented_variant_or_field_to_print = true;
+                        has_printable_variant_or_field = true;
                     }
                 } else {
-                    // Mark undocumented variant (with no documented fields) as printed immediately
+                    // Mark non-printable variant (with no printable fields) as printed immediately
                     self.printed_ids.insert(*variant_id);
                 }
             } else {
@@ -3418,8 +3446,8 @@ impl<'a> DocPrinter<'a> {
             }
         }
 
-        // Only print the "Variants" section if there's a documented variant/field to print or stripped variants exist
-        if !has_documented_variant_or_field_to_print && !e.has_stripped_variants {
+        // Only print the "Variants" section if there's a printable variant/field or stripped variants exist
+        if !has_printable_variant_or_field && !e.has_stripped_variants {
             return;
         }
 
@@ -3431,7 +3459,7 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Second pass: Print details for variants that have docs or contain documented fields
+        // Second pass: Print details for variants that have printable docs or contain printable fields
         for variant_id in &e.variants {
             if self.print_variant_details(variant_id, variants_header_level) {
                 printed_any_variant = true;
@@ -3447,8 +3475,9 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
+
     /// Prints the details for a single enum variant. Includes variant docs and docs for its fields if present.
-    /// Returns true if the variant was printed (because it or its fields had docs), false otherwise.
+    /// Returns true if the variant was printed (because it or its fields had printable docs), false otherwise.
     /// `section_level` is the header level of the "Variants" section (e.g., 4 for `####`).
     fn print_variant_details(&mut self, variant_id: &Id, section_level: usize) -> bool {
         if !self.selected_ids.contains(variant_id) || self.printed_ids.contains(variant_id) {
@@ -3457,62 +3486,43 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(variant_id) {
             if let ItemEnum::Variant(variant_data) = &item.inner {
-                let has_variant_docs = has_docs(item);
-                let mut documented_fields = Vec::new();
+                let variant_has_printable_docs =
+                    (self.template_mode && item.docs.is_some()) || has_docs(item);
+                let mut printable_fields = Vec::new();
                 let mut has_stripped_fields = false;
                 let mut printed_any_field = false;
 
-                // Determine fields and check their docs
-                match &variant_data.kind {
-                    VariantKind::Plain => {} // No fields
-                    VariantKind::Tuple(fields) => {
-                        for field_id_opt in fields {
-                            if let Some(field_id) = field_id_opt {
-                                if self.selected_ids.contains(field_id) {
-                                    let field_has_docs = self
-                                        .krate
-                                        .index
-                                        .get(field_id)
-                                        .map_or(false, |f_item| has_docs(f_item));
-                                    if field_has_docs && !self.printed_ids.contains(field_id) {
-                                        documented_fields.push(*field_id);
-                                    } else {
-                                        // Mark unselected or undocumented field printed
-                                        self.printed_ids.insert(*field_id);
-                                    }
-                                }
-                            }
+                // Determine fields and check their printable docs
+                let (field_ids, stripped) = match &variant_data.kind {
+                    VariantKind::Plain => (vec![], false),
+                    VariantKind::Tuple(fields) => (fields.iter().filter_map(|opt_id| *opt_id).collect(), false),
+                    VariantKind::Struct { fields, has_stripped_fields: s } => (fields.clone(), *s),
+                };
+                has_stripped_fields = stripped;
+
+                for field_id in &field_ids {
+                    if self.selected_ids.contains(field_id) {
+                        let field_has_printable_docs = self
+                            .krate
+                            .index
+                            .get(field_id)
+                            .map_or(false, |f_item| {
+                                (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
+                            });
+                        if field_has_printable_docs && !self.printed_ids.contains(field_id) {
+                            printable_fields.push(*field_id);
+                        } else {
+                             // Mark unselected or non-printable field printed
+                            self.printed_ids.insert(*field_id);
                         }
-                        // Tuple variants don't have `has_stripped_fields`
-                    }
-                    VariantKind::Struct {
-                        fields,
-                        has_stripped_fields: stripped,
-                    } => {
-                        has_stripped_fields = *stripped;
-                        for field_id in fields {
-                            if self.selected_ids.contains(field_id) {
-                                let field_has_docs = self
-                                    .krate
-                                    .index
-                                    .get(field_id)
-                                    .map_or(false, |f_item| has_docs(f_item));
-                                if field_has_docs && !self.printed_ids.contains(field_id) {
-                                    documented_fields.push(*field_id);
-                                } else {
-                                    // Mark unselected or undocumented field printed
-                                    self.printed_ids.insert(*field_id);
-                                }
-                            } else {
-                                // Mark unselected field printed
-                                self.printed_ids.insert(*field_id);
-                            }
-                        }
+                    } else {
+                         // Mark unselected field printed
+                        self.printed_ids.insert(*field_id);
                     }
                 }
 
-                // Only print the variant if it has docs OR it has documented fields to print
-                if !has_variant_docs && documented_fields.is_empty() {
+                // Only print the variant if it has printable docs OR it has printable fields to print
+                if !variant_has_printable_docs && printable_fields.is_empty() {
                     // Mark variant as printed if skipped
                     self.printed_ids.insert(*variant_id);
                     return false;
@@ -3533,17 +3543,11 @@ impl<'a> DocPrinter<'a> {
                 )
                 .unwrap();
 
-                // Variant Docs (if present)
-                if let Some(docs) = &item.docs {
-                    if !docs.trim().is_empty() {
-                        let adjusted_docs =
-                            adjust_markdown_headers(docs.trim(), variant_header_level);
-                        writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                    }
-                }
+                // Print Variant Docs (using helper)
+                self.print_docs(item, variant_header_level);
 
                 // Print documented fields (if any)
-                if !documented_fields.is_empty() || has_stripped_fields {
+                if !printable_fields.is_empty() || has_stripped_fields {
                     let field_section_level = variant_header_level + 1; // Fields section is variant_level + 1
                     writeln!(
                         self.output,
@@ -3551,7 +3555,7 @@ impl<'a> DocPrinter<'a> {
                         "#".repeat(field_section_level)
                     )
                     .unwrap();
-                    for field_id in documented_fields {
+                    for field_id in printable_fields {
                         if self.print_variant_field_details(&field_id, field_section_level) {
                             printed_any_field = true;
                         }
@@ -3572,14 +3576,26 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
-    /// Prints the "Associated Items" section for a trait, only if any selected item has docs.
-    /// Also marks *all* selected associated items as printed, regardless of whether they have docs.
+
+    /// Checks if any selected associated item has printable documentation.
+    fn has_printable_associated_items(&self, t: &Trait) -> bool {
+        t.items.iter().any(|item_id| {
+            self.selected_ids.contains(item_id) &&
+            self.krate.index.get(item_id).map_or(false, |assoc_item| {
+                (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item)
+            })
+        })
+    }
+
+
+    /// Prints the "Associated Items" section for a trait, only if any selected item has printable docs.
+    /// Also marks *all* selected associated items as printed.
     /// `item_level` is the header level of the trait itself (e.g., 3 for `###`).
     fn print_trait_associated_items(&mut self, _item: &Item, t: &Trait, item_level: usize) {
         let mut assoc_consts = vec![];
         let mut assoc_types = vec![];
         let mut assoc_fns = vec![];
-        let mut any_assoc_has_docs = false;
+        let mut any_assoc_has_printable_docs = false;
 
         // Filter and categorize selected associated items, and mark *all* selected ones as printed.
         for item_id in &t.items {
@@ -3590,21 +3606,22 @@ impl<'a> DocPrinter<'a> {
             self.printed_ids.insert(*item_id);
 
             if let Some(assoc_item) = self.krate.index.get(item_id) {
-                let item_has_docs = has_docs(assoc_item);
-                if item_has_docs {
-                    any_assoc_has_docs = true; // Mark if any item has docs
+                let item_has_printable_docs =
+                    (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item);
+                if item_has_printable_docs {
+                    any_assoc_has_printable_docs = true; // Mark if any item has printable docs
                 }
                 match &assoc_item.inner {
-                    ItemEnum::AssocConst { .. } => assoc_consts.push((item_id, item_has_docs)),
-                    ItemEnum::AssocType { .. } => assoc_types.push((item_id, item_has_docs)),
-                    ItemEnum::Function(_) => assoc_fns.push((item_id, item_has_docs)),
+                    ItemEnum::AssocConst { .. } => assoc_consts.push((item_id, item_has_printable_docs)),
+                    ItemEnum::AssocType { .. } => assoc_types.push((item_id, item_has_printable_docs)),
+                    ItemEnum::Function(_) => assoc_fns.push((item_id, item_has_printable_docs)),
                     _ => {} // Ignore others
                 }
             }
         }
 
-        // If no selected associated item has documentation, skip printing the entire section
-        if !any_assoc_has_docs {
+        // If no selected associated item has printable documentation, skip printing the entire section
+        if !any_assoc_has_printable_docs {
             return;
         }
 
@@ -3618,7 +3635,7 @@ impl<'a> DocPrinter<'a> {
 
         let sub_section_level = assoc_items_header_level + 1; // Sub-sections (Consts, Types, Fns) are item_level + 2
 
-        // Print in order: consts, types, fns, only if they have documented items
+        // Print in order: consts, types, fns, only if they have printable items
         if assoc_consts.iter().any(|(_, has_docs)| *has_docs) {
             writeln!(
                 self.output,
@@ -3627,7 +3644,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             for (id, has_item_docs) in assoc_consts {
-                if has_item_docs {
+                if has_item_docs { // Only print if it has printable docs
                     self.print_associated_item_summary(id, sub_section_level);
                     // ID was already marked printed above
                 }
@@ -3641,7 +3658,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             for (id, has_item_docs) in assoc_types {
-                if has_item_docs {
+                if has_item_docs { // Only print if it has printable docs
                     self.print_associated_item_summary(id, sub_section_level);
                     // ID was already marked printed above
                 }
@@ -3655,7 +3672,7 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             for (id, has_item_docs) in assoc_fns {
-                if has_item_docs {
+                if has_item_docs { // Only print if it has printable docs
                     self.print_associated_item_summary(id, sub_section_level);
                     // ID was already marked printed above
                 }
@@ -3663,8 +3680,9 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
+
     /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
-    /// Does NOT include the markdown header. Includes docs with adjusted headers.
+    /// Does NOT include the markdown header. Includes docs with adjusted headers, respecting template mode.
     /// `section_level` is the level of the "Associated Constants/Types/Functions" header (e.g., 4).
     fn generate_associated_item_summary(
         &mut self,
@@ -3691,14 +3709,8 @@ impl<'a> DocPrinter<'a> {
                 }
             }
 
-            // Print Documentation (with adjusted headers)
-            if let Some(docs) = &item.docs {
-                if !docs.trim().is_empty() {
-                    let adjusted_docs =
-                        adjust_markdown_headers(docs.trim(), assoc_item_header_level);
-                    writeln!(summary, "{}\n", adjusted_docs).unwrap();
-                }
-            }
+            // Print Documentation (using helper)
+            self.print_docs(item, assoc_item_header_level);
 
             // Potentially add default values/bounds for assoc const/type here
             match &item.inner {
@@ -3732,10 +3744,12 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
+
     /// Prints the header and summary for a single associated item (const, type, function).
     /// `section_level` is the header level of the "Associated Constants/Types/Functions" section (e.g., 4).
     fn print_associated_item_summary(&mut self, assoc_item_id: &Id, section_level: usize) {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
+            // Generate summary first (handles template mode internally)
             if let Some(summary) =
                 self.generate_associated_item_summary(assoc_item_id, section_level)
             {
@@ -3758,7 +3772,9 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
+
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
+    /// Handles template mode for impl docs.
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
     fn print_item_implementations(
         &mut self,
@@ -3892,7 +3908,8 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints implementors *of* a trait.
+
+    /// Prints implementors *of* a trait. Handles template mode for the impl docs.
     /// `item_level` is the header level of the trait itself (e.g., 3 for `###`).
     fn print_trait_implementors(
         &mut self,
@@ -3931,19 +3948,15 @@ impl<'a> DocPrinter<'a> {
                     )
                     .unwrap();
 
-                    // Optionally, print docs for the impl block itself if available (with adjusted headers)
-                    if let Some(docs) = &impl_item.docs {
-                        if !docs.trim().is_empty() {
-                            let adjusted_docs =
-                                adjust_markdown_headers(docs.trim(), impl_header_level);
-                            writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                        }
-                    }
+                    // Print docs for the impl block itself (using helper)
+                    self.print_docs(impl_item, impl_header_level);
+
                     // We don't print the associated items here, just list the implementor
                 }
             }
         }
     }
+
 
     /// Helper to format a single-line impl block or trait impl header
     fn format_impl_header(&self, imp: &Impl) -> String {
@@ -4097,6 +4110,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints the details of a specific impl block (header, associated items).
+    /// Handles template mode for the impl block's docs.
     /// `section_level` is the level where the impl header should be printed (e.g., 4 for `####`).
     fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl, section_level: usize) {
         // Mark as printed *now* before printing details
@@ -4116,20 +4130,15 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Print impl block docs (with adjusted headers)
-        if let Some(docs) = &impl_item.docs {
-            if !docs.trim().is_empty() {
-                let adjusted_docs = adjust_markdown_headers(docs.trim(), impl_header_level);
-                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-            }
-        }
+        // Print impl block docs (using helper)
+        self.print_docs(impl_item, impl_header_level);
 
         // Print associated items within this impl block
         let mut assoc_consts = vec![];
         let mut assoc_types = vec![];
         let mut assoc_fns = vec![];
         for assoc_item_id in &imp.items {
-            // Important: Only print associated items that are *selected*
+            // Important: Only process associated items that are *selected*
             if !self.selected_ids.contains(assoc_item_id) {
                 continue;
             }
@@ -4171,6 +4180,7 @@ impl<'a> DocPrinter<'a> {
             }
         }
     }
+
 
     /// Prints items of a specific kind within a given list of IDs.
     fn print_items_of_kind(
@@ -4307,16 +4317,9 @@ impl<'a> DocPrinter<'a> {
                                     .unwrap();
                                     self.printed_ids.insert(*id); // Mark printed *before* recursion
 
-                                    // Print module docs (with adjusted headers)
-                                    if let Some(docs) = &item.docs {
-                                        if !docs.trim().is_empty() {
-                                            let adjusted_docs = adjust_markdown_headers(
-                                                docs.trim(),
-                                                item_detail_level,
-                                            );
-                                            writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                                        }
-                                    }
+                                    // Print module docs (using helper)
+                                    self.print_docs(item, item_detail_level);
+
                                     // Recurse for the submodule's contents
                                     self.print_module_contents(id, item_detail_level); // Pass item_detail_level as new base
                                 }
@@ -4335,6 +4338,7 @@ impl<'a> DocPrinter<'a> {
             );
         }
     }
+
 
     /// Prints graph context for an unprinted item.
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
@@ -4386,13 +4390,8 @@ impl<'a> DocPrinter<'a> {
         .unwrap();
         // We *don't* mark the root ID as printed yet, as its contents go in "::"
 
-        // Print Crate Documentation (with adjusted headers)
-        if let Some(docs) = &root_item.docs {
-            if !docs.trim().is_empty() {
-                let adjusted_docs = adjust_markdown_headers(docs.trim(), crate_header_level);
-                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-            }
-        }
+        // Print Crate Documentation (using helper)
+        self.print_docs(root_item, crate_header_level);
 
         // --- Print Top-Level Sections ---
         // Use the resolved items for the root module
@@ -4475,14 +4474,9 @@ impl<'a> DocPrinter<'a> {
                         .unwrap();
                         self.printed_ids.insert(*id); // Mark module as printed *before* printing contents
 
-                        // Print module docs
-                        if let Some(docs) = &item.docs {
-                            if !docs.trim().is_empty() {
-                                let adjusted_docs =
-                                    adjust_markdown_headers(docs.trim(), module_header_level);
-                                writeln!(self.output, "{}\n", adjusted_docs).unwrap();
-                            }
-                        }
+                        // Print module docs (using helper)
+                        self.print_docs(item, module_header_level);
+
                         // Print module contents (using resolved items for this submodule)
                         self.print_module_contents(id, module_header_level); // Start contents at level 3
                     }
@@ -4622,6 +4616,7 @@ fn generate_documentation(
     resolved_modules: &HashMap<Id, ResolvedModule>, // Accept resolved modules
     graph: &IdGraph,                                 // Accept graph
     include_other: bool,
+    template_mode: bool, // Add template mode flag
 ) -> Result<String> {
     info!(
         "Generating documentation for {} selected items.",
@@ -4631,7 +4626,14 @@ fn generate_documentation(
         return Ok("No items selected for documentation.".to_string());
     }
 
-    let printer = DocPrinter::new(krate, selected_ids, resolved_modules, graph, include_other); // Pass resolved modules and graph
+    let printer = DocPrinter::new(
+        krate,
+        selected_ids,
+        resolved_modules,
+        graph,
+        include_other,
+        template_mode, // Pass template mode flag
+    );
     let output = printer.finalize();
 
     Ok(output)
@@ -4781,13 +4783,14 @@ async fn main() -> Result<()> {
     }
 
     // --- Generate Documentation ---
-    // Pass resolved modules and full graph to documentation generator
+    // Pass resolved modules, full graph, and template flag to documentation generator
     let documentation = generate_documentation(
         &krate,
         &selected_ids,
         &resolved_modules, // Pass resolved modules
         &full_graph,
         args.include_other,
+        args.template, // Pass template flag
     )?;
 
     // --- Output Documentation ---
