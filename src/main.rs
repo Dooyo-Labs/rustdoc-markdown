@@ -3222,123 +3222,108 @@ impl<'a> DocPrinter<'a> {
 
     /// Prints the details of a single selected item.
     /// Manages the doc_path stack for the item's header.
-    fn print_item_details(&mut self, id: &Id) {
+    fn print_item_details(&mut self, id: &Id) -> bool {
         if !self.selected_ids.contains(id) || !self.printed_ids.insert(*id) {
-            return; // Skip unselected or already printed items
+            return false; // Skip unselected or already printed items
         }
 
-        if let Some(item) = self.krate.index.get(id) {
-            // Skip printing details for 'Use' items, they are handled by resolution
-            // Also skip Modules here, they are handled by the main traversal in finalize
-            if matches!(item.inner, ItemEnum::Use(_) | ItemEnum::Module(_)) {
-                return;
-            }
+        let Some(item) = self.krate.index.get(id) else {
+            warn!("Item details for ID {id:?} not found in index");
+            return false;
+        };
 
-            // Increment the counter for the current level before printing
-            self.increment_current_level();
+        // Skip printing details for 'Use' items, they are handled by resolution
+        // Also skip Modules here, they are handled by the main traversal in finalize
+        if matches!(item.inner, ItemEnum::Use(_) | ItemEnum::Module(_)) {
+            return false;
+        }
 
-            let item_header_level = self.get_current_header_level();
-            let header_prefix = self.get_header_prefix();
-            let declaration = generate_item_declaration(item, self.krate);
+        let item_header_level = self.get_current_header_level();
+        let header_prefix = self.get_header_prefix();
+        let declaration = generate_item_declaration(item, self.krate);
 
-            // Print Header (e.g. `### 1.1.1: `declaration``)
-            writeln!(
-                self.output,
-                "\n{} {} `{}`\n", // Add newline after header
-                "#".repeat(item_header_level),
-                header_prefix,
-                declaration
-            )
-            .unwrap();
+        // Print Header (e.g. `### 1.1.1: `declaration``)
+        writeln!(
+            self.output,
+            "\n{} {} `{}`\n", // Add newline after header
+            "#".repeat(item_header_level),
+            header_prefix,
+            declaration
+        )
+        .unwrap();
 
-            // Print Code Block for Struct/Enum/Trait/Function (if needed)
-            let code_block = match &item.inner {
-                ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
-                ItemEnum::Enum(e) => Some(generate_enum_code_block(item, e, self.krate)),
-                ItemEnum::Trait(t) => Some(generate_trait_code_block(item, t, self.krate)),
-                ItemEnum::Function(f) => {
-                    // Check if function has attrs or where clause
-                    let has_attrs = f.header.is_const
-                        || f.header.is_async
-                        || f.header.is_unsafe
-                        || !matches!(f.header.abi, Abi::Rust);
-                    let has_where = !f.generics.where_predicates.is_empty();
-                    if has_attrs || has_where {
-                        Some(generate_function_code_block(item, f, self.krate))
-                    } else {
-                        None // No code block needed for simple function
-                    }
+        self.push_level();
+
+        // Print Code Block for Struct/Enum/Trait/Function (if needed)
+        let code_block = match &item.inner {
+            ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
+            ItemEnum::Enum(e) => Some(generate_enum_code_block(item, e, self.krate)),
+            ItemEnum::Trait(t) => Some(generate_trait_code_block(item, t, self.krate)),
+            ItemEnum::Function(f) => {
+                // Check if function has attrs or where clause
+                let has_attrs = f.header.is_const
+                    || f.header.is_async
+                    || f.header.is_unsafe
+                    || !matches!(f.header.abi, Abi::Rust);
+                let has_where = !f.generics.where_predicates.is_empty();
+                if has_attrs || has_where {
+                    Some(generate_function_code_block(item, f, self.krate))
+                } else {
+                    None // No code block needed for simple function
                 }
-                // TODO: Add code blocks for other types like TypeAlias, Constant if desired
-                _ => None,
-            };
-
-            if let Some(code) = code_block {
-                writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
             }
+            // TODO: Add code blocks for other types like TypeAlias, Constant if desired
+            _ => None,
+        };
 
-            let has_stripped = matches!(
-                &item.inner,
-                ItemEnum::Struct(Struct {
-                    kind: StructKind::Plain { has_stripped_fields: true, .. },
-                    ..
-                })
-            );
+        if let Some(code) = code_block {
+            writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
+        }
 
-            if has_stripped {
-                writeln!(self.output, "_[Private fields hidden]_\n").unwrap();
-            }
+        let has_stripped = matches!(
+            &item.inner,
+            ItemEnum::Struct(Struct {
+                kind: StructKind::Plain { has_stripped_fields: true, .. },
+                ..
+            })
+        );
 
-            // Print Documentation (using the helper method)
-            self.print_docs(item);
+        if has_stripped {
+            writeln!(self.output, "_[Private fields hidden]_\n").unwrap();
+        }
 
-            // Print Specific Sections (needs to push/pop numbering)
-            // Push a new level for sub-sections
-            self.push_level();
+        // Print Documentation (using the helper method)
+        self.print_docs(item);
 
+
+        match &item.inner {
+            ItemEnum::Struct(s) => self.print_struct_fields(item, s),
+            ItemEnum::Enum(e) => self.print_enum_variants(item, e),
+            ItemEnum::Trait(t) => self.print_trait_associated_items(item, t),
+            // Add other kinds requiring detailed sections if necessary
+            _ => {}
+        }
+
+        // Print Implementations (common to Struct, Enum, Trait, Primitive, etc.)
+        let impl_ids = match &item.inner {
+            ItemEnum::Struct(s) => Some(&s.impls),
+            ItemEnum::Enum(e) => Some(&e.impls),
+            ItemEnum::Trait(t) => Some(&t.implementations), // Traits list implementors
+            ItemEnum::Union(u) => Some(&u.impls),
+            ItemEnum::Primitive(p) => Some(&p.impls),
+            _ => None,
+        };
+
+        if let Some(ids) = impl_ids {
             match &item.inner {
-                ItemEnum::Struct(s) => self.print_struct_fields(item, s),
-                ItemEnum::Enum(e) => self.print_enum_variants(item, e),
-                ItemEnum::Trait(t) => self.print_trait_associated_items(item, t),
-                // Add other kinds requiring detailed sections if necessary
-                _ => {}
+                ItemEnum::Trait(_) => self.print_trait_implementors(ids, item),
+                _ => self.print_item_implementations(ids, item),
             }
-
-            // Print Implementations (common to Struct, Enum, Trait, Primitive, etc.)
-            let impl_ids = match &item.inner {
-                ItemEnum::Struct(s) => Some(&s.impls),
-                ItemEnum::Enum(e) => Some(&e.impls),
-                ItemEnum::Trait(t) => Some(&t.implementations), // Traits list implementors
-                ItemEnum::Union(u) => Some(&u.impls),
-                ItemEnum::Primitive(p) => Some(&p.impls),
-                _ => None,
-            };
-
-            if let Some(ids) = impl_ids {
-                match &item.inner {
-                    ItemEnum::Trait(_) => self.print_trait_implementors(ids, item),
-                    _ => self.print_item_implementations(ids, item),
-                }
-            }
-
-            // Pop the sub-section level AFTER printing all sub-sections
-            self.pop_level();
-        } else {
-            // Item ID selected but not found in index - print placeholder in "Other" context
-            self.increment_current_level(); // Increment level for this placeholder too
-            let item_header_level = self.get_current_header_level();
-            let header_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "\n{} {} `{}`\n", // Add newline after header
-                "#".repeat(item_header_level),
-                header_prefix,
-                format_id_path_canonical(id, self.krate) // Use formatted ID
-            )
-            .unwrap();
-            writeln!(self.output, "_Error: Item details not found in index._\n").unwrap();
-            // Graph context is handled by the caller (finalize) for "Other" items
         }
+
+        self.pop_level();
+
+        true
     }
 
     /// Checks if any selected field within a struct has documentation or if template mode is on.
@@ -3397,8 +3382,6 @@ impl<'a> DocPrinter<'a> {
             return;
         }
 
-        // Increment level counter for this section
-        self.increment_current_level();
         let fields_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
         writeln!(
@@ -3412,9 +3395,13 @@ impl<'a> DocPrinter<'a> {
         // Push a new level for the field items themselves
         self.push_level();
         for field_id in &all_field_ids {
-            self.print_field_details(field_id);
+            if self.print_field_details(field_id) {
+                self.increment_current_level();
+            }
         }
         self.pop_level(); // Pop the field item level
+
+        self.increment_current_level();
     }
 
     /// Prints the details for a single struct field, only if it has printable documentation.
@@ -3436,9 +3423,6 @@ impl<'a> DocPrinter<'a> {
 
             // Mark as printed *before* printing details
             self.printed_ids.insert(*field_id);
-
-            // Increment level counter for this field item
-            self.increment_current_level();
 
             if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_");
@@ -4029,11 +4013,11 @@ impl<'a> DocPrinter<'a> {
         );
 
         // Increment level for the "Implementations" section
-        self.increment_current_level();
+        //self.increment_current_level();
         let impl_section_level = self.get_current_header_level();
 
         // Push a new level for the items *within* the Implementations section
-        self.push_level();
+        //self.push_level();
 
         // --- Inherent Impls ---
         if !inherent_impls.is_empty() {
@@ -4049,8 +4033,6 @@ impl<'a> DocPrinter<'a> {
 
         // --- Trait Impls ---
         if !trait_impls.is_empty() {
-            // Increment level counter for the Trait Impls subsection
-            self.increment_current_level();
             let trait_impl_header_level = self.get_current_header_level();
             let header_prefix = self.get_header_prefix();
             writeln!(
@@ -4258,9 +4240,11 @@ impl<'a> DocPrinter<'a> {
                 }
             }
             self.pop_level(); // Pop the item level for trait impls
+
+            self.increment_current_level();
         }
 
-        self.pop_level(); // Pop the Implementations section level
+        //self.pop_level(); // Pop the Implementations section level
     }
 
     /// Prints implementors *of* a trait. Handles template mode for the impl docs.
@@ -4564,7 +4548,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Prints items of a specific kind within a given list of IDs.
-    fn print_items_of_kind(&mut self, item_ids: &[Id], kind: ItemKind, header_name: &str) {
+    fn print_items_of_kind(&mut self, item_ids: &[Id], kind: ItemKind, header_name: &str) -> bool {
         // Filter and sort items of the target kind
         let mut items_to_print: Vec<&Id> = item_ids
             .iter()
@@ -4573,14 +4557,12 @@ impl<'a> DocPrinter<'a> {
             .collect();
 
         if items_to_print.is_empty() {
-            return; // Nothing to print for this kind
+            return false; // Nothing to print for this kind
         }
 
         items_to_print
             .sort_by_key(|id| self.krate.index.get(id).and_then(|item| item.name.clone()));
 
-        // Increment level counter for this section header
-        self.increment_current_level();
         let section_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
         writeln!(
@@ -4592,14 +4574,17 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Push a new level for the items within this section
         self.push_level();
         // Print item details
         for id in items_to_print {
             // Print item details using the detail printer (increments/decrements its level)
-            self.print_item_details(id);
+            if self.print_item_details(id) {
+                self.increment_current_level();
+            }
         }
         self.pop_level(); // Pop the item level for this section
+
+        true
     }
 
     /// Prints the non-module contents of a specific module (identified by its ID).
@@ -4660,7 +4645,7 @@ impl<'a> DocPrinter<'a> {
             ];
 
             // Push a level for the sections within the module
-            self.push_level();
+            //self.push_level();
 
             for (kind, header_name) in print_order {
                 if let Some(ids) = items_by_kind.get(&kind) {
@@ -4670,10 +4655,12 @@ impl<'a> DocPrinter<'a> {
 
                     // print_items_of_kind will increment the level for the section header
                     // and push/pop a level for the items inside it
-                    self.print_items_of_kind(ids, kind, header_name);
+                    if self.print_items_of_kind(ids, kind, header_name) {
+                        self.increment_current_level();
+                    }
                 }
             }
-            self.pop_level(); // Pop the section level
+            //self.pop_level(); // Pop the section level
         } else {
             warn!(
                 "Could not find resolved module data for ID: {:?}",
@@ -4753,8 +4740,6 @@ impl<'a> DocPrinter<'a> {
         }
 
         if let Some(item) = self.krate.index.get(&module_id) {
-            // Increment the counter for the current level (H2 for modules)
-            self.increment_current_level();
             let module_header_level = self.get_current_header_level(); // Should be 2
             let header_prefix = self.get_header_prefix();
             let module_path_str = format_id_path_canonical(&module_id, self.krate); // Use canonical path
@@ -4773,19 +4758,19 @@ impl<'a> DocPrinter<'a> {
                 display_path
             )
             .unwrap();
+
             self.printed_ids.insert(module_id); // Mark module as printed
+
+            self.push_level();
 
             // Print module docs (using helper)
             self.print_docs(item);
 
-            // Push H3 level before printing contents
-            self.push_level();
-
             // Print module contents (non-module items only)
             self.print_module_contents(&module_id);
 
-            // Pop H3 level before recursing for children
             self.pop_level();
+            self.increment_current_level();
 
             // Recursively print child modules
             // Clone children list to avoid borrow checker issue
@@ -4916,7 +4901,6 @@ impl<'a> DocPrinter<'a> {
                     "Found {} selected items that were not printed in the main structure. Including them in the 'Other' section.",
                     unprinted_ids.len()
                 );
-                self.increment_current_level(); // Increment H2 counter for Other section
                 let other_section_level = self.get_current_header_level(); // Should be 2
                 let header_prefix = self.get_header_prefix();
                 writeln!(
