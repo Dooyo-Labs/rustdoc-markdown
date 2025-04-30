@@ -307,7 +307,7 @@ impl IdGraph {
                         .reverse_adjacency
                         .entry(edge.target)
                         .or_default()
-                        .push((edge.source, edge.label.clone()));
+                        .push((source: edge.source, label: edge.label.clone()));
                 }
             }
         }
@@ -2028,43 +2028,20 @@ fn clean_trait_path(path_str: &str) -> String {
         .replace("std::", "") // Also clean std paths potentially used via prelude
 }
 
-fn format_id_path(id: &Id, krate: &Crate) -> String {
+/// Formats the canonical path to an item ID, using its path from krate.paths.
+fn format_id_path_canonical(id: &Id, krate: &Crate) -> String {
     krate
         .paths
         .get(id)
         .map(|p| p.path.join("::"))
-        .unwrap_or_else(|| format!("{{id:{:?}}}", id.0)) // Format ID slightly better
+        .unwrap_or_else(|| format!("{{id:{}}}", id.0)) // Fallback
 }
 
-/// Formats a module's path for display in headers.
-fn format_module_path(id: &Id, krate: &Crate) -> String {
-    if id == &krate.root {
-        return ":: (Crate Root)".to_string();
-    }
-    // Try to get the path from krate.paths first
-    if let Some(summary) = krate.paths.get(id) {
-        // Construct path relative to crate root (strip crate name prefix if present)
-        let path_parts = &summary.path;
-        if !path_parts.is_empty() {
-            let crate_name = krate.index.get(&krate.root).and_then(|item| item.name.as_deref());
-            if crate_name.map_or(false, |cn| path_parts[0] == cn.replace('-', "_")) {
-                // Starts with crate name, return joined path without crate name
-                return format!("mod {}", path_parts[1..].join("::"));
-            }
-            // Doesn't start with crate name (unlikely for local module?), return full path
-            return format!("mod {}", path_parts.join("::"));
-        }
-    }
-    // Fallback if path not found (use item name)
-    krate.index.get(id)
-        .and_then(|item| item.name.as_deref())
-        .map(|name| format!("mod {}", name))
-        .unwrap_or_else(|| format!("Module (Id: {})", id.0))
-}
-
-
+/// Formats a Path struct, trying to use the canonical path for the ID.
 fn format_path(path: &Path, krate: &Crate) -> String {
-    let base_path = format_id_path(&path.id, krate);
+    // Use the canonical path if available, otherwise use the path string in the struct
+    let base_path = format_id_path_canonical(&path.id, krate);
+
     let cleaned_base_path = clean_trait_path(&base_path); // Clean the base path
                                                           // Use as_ref() to get Option<&GenericArgs> from Option<Box<GenericArgs>>
     if let Some(args) = path.args.as_ref() {
@@ -3206,7 +3183,7 @@ impl<'a> DocPrinter<'a> {
                 self.output,
                 "\n{} `{}`\n", // Add newline after header
                 "#".repeat(item_header_level),
-                format_id_path(id, self.krate) // Use formatted ID
+                format_id_path_canonical(id, self.krate) // Use formatted ID
             )
             .unwrap();
             writeln!(self.output, "_Error: Item details not found in index._\n").unwrap();
@@ -3761,7 +3738,11 @@ impl<'a> DocPrinter<'a> {
             }
 
             // Print Documentation (using helper)
-            self.print_docs(item, assoc_item_header_level);
+            // Create a temporary DocPrinter to isolate output
+            let mut temp_printer = self.clone_with_new_output();
+            temp_printer.print_docs(item, assoc_item_header_level);
+            write!(summary, "{}", temp_printer.output).unwrap();
+
 
             // Potentially add default values/bounds for assoc const/type here
             match &item.inner {
@@ -3886,22 +3867,33 @@ impl<'a> DocPrinter<'a> {
             for impl_item in &trait_impls {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
                     if let Some(trait_path) = &imp.trait_ {
+                        let full_path_str = format_id_path_canonical(&trait_path.id, self.krate);
                         let cleaned_path = clean_trait_path(&format_path(trait_path, self.krate));
 
                         // Check for Auto Traits (synthetic only)
                         if imp.is_synthetic && AUTO_TRAITS.contains(&cleaned_path.as_str()) {
                             auto_trait_impls.push((impl_item, cleaned_path));
-                            continue;
+                            continue; // Handled as auto trait
                         }
 
                         // Check for Blanket Impls (non-auto-trait)
                         if imp.blanket_impl.is_some() {
                             blanket_impl_data.push((impl_item, imp, cleaned_path));
-                            continue;
+                            continue; // Handled as blanket impl
                         }
 
-                        // Check for Simple Impls (non-blanket, non-auto-trait)
-                        let is_simple = imp.generics.params.is_empty()
+                        // Check if it's core/alloc or selected - treat as simple if so
+                        let is_core_or_alloc = full_path_str.starts_with("core::")
+                            || full_path_str.starts_with("alloc::");
+                        let is_selected_trait = self.selected_ids.contains(&trait_path.id);
+
+                        if is_core_or_alloc || is_selected_trait {
+                            simple_impl_data.push((impl_item, imp, cleaned_path));
+                            continue; // Handle as simple list item
+                        }
+
+                        // Check for Simple Impls (non-blanket, non-auto, non-core/selected)
+                        let is_simple_structure = imp.generics.params.is_empty()
                             && imp.generics.where_predicates.is_empty()
                             && trait_path.args.as_ref().map_or(true, |args| {
                                 // Check if args contain only lifetimes or are empty
@@ -3918,7 +3910,7 @@ impl<'a> DocPrinter<'a> {
                                 }
                             });
 
-                        if is_simple {
+                        if is_simple_structure {
                             simple_impl_data.push((impl_item, imp, cleaned_path));
                         } else {
                             generic_or_complex_impls.push(*impl_item);
@@ -4070,7 +4062,11 @@ impl<'a> DocPrinter<'a> {
                     .unwrap();
 
                     // Print docs for the impl block itself (using helper)
-                    self.print_docs(impl_item, impl_header_level);
+                    // Create a temporary DocPrinter to isolate output
+                    let mut temp_printer = self.clone_with_new_output();
+                    temp_printer.print_docs(impl_item, impl_header_level);
+                    write!(self.output, "{}", temp_printer.output).unwrap();
+
 
                     // We don't print the associated items here, just list the implementor
                 }
@@ -4253,7 +4249,11 @@ impl<'a> DocPrinter<'a> {
         .unwrap();
 
         // Print impl block docs (using helper)
-        self.print_docs(impl_item, impl_header_level);
+        // Create a temporary DocPrinter to isolate output
+        let mut temp_printer = self.clone_with_new_output();
+        temp_printer.print_docs(impl_item, impl_header_level);
+        write!(self.output, "{}", temp_printer.output).unwrap();
+
 
         // Print associated items within this impl block
         let mut assoc_consts = vec![];
@@ -4445,13 +4445,13 @@ impl<'a> DocPrinter<'a> {
             let mut sorted_edges = incoming_edges;
             sorted_edges.sort_by_key(|edge| {
                 (
-                    format_id_path(&edge.source, self.krate),
+                    format_id_path_canonical(&edge.source, self.krate),
                     format!("{:?}", edge.label),
                 )
             });
 
             for edge in sorted_edges {
-                let source_path = format_id_path(&edge.source, self.krate);
+                let source_path = format_id_path_canonical(&edge.source, self.krate);
                 writeln!(
                     self.output,
                     "- `{}` ({})",
@@ -4466,6 +4466,22 @@ impl<'a> DocPrinter<'a> {
                 .unwrap();
         }
     }
+
+    /// Creates a clone of the printer with an empty output buffer.
+    fn clone_with_new_output(&self) -> Self {
+        DocPrinter {
+            krate: self.krate,
+            selected_ids: self.selected_ids,
+            resolved_modules: self.resolved_modules,
+            graph: self.graph,
+            include_other: self.include_other,
+            template_mode: self.template_mode,
+            printed_ids: self.printed_ids.clone(), // Clone printed IDs too? Or share? Let's share for now. No, clone needed for isolation.
+            output: String::new(), // New empty output
+            base_level: self.base_level,
+        }
+    }
+
 
     /// Finalizes the documentation string, printing the crate header and contents.
     fn finalize(mut self) -> String {
@@ -4485,7 +4501,11 @@ impl<'a> DocPrinter<'a> {
         .unwrap();
 
         // Print Crate Documentation (using helper)
-        self.print_docs(root_item, crate_header_level);
+        // Create a temporary DocPrinter to isolate output for the crate docs
+        let mut temp_printer = self.clone_with_new_output();
+        temp_printer.print_docs(root_item, crate_header_level);
+        write!(self.output, "{}", temp_printer.output).unwrap();
+
 
         // --- Print Top-Level Sections (Macros first, then Modules) ---
         let section_level = crate_header_level + 1; // ## (level 2) for top-level sections
@@ -4557,7 +4577,11 @@ impl<'a> DocPrinter<'a> {
                 self.printed_ids.insert(module_id); // Mark module as printed *before* printing contents
 
                 // Print module docs (using helper)
-                self.print_docs(item, module_header_level);
+                // Create a temporary DocPrinter to isolate output
+                let mut temp_printer = self.clone_with_new_output();
+                temp_printer.print_docs(item, module_header_level);
+                write!(self.output, "{}", temp_printer.output).unwrap();
+
 
                 // Print module contents (non-module items only)
                 self.print_module_contents(&module_id, module_header_level);
@@ -4620,7 +4644,7 @@ impl<'a> DocPrinter<'a> {
                 });
 
                 for id in &unprinted_ids {
-                    let path_str = format_id_path(id, self.krate);
+                    let path_str = format_id_path_canonical(id, self.krate);
                     warn!("Including unprinted item in 'Other' section: {}", path_str);
 
                     // Fetch the item to print its header and span
