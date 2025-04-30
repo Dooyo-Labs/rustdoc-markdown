@@ -232,7 +232,7 @@ impl IdGraph {
                 self.reverse_adjacency
                     .entry(target)
                     .or_default()
-                    .push((source, label));
+                    .push((edge.source, label)); // Correct tuple syntax
             }
         }
     }
@@ -307,7 +307,7 @@ impl IdGraph {
                         .reverse_adjacency
                         .entry(edge.target)
                         .or_default()
-                        .push((source: edge.source, label: edge.label.clone()));
+                        .push((edge.source, edge.label.clone())); // Correct tuple syntax
                 }
             }
         }
@@ -3517,7 +3517,6 @@ impl<'a> DocPrinter<'a> {
                 let variant_has_printable_docs =
                     (self.template_mode && item.docs.is_some()) || has_docs(item);
                 let mut printable_fields = Vec::new();
-                let mut has_stripped_fields = false;
                 let mut printed_any_field = false;
 
                 // Determine fields and check their printable docs
@@ -3526,7 +3525,7 @@ impl<'a> DocPrinter<'a> {
                     VariantKind::Tuple(fields) => (fields.iter().filter_map(|opt_id| *opt_id).collect(), false),
                     VariantKind::Struct { fields, has_stripped_fields: s } => (fields.clone(), *s),
                 };
-                has_stripped_fields = stripped;
+                // Removed unused assignment: has_stripped_fields = stripped;
 
                 for field_id in &field_ids {
                     if self.selected_ids.contains(field_id) {
@@ -3575,7 +3574,7 @@ impl<'a> DocPrinter<'a> {
                 self.print_docs(item, variant_header_level);
 
                 // Print documented fields (if any)
-                if !printable_fields.is_empty() || has_stripped_fields {
+                if !printable_fields.is_empty() || stripped { // Use stripped here directly
                     let field_section_level = variant_header_level + 1; // Fields section is variant_level + 1
                     writeln!(
                         self.output,
@@ -3588,7 +3587,7 @@ impl<'a> DocPrinter<'a> {
                             printed_any_field = true;
                         }
                     }
-                    if has_stripped_fields {
+                    if stripped { // Use stripped here directly
                         if printed_any_field {
                             writeln!(self.output).unwrap(); // Add newline before stripped message
                         }
@@ -4566,7 +4565,7 @@ impl<'a> DocPrinter<'a> {
             }
 
             if let Some(item) = self.krate.index.get(&module_id) {
-                let module_path_str = format_module_path(&module_id, self.krate);
+                let module_path_str = format_id_path_canonical(&module_id, self.krate); // Use canonical path
                 writeln!(
                     self.output,
                     "\n{} Module: `{}`\n", // Module header uses level 2
