@@ -43,7 +43,6 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
-// const TEMPLATE_PLACEHOLDER: &str = "*FILL IN WHAT YOU KNOW HERE*"; // Removed
 const AUTO_TRAITS: &[&str] = &[
     "Send",
     "Sync",
@@ -3018,7 +3017,7 @@ struct DocPrinter<'a> {
     printed_ids: HashSet<Id>,
     output: String,
     module_tree: ModuleTree, // Add module tree
-    header_path: Vec<usize>, // Stack for header numbering
+    header_path: Vec<usize>, // Stack for header numbering (stores indices/counters)
 }
 
 impl<'a> DocPrinter<'a> {
@@ -3095,17 +3094,18 @@ impl<'a> DocPrinter<'a> {
         tree
     }
 
-    /// Generates the header prefix string (e.g., "1.2.1:")
+    /// Generates the header prefix string (e.g., "1.2.1:") based on the header_path stack.
+    /// H2 headers always get just "N:". H3+ get the full path "N.M.O:".
     fn get_header_prefix(&self, level: usize) -> String {
         if self.header_path.is_empty() || level < 2 {
             return String::new(); // No prefix for H1 or if stack is empty
         }
 
         if level == 2 {
-            // Special format for H2 (modules): "N:"
+            // Module headers (H2) use only the last element (the H2 counter)
             format!("{}:", self.header_path.last().unwrap_or(&0))
         } else {
-            // Normal format for H3+: "N.M.O:"
+            // H3+ headers use the full path stored in header_path
             self.header_path
                 .iter()
                 .map(|n| n.to_string())
@@ -3523,21 +3523,29 @@ impl<'a> DocPrinter<'a> {
     /// Checks if any selected variant or its fields have printable documentation.
     fn has_printable_variants(&self, e: &Enum) -> bool {
         e.variants.iter().any(|variant_id| {
-            if !self.selected_ids.contains(variant_id) { return false; }
+            if !self.selected_ids.contains(variant_id) {
+                return false;
+            }
             if let Some(item) = self.krate.index.get(variant_id) {
                 // Check variant itself
-                if (self.template_mode && item.docs.is_some()) || has_docs(item) { return true; }
+                if (self.template_mode && item.docs.is_some()) || has_docs(item) {
+                    return true;
+                }
                 // Check fields within the variant
                 if let ItemEnum::Variant(v) = &item.inner {
                     let field_ids: Vec<Id> = match &v.kind {
                         VariantKind::Plain => vec![],
-                        VariantKind::Tuple(fields) => fields.iter().filter_map(|opt_id| *opt_id).collect(),
+                        VariantKind::Tuple(fields) => {
+                            fields.iter().filter_map(|opt_id| *opt_id).collect()
+                        }
                         VariantKind::Struct { fields, .. } => fields.clone(),
                     };
                     for field_id in field_ids {
                         if self.selected_ids.contains(&field_id) {
                             if let Some(f_item) = self.krate.index.get(&field_id) {
-                                if (self.template_mode && f_item.docs.is_some()) || has_docs(f_item) {
+                                if (self.template_mode && f_item.docs.is_some())
+                                    || has_docs(f_item)
+                                {
                                     return true;
                                 }
                             }
@@ -3548,7 +3556,6 @@ impl<'a> DocPrinter<'a> {
             false
         })
     }
-
 
     /// Prints the "Variants" section for an enum, only if needed.
     /// Also marks variants *and their fields* without printable documentation as printed.
@@ -3572,7 +3579,9 @@ impl<'a> DocPrinter<'a> {
                 if let ItemEnum::Variant(v) = &item.inner {
                     let field_ids: Vec<Id> = match &v.kind {
                         VariantKind::Plain => vec![],
-                        VariantKind::Tuple(fields) => fields.iter().filter_map(|opt_id| *opt_id).collect(),
+                        VariantKind::Tuple(fields) => {
+                            fields.iter().filter_map(|opt_id| *opt_id).collect()
+                        }
                         VariantKind::Struct { fields, .. } => fields.clone(),
                     };
 
@@ -3583,7 +3592,8 @@ impl<'a> DocPrinter<'a> {
                                 .index
                                 .get(&field_id)
                                 .map_or(false, |f_item| {
-                                    (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
+                                    (self.template_mode && f_item.docs.is_some())
+                                        || has_docs(f_item)
                                 });
                             if field_has_printable_docs {
                                 if !self.printed_ids.contains(&field_id) {
@@ -3593,7 +3603,7 @@ impl<'a> DocPrinter<'a> {
                                 self.printed_ids.insert(field_id); // Mark non-printable field printed
                             }
                         } else {
-                             // Mark unselected field id printed if present
+                            // Mark unselected field id printed if present
                             self.printed_ids.insert(field_id);
                         }
                     }
@@ -3649,7 +3659,6 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-
     /// Prints the details for a single enum variant. Includes variant docs and docs for its fields if present.
     /// Returns true if the variant was printed (because it or its fields had printable docs), false otherwise.
     /// `section_level` is the header level of the "Variants" section (e.g., 4 for `####`).
@@ -3668,8 +3677,13 @@ impl<'a> DocPrinter<'a> {
                 // Determine fields and check their printable docs
                 let (field_ids, stripped) = match &variant_data.kind {
                     VariantKind::Plain => (vec![], false),
-                    VariantKind::Tuple(fields) => (fields.iter().filter_map(|opt_id| *opt_id).collect(), false),
-                    VariantKind::Struct { fields, has_stripped_fields: s } => (fields.clone(), *s),
+                    VariantKind::Tuple(fields) => {
+                        (fields.iter().filter_map(|opt_id| *opt_id).collect(), false)
+                    }
+                    VariantKind::Struct {
+                        fields,
+                        has_stripped_fields: s,
+                    } => (fields.clone(), *s),
                 };
                 // Removed unused assignment: has_stripped_fields = stripped;
 
@@ -3685,11 +3699,11 @@ impl<'a> DocPrinter<'a> {
                         if field_has_printable_docs && !self.printed_ids.contains(field_id) {
                             printable_fields.push(*field_id);
                         } else {
-                             // Mark unselected or non-printable field printed
+                            // Mark unselected or non-printable field printed
                             self.printed_ids.insert(*field_id);
                         }
                     } else {
-                         // Mark unselected field printed
+                        // Mark unselected field printed
                         self.printed_ids.insert(*field_id);
                     }
                 }
@@ -3722,7 +3736,8 @@ impl<'a> DocPrinter<'a> {
                 self.print_docs(item, variant_header_level);
 
                 // Print documented fields (if any)
-                if !printable_fields.is_empty() || stripped { // Use stripped here directly
+                if !printable_fields.is_empty() || stripped {
+                    // Use stripped here directly
                     let field_section_level = variant_header_level; // Use same level as variant header for Fields section inside variant
                     self.header_path.push(1); // Start sub-numbering for fields section
                     let fields_header_prefix = self.get_header_prefix(field_section_level + 1);
@@ -3743,7 +3758,8 @@ impl<'a> DocPrinter<'a> {
                         self.header_path.pop();
                         field_idx += 1;
                     }
-                    if stripped { // Use stripped here directly
+                    if stripped {
+                        // Use stripped here directly
                         if printed_any_field {
                             writeln!(self.output).unwrap(); // Add newline before stripped message
                         }
@@ -3760,17 +3776,19 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
-
     /// Checks if any selected associated item has printable documentation.
     fn has_printable_associated_items(&self, t: &Trait) -> bool {
         t.items.iter().any(|item_id| {
-            self.selected_ids.contains(item_id) &&
-            self.krate.index.get(item_id).map_or(false, |assoc_item| {
-                (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item)
-            })
+            self.selected_ids.contains(item_id)
+                && self
+                    .krate
+                    .index
+                    .get(item_id)
+                    .map_or(false, |assoc_item| {
+                        (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item)
+                    })
         })
     }
-
 
     /// Prints the "Associated Items" section for a trait, only if any selected item has printable docs.
     /// Also marks *all* selected associated items as printed.
@@ -3796,8 +3814,12 @@ impl<'a> DocPrinter<'a> {
                     any_assoc_has_printable_docs = true; // Mark if any item has printable docs
                 }
                 match &assoc_item.inner {
-                    ItemEnum::AssocConst { .. } => assoc_consts.push((item_id, item_has_printable_docs)),
-                    ItemEnum::AssocType { .. } => assoc_types.push((item_id, item_has_printable_docs)),
+                    ItemEnum::AssocConst { .. } => {
+                        assoc_consts.push((item_id, item_has_printable_docs))
+                    }
+                    ItemEnum::AssocType { .. } => {
+                        assoc_types.push((item_id, item_has_printable_docs))
+                    }
                     ItemEnum::Function(_) => assoc_fns.push((item_id, item_has_printable_docs)),
                     _ => {} // Ignore others
                 }
@@ -3835,7 +3857,8 @@ impl<'a> DocPrinter<'a> {
             .unwrap();
             let mut item_idx = 1;
             for (id, has_item_docs) in assoc_consts {
-                if has_item_docs { // Only print if it has printable docs
+                if has_item_docs {
+                    // Only print if it has printable docs
                     self.header_path.push(item_idx);
                     self.print_associated_item_summary(id, sub_section_level);
                     self.header_path.pop();
@@ -3856,9 +3879,10 @@ impl<'a> DocPrinter<'a> {
                 sub_header_prefix
             )
             .unwrap();
-             let mut item_idx = 1;
+            let mut item_idx = 1;
             for (id, has_item_docs) in assoc_types {
-                if has_item_docs { // Only print if it has printable docs
+                if has_item_docs {
+                    // Only print if it has printable docs
                     self.header_path.push(item_idx);
                     self.print_associated_item_summary(id, sub_section_level);
                     self.header_path.pop();
@@ -3866,22 +3890,23 @@ impl<'a> DocPrinter<'a> {
                     // ID was already marked printed above
                 }
             }
-             self.header_path.pop();
+            self.header_path.pop();
             sub_section_idx += 1;
         }
         if assoc_fns.iter().any(|(_, has_docs)| *has_docs) {
-             self.header_path.push(sub_section_idx);
-             let sub_header_prefix = self.get_header_prefix(sub_section_level);
+            self.header_path.push(sub_section_idx);
+            let sub_header_prefix = self.get_header_prefix(sub_section_level);
             writeln!(
                 self.output,
                 "{} {} Associated Functions\n",
                 "#".repeat(sub_section_level),
-                 sub_header_prefix
+                sub_header_prefix
             )
             .unwrap();
             let mut item_idx = 1;
             for (id, has_item_docs) in assoc_fns {
-                if has_item_docs { // Only print if it has printable docs
+                if has_item_docs {
+                    // Only print if it has printable docs
                     self.header_path.push(item_idx);
                     self.print_associated_item_summary(id, sub_section_level);
                     self.header_path.pop();
@@ -3893,7 +3918,6 @@ impl<'a> DocPrinter<'a> {
             // sub_section_idx += 1; // No need to increment if last section
         }
     }
-
 
     /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
     /// Does NOT include the markdown header. Includes docs with adjusted headers, respecting template mode.
@@ -3926,11 +3950,10 @@ impl<'a> DocPrinter<'a> {
             // Print Documentation (using helper)
             // Create a temporary DocPrinter to isolate output
             let mut temp_printer = self.clone_with_new_output();
-             // Copy current header path to temp printer for correct template marker generation
+            // Copy current header path to temp printer for correct template marker generation
             temp_printer.header_path = self.header_path.clone();
             temp_printer.print_docs(item, assoc_item_header_level);
             write!(summary, "{}", temp_printer.output).unwrap();
-
 
             // Potentially add default values/bounds for assoc const/type here
             match &item.inner {
@@ -3964,7 +3987,6 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-
     /// Prints the header and summary for a single associated item (const, type, function).
     /// `section_level` is the header level of the "Associated Constants/Types/Functions" section (e.g., 4).
     fn print_associated_item_summary(&mut self, assoc_item_id: &Id, section_level: usize) {
@@ -3976,7 +3998,7 @@ impl<'a> DocPrinter<'a> {
                 let declaration = generate_item_declaration(item, self.krate);
                 let assoc_item_header_level = section_level + 1; // Assoc Item level is section_level + 1
                 let header_prefix = self.get_header_prefix(assoc_item_header_level);
-                                                                 // Print Header (e.g. ##### 1.1.1.1: `declaration`)
+                // Print Header (e.g. ##### 1.1.1.1: `declaration`)
                 writeln!(
                     self.output,
                     "{} {} `{}`\n", // Add newline after header
@@ -3993,7 +4015,6 @@ impl<'a> DocPrinter<'a> {
             }
         }
     }
-
 
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     /// Handles template mode for impl docs. Handles blanket impls specially.
@@ -4127,41 +4148,40 @@ impl<'a> DocPrinter<'a> {
                 }
             });
 
-
             // Print Auto Traits first (simple list) AND mark them printed
             if !auto_trait_impls.is_empty() {
-                 for (impl_item, cleaned_path) in &auto_trait_impls {
+                for (impl_item, cleaned_path) in &auto_trait_impls {
                     self.header_path.push(impl_idx); // Use a hidden index for list items
                     let template_marker = if self.template_mode && impl_item.docs.is_some() {
                         format!("\n\n{}", self.get_template_marker())
                     } else {
                         "".to_string()
                     };
-                     writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
-                     self.printed_ids.insert(impl_item.id);
-                     // Also mark associated items (usually none for auto traits)
-                     if let ItemEnum::Impl(imp) = &impl_item.inner {
-                          for assoc_item_id in &imp.items {
-                              if self.selected_ids.contains(assoc_item_id) {
-                                  self.printed_ids.insert(*assoc_item_id);
-                              }
-                          }
-                     }
+                    writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
+                    self.printed_ids.insert(impl_item.id);
+                    // Also mark associated items (usually none for auto traits)
+                    if let ItemEnum::Impl(imp) = &impl_item.inner {
+                        for assoc_item_id in &imp.items {
+                            if self.selected_ids.contains(assoc_item_id) {
+                                self.printed_ids.insert(*assoc_item_id);
+                            }
+                        }
+                    }
                     self.header_path.pop();
                     impl_idx += 1;
-                 }
-                 writeln!(self.output).unwrap(); // Add blank line after list
+                }
+                writeln!(self.output).unwrap(); // Add blank line after list
             }
 
             // Print Simple non-blanket/non-auto impls next (simple list) AND mark them printed
             if !simple_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &simple_impl_data {
-                     self.header_path.push(impl_idx); // Use a hidden index for list items
-                     let template_marker = if self.template_mode && impl_item.docs.is_some() {
+                    self.header_path.push(impl_idx); // Use a hidden index for list items
+                    let template_marker = if self.template_mode && impl_item.docs.is_some() {
                         format!("\n\n{}", self.get_template_marker())
-                     } else {
+                    } else {
                         "".to_string()
-                     };
+                    };
                     writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
                     self.printed_ids.insert(impl_item.id);
                     // Mark associated items
@@ -4176,15 +4196,15 @@ impl<'a> DocPrinter<'a> {
                 writeln!(self.output).unwrap(); // Add blank line after list
             }
 
-             // Print Blanket Impls next (list + optional where clause) AND mark them printed
+            // Print Blanket Impls next (list + optional where clause) AND mark them printed
             if !blanket_impl_data.is_empty() {
-                 for (impl_item, imp, cleaned_path) in &blanket_impl_data {
+                for (impl_item, imp, cleaned_path) in &blanket_impl_data {
                     self.header_path.push(impl_idx); // Use a hidden index for list items
                     self.printed_ids.insert(impl_item.id);
                     let template_marker = if self.template_mode && impl_item.docs.is_some() {
-                         format!("\n\n{}", self.get_template_marker())
+                        format!("\n\n{}", self.get_template_marker())
                     } else {
-                         "".to_string()
+                        "".to_string()
                     };
                     if !imp.generics.where_predicates.is_empty() {
                         let where_clause = format_generics_where_only(
@@ -4193,9 +4213,15 @@ impl<'a> DocPrinter<'a> {
                         );
 
                         if where_clause.lines().count() == 1 {
-                            writeln!(self.output, "- `{cleaned_path}` (`{where_clause}`){}", template_marker).unwrap();
+                            writeln!(
+                                self.output,
+                                "- `{cleaned_path}` (`{where_clause}`){}",
+                                template_marker
+                            )
+                            .unwrap();
                         } else {
-                            writeln!(self.output, "- `{cleaned_path}`{}", template_marker).unwrap();
+                            writeln!(self.output, "- `{cleaned_path}`{}", template_marker)
+                                .unwrap();
                             // Format and indent the where clause
                             let code_block = format!("```rust\n{}\n```", where_clause);
                             let indented_block = indent_string(&code_block, 4);
@@ -4207,15 +4233,14 @@ impl<'a> DocPrinter<'a> {
                     // Mark associated items
                     for assoc_item_id in &imp.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                             self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids.insert(*assoc_item_id);
                         }
                     }
                     self.header_path.pop();
                     impl_idx += 1;
-                 }
-                 // No extra blank line needed here, handled by item printing or next section
+                }
+                // No extra blank line needed here, handled by item printing or next section
             }
-
 
             // Print generic/complex non-blanket/non-auto impls last (full blocks)
             for impl_item in generic_or_complex_impls {
@@ -4226,22 +4251,26 @@ impl<'a> DocPrinter<'a> {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
                     // generate_impl_trait_block marks printed IDs internally
                     self.header_path.push(impl_idx); // Push index for this impl block
-                    if let Some(impl_block_str) = self.generate_impl_trait_block(impl_item, imp, impl_section_level) {
+                    if let Some(impl_block_str) =
+                        self.generate_impl_trait_block(impl_item, imp, impl_section_level)
+                    {
                         // Get cleaned path for list item
-                         let cleaned_path = imp.trait_.as_ref()
-                             .map(|tp| clean_trait_path(&format_path(tp, self.krate)))
-                             .unwrap_or_else(|| "{InherentImpl}".to_string()); // Should not happen here
+                        let cleaned_path = imp
+                            .trait_
+                            .as_ref()
+                            .map(|tp| clean_trait_path(&format_path(tp, self.krate)))
+                            .unwrap_or_else(|| "{InherentImpl}".to_string()); // Should not happen here
                         let template_marker = if self.template_mode && impl_item.docs.is_some() {
                             format!("\n\n{}", self.get_template_marker())
                         } else {
                             "".to_string()
                         };
-                         writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
-                         writeln!(self.output).unwrap(); // Blank line after list item
+                        writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
+                        writeln!(self.output).unwrap(); // Blank line after list item
 
-                         let full_code_block = format!("```rust\n{}\n```", impl_block_str);
-                         let indented_block = indent_string(&full_code_block, 4);
-                         writeln!(self.output, "{}\n", indented_block).unwrap();
+                        let full_code_block = format!("```rust\n{}\n```", impl_block_str);
+                        let indented_block = indent_string(&full_code_block, 4);
+                        writeln!(self.output, "{}\n", indented_block).unwrap();
                     }
                     self.header_path.pop(); // Pop index for this impl block
                     impl_idx += 1;
@@ -4268,12 +4297,12 @@ impl<'a> DocPrinter<'a> {
 
         if !implementors.is_empty() {
             let implementors_section_level = item_level + 1; // Implementors section is item_level + 1
-             let header_prefix = self.get_header_prefix(implementors_section_level);
+            let header_prefix = self.get_header_prefix(implementors_section_level);
             writeln!(
                 self.output,
                 "{} {} Implementors\n", // Add newline after header
                 "#".repeat(implementors_section_level),
-                 header_prefix
+                header_prefix
             )
             .unwrap();
 
@@ -4285,12 +4314,12 @@ impl<'a> DocPrinter<'a> {
                     let impl_header_level = implementors_section_level + 1; // Impl block level is section_level + 1
                     self.header_path.push(impl_idx); // Push index for this impl header
                     let impl_prefix = self.get_header_prefix(impl_header_level);
-                                                                            // Print the impl block header (e.g. ##### 1.1.1.1: `impl ...`)
+                    // Print the impl block header (e.g. ##### 1.1.1.1: `impl ...`)
                     writeln!(
                         self.output,
                         "{} {} `{}`\n", // Add newline after header
                         "#".repeat(impl_header_level),
-                         impl_prefix,
+                        impl_prefix,
                         impl_header.trim() // Trim potential trailing space
                     )
                     .unwrap();
@@ -4298,7 +4327,7 @@ impl<'a> DocPrinter<'a> {
                     // Print docs for the impl block itself (using helper)
                     // Create a temporary DocPrinter to isolate output
                     let mut temp_printer = self.clone_with_new_output();
-                     // Copy current header path to temp printer for correct template marker generation
+                    // Copy current header path to temp printer for correct template marker generation
                     temp_printer.header_path = self.header_path.clone();
                     temp_printer.print_docs(impl_item, impl_header_level);
                     write!(self.output, "{}", temp_printer.output).unwrap();
@@ -4310,7 +4339,6 @@ impl<'a> DocPrinter<'a> {
             }
         }
     }
-
 
     /// Helper to format a single-line impl block or trait impl header
     fn format_impl_header(&self, imp: &Impl) -> String {
@@ -4397,11 +4425,11 @@ impl<'a> DocPrinter<'a> {
                 self.header_path.push(assoc_item_idx); // Push index for the associated item
                 match &assoc_item.inner {
                     ItemEnum::AssocConst { type_, value, .. } => {
-                         let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
-                             format!("\n    // {}", self.get_template_marker())
-                         } else {
-                             "".to_string()
-                         };
+                        let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
+                            format!("\n    // {}", self.get_template_marker())
+                        } else {
+                            "".to_string()
+                        };
                         write!(
                             assoc_items_content,
                             "    const {}: {}",
@@ -4418,10 +4446,10 @@ impl<'a> DocPrinter<'a> {
                     }
                     ItemEnum::AssocType { bounds, type_, .. } => {
                         let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
-                             format!("\n    // {}", self.get_template_marker())
-                         } else {
-                             "".to_string()
-                         };
+                            format!("\n    // {}", self.get_template_marker())
+                        } else {
+                            "".to_string()
+                        };
                         write!(
                             assoc_items_content,
                             "    type {}",
@@ -4450,9 +4478,14 @@ impl<'a> DocPrinter<'a> {
                         writeln!(assoc_items_content, "{}", indent_string(&func_block, 4))
                             .unwrap();
                         // Add template marker after the function block if applicable
-                         if self.template_mode && assoc_item.docs.is_some() {
-                             writeln!(assoc_items_content, "    // {}", self.get_template_marker()).unwrap();
-                         }
+                        if self.template_mode && assoc_item.docs.is_some() {
+                            writeln!(
+                                assoc_items_content,
+                                "    // {}",
+                                self.get_template_marker()
+                            )
+                            .unwrap();
+                        }
                     }
                     _ => {} // Ignore others
                 }
@@ -4513,7 +4546,6 @@ impl<'a> DocPrinter<'a> {
         temp_printer.print_docs(impl_item, impl_header_level);
         write!(self.output, "{}", temp_printer.output).unwrap();
 
-
         // Print associated items within this impl block
         let mut assoc_consts = vec![];
         let mut assoc_types = vec![];
@@ -4556,7 +4588,7 @@ impl<'a> DocPrinter<'a> {
                 self.header_path.push(item_idx);
                 self.print_associated_item_summary(id, sub_section_level);
                 self.printed_ids.insert(*id); // Mark printed here too
-                 self.header_path.pop();
+                self.header_path.pop();
                 item_idx += 1;
             }
         }
@@ -4571,7 +4603,6 @@ impl<'a> DocPrinter<'a> {
             }
         }
     }
-
 
     /// Prints items of a specific kind within a given list of IDs.
     fn print_items_of_kind(
@@ -4719,7 +4750,6 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-
     /// Prints graph context for an unprinted item.
     /// `item_level` is the header level of the item itself (e.g., 3 for `###`).
     fn print_graph_context(&mut self, id: &Id, _item_level: usize) {
@@ -4739,13 +4769,17 @@ impl<'a> DocPrinter<'a> {
             for edge in sorted_edges {
                 let source_path = format_id_path_canonical(&edge.source, self.krate);
                 self.header_path.push(list_idx); // Push list index for potential template marker
-                 let template_marker = if self.template_mode
-                    && self.krate.index.get(&edge.source).map_or(false, |i| i.docs.is_some())
-                 {
+                let template_marker = if self.template_mode
+                    && self
+                        .krate
+                        .index
+                        .get(&edge.source)
+                        .map_or(false, |i| i.docs.is_some())
+                {
                     format!("\n  {}", self.get_template_marker())
-                 } else {
+                } else {
                     "".to_string()
-                 };
+                };
                 writeln!(
                     self.output,
                     "- `{}` ({}){}",
@@ -4754,8 +4788,8 @@ impl<'a> DocPrinter<'a> {
                     template_marker
                 )
                 .unwrap();
-                 self.header_path.pop(); // Pop list index
-                 list_idx += 1;
+                self.header_path.pop(); // Pop list index
+                list_idx += 1;
             }
             writeln!(self.output).unwrap(); // Add trailing newline
         } else {
@@ -4776,15 +4810,13 @@ impl<'a> DocPrinter<'a> {
             printed_ids: self.printed_ids.clone(), // Clone printed IDs too? Or share? Let's clone for isolation.
             output: String::new(),                 // New empty output
             module_tree: self.module_tree.clone(), // Clone module tree as well
-             header_path: self.header_path.clone(), // Clone header path
+            header_path: self.header_path.clone(), // Clone header path
         }
     }
 
     /// Recursive function to print modules and their contents depth-first.
-    fn print_module_recursive(&mut self, module_id: Id, _module_header_level: usize) {
-        // Note: module_header_level is ignored, always H2 for modules
-        let actual_header_level = 2; // Modules are always H2
-
+    /// `h2_counter` is a mutable reference to track the global H2 header number.
+    fn print_module_recursive(&mut self, module_id: Id, h2_counter: &mut usize) {
         // Skip if not selected or already printed
         if !self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id) {
             return;
@@ -4798,89 +4830,44 @@ impl<'a> DocPrinter<'a> {
                 module_path_str
             };
 
-            // Increment and push the current module's number for H2
-            let current_mod_num = self.header_path.last().map_or(1, |n| n + 1);
-            self.header_path.push(current_mod_num);
+            // Increment H2 counter and get current number
+            *h2_counter += 1;
+            let current_h2_num = *h2_counter;
 
-            // Print module header (always H2)
-            let header_prefix = self.get_header_prefix(actual_header_level);
+            // Print module header (always H2) using the counter directly
+            let module_header_level = 2;
             writeln!(
                 self.output,
-                "\n{} {} Module: `{}`\n", // Module header uses level 2
-                "#".repeat(actual_header_level),
-                 header_prefix,
+                "\n{} {}: Module: `{}`\n", // Module header uses level 2, prefix is just the number
+                "#".repeat(module_header_level),
+                current_h2_num,
                 display_path
             )
             .unwrap();
-            self.printed_ids.insert(module_id); // Mark module as printed *before* printing contents
+            self.printed_ids.insert(module_id); // Mark module as printed
+
+            // Push H2 number onto header_path for correct H3+ numbering and template markers
+            self.header_path.push(current_h2_num);
 
             // Print module docs (using helper)
-            self.print_docs(item, actual_header_level);
+            self.print_docs(item, module_header_level);
 
             // Print module contents (non-module items only)
-            self.print_module_contents(&module_id, actual_header_level);
-
-             // Reset counter for children inside this module
-            let mut child_mod_num = 0;
-
-            // Recursively print child modules
-            // Clone children list to avoid borrow checker issue (E0502)
-            if let Some(children) = self.module_tree.children.get(&module_id).cloned() {
-                for child_id in children {
-                    // Pass the child's counter update back (though it's implicit via stack pop)
-                    self.print_module_recursive_child(child_id, actual_header_level, &mut child_mod_num);
-                }
-            }
-
-            // Pop this module's number AFTER processing all children
-             self.header_path.pop();
-        }
-    }
-
-     /// Helper for recursive module printing to manage child counter correctly.
-    fn print_module_recursive_child(
-        &mut self,
-        module_id: Id,
-        module_header_level: usize, // Still H2
-        child_counter: &mut usize,
-    ) {
-         // Skip if not selected or already printed
-        if !self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id) {
-            return;
-        }
-
-        if let Some(item) = self.krate.index.get(&module_id) {
-            let module_path_str = format_id_path_canonical(&module_id, self.krate);
-            let display_path = if module_path_str.is_empty() { "::" } else { &module_path_str };
-
-            *child_counter += 1; // Increment child counter *before* pushing
-            self.header_path.push(*child_counter); // Push the child's index
-
-            let header_prefix = self.get_header_prefix(module_header_level); // Always H2 prefix format
-            writeln!(
-                self.output,
-                "\n{} {} Module: `{}`\n",
-                "#".repeat(module_header_level),
-                header_prefix,
-                display_path
-            )
-            .unwrap();
-            self.printed_ids.insert(module_id);
-
-            self.print_docs(item, module_header_level);
             self.print_module_contents(&module_id, module_header_level);
 
-            let mut grand_child_counter = 0;
+            // Recursively print child modules
+            // Clone children list to avoid borrow checker issue
             if let Some(children) = self.module_tree.children.get(&module_id).cloned() {
                 for child_id in children {
-                     self.print_module_recursive_child(child_id, module_header_level, &mut grand_child_counter);
+                    // Pass the mutable counter down
+                    self.print_module_recursive(child_id, h2_counter);
                 }
             }
 
-            self.header_path.pop(); // Pop the child's index
+            // Pop this module's number AFTER processing the module and all its children
+            self.header_path.pop();
         }
     }
-
 
     /// Finalizes the documentation string, printing the crate header and contents.
     fn finalize(mut self) -> String {
@@ -4902,10 +4889,13 @@ impl<'a> DocPrinter<'a> {
         // Print Crate Documentation (using helper)
         self.print_docs(root_item, crate_header_level);
 
-
         // --- Print Top-Level Sections (Macros first, then Modules) ---
         let section_level = crate_header_level + 1; // ## (level 2) for top-level sections
         let mut top_level_section_idx = 1;
+        let mut h2_counter: usize = 0; // Initialize H2 counter here
+
+        // Clear header path before starting sections
+        self.header_path.clear();
 
         // --- Macros Section (Level 2) ---
         // Find macros directly under the resolved root module
@@ -4931,7 +4921,8 @@ impl<'a> DocPrinter<'a> {
                     "\n{} {} Macros",
                     "#".repeat(section_level),
                     header_prefix
-                ).unwrap();
+                )
+                .unwrap();
                 let mut item_idx = 1;
                 let mut sorted_macros = macro_ids;
                 sorted_macros.sort_by_key(|id| {
@@ -4949,25 +4940,21 @@ impl<'a> DocPrinter<'a> {
         }
 
         // --- Modules (Depth-First Traversal) ---
-        let module_header_level = section_level; // ## (level 2) for module headers
-
-        // Initialize header path for top-level modules (starts from the current section index)
-        self.header_path = vec![top_level_section_idx -1]; // Start numbering from here
+        // Clear header path again before starting modules
+        self.header_path.clear();
 
         // 1. Print Crate Root Module explicitly
-        self.print_module_recursive(self.krate.root, module_header_level);
+        self.print_module_recursive(self.krate.root, &mut h2_counter);
 
         // 2. Iterate through sorted top-level modules and print recursively
         // Clone the list to avoid borrowing issues
         let top_level_ids = self.module_tree.top_level_modules.clone();
         for module_id in top_level_ids {
-            // The print_module_recursive will handle incrementing the last element of header_path
-            self.print_module_recursive(module_id, module_header_level);
+            self.print_module_recursive(module_id, &mut h2_counter);
         }
 
         // Reset header path after module printing before "Other" section
         self.header_path.clear();
-
 
         // --- Handle "Other" Items ---
         let mut unprinted_ids = Vec::new();
@@ -5006,13 +4993,14 @@ impl<'a> DocPrinter<'a> {
                     "Found {} selected items that were not printed in the main structure. Including them in the 'Other' section.",
                     unprinted_ids.len()
                 );
-                 // Determine next top-level index for "Other" section
-                top_level_section_idx = self.header_path.last().map_or(1, |n| n + 1);
-                self.header_path.push(top_level_section_idx);
+                // Determine next top-level index for "Other" section
+                // Use h2_counter as the basis for the next index
+                let other_section_h2_num = h2_counter + 1;
+                self.header_path.push(other_section_h2_num); // Push index for Other section
 
                 let other_section_level = 2; // ## (level 2) for Other
                 let other_item_level = other_section_level + 1; // ### (level 3) for items in Other
-                let header_prefix = self.get_header_prefix(other_section_level);
+                let header_prefix = self.get_header_prefix(other_section_level); // Uses last element (other_section_h2_num)
                 writeln!(
                     self.output,
                     "\n{} {} Other", // Use ## level for this section
@@ -5029,16 +5017,16 @@ impl<'a> DocPrinter<'a> {
                     )
                 });
 
-                 let mut item_idx = 1;
+                let mut item_idx = 1;
                 for id in &unprinted_ids {
                     let path_str = format_id_path_canonical(id, self.krate);
                     warn!("Including unprinted item in 'Other' section: {}", path_str);
 
                     self.header_path.push(item_idx); // Push item index
-                    // Fetch the item to print its header and span
+                                                     // Fetch the item to print its header and span
                     if let Some(item) = self.krate.index.get(id) {
                         let declaration = generate_item_declaration(item, self.krate);
-                        let item_prefix = self.get_header_prefix(other_item_level);
+                        let item_prefix = self.get_header_prefix(other_item_level); // Uses full path [h2_num, item_idx]
                         writeln!(
                             self.output,
                             "\n{} {} `{}`\n", // Add newline after header
@@ -5066,12 +5054,12 @@ impl<'a> DocPrinter<'a> {
                         self.print_item_details(id, other_item_level); // Re-print details (will skip header and span)
                     } else {
                         // Handle case where ID is selected but not in index (rare)
-                         let item_prefix = self.get_header_prefix(other_item_level);
+                        let item_prefix = self.get_header_prefix(other_item_level);
                         writeln!(
                             self.output,
                             "\n{} {} `{}`\n",
                             "#".repeat(other_item_level),
-                             item_prefix,
+                            item_prefix,
                             path_str // Use path string as header
                         )
                         .unwrap();
@@ -5095,7 +5083,9 @@ impl<'a> DocPrinter<'a> {
                         *counts_by_kind.entry(kind).or_insert(0) += 1;
                     } else {
                         // Count items where kind couldn't be determined (e.g., ID not in index)
-                        *counts_by_kind.entry(ItemKind::StructField).or_insert(0) += 1; // Use a placeholder kind like StructField
+                        *counts_by_kind
+                            .entry(ItemKind::StructField)
+                            .or_insert(0) += 1; // Use a placeholder kind like StructField
                     }
                 }
                 warn!(
