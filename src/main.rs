@@ -2997,6 +2997,17 @@ fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
     sig
 }
 
+/// Represents the module hierarchy.
+#[derive(Debug, Default)]
+struct ModuleTree {
+    /// Maps a module ID to its direct submodule IDs.
+    children: HashMap<Id, Vec<Id>>,
+    /// Stores the IDs of all known modules.
+    all_modules: HashSet<Id>,
+    /// Stores the IDs of top-level modules (excluding crate root).
+    top_level_modules: Vec<Id>,
+}
+
 struct DocPrinter<'a> {
     krate: &'a Crate,
     selected_ids: &'a HashSet<Id>,
@@ -3007,6 +3018,7 @@ struct DocPrinter<'a> {
     printed_ids: HashSet<Id>,
     output: String,
     base_level: usize, // For markdown header levels
+    module_tree: ModuleTree, // Add module tree
 }
 
 impl<'a> DocPrinter<'a> {
@@ -3018,6 +3030,7 @@ impl<'a> DocPrinter<'a> {
         include_other: bool,
         template_mode: bool, // Add template mode flag
     ) -> Self {
+        let module_tree = Self::build_module_tree(krate);
         DocPrinter {
             krate,
             selected_ids,
@@ -3028,7 +3041,58 @@ impl<'a> DocPrinter<'a> {
             printed_ids: HashSet::new(),
             output: String::new(),
             base_level: 1, // Start top-level sections at # (level 1)
+            module_tree,   // Initialize module tree
         }
+    }
+
+    /// Builds the module hierarchy tree.
+    fn build_module_tree(krate: &'a Crate) -> ModuleTree {
+        let mut tree = ModuleTree::default();
+        let mut parent_map: HashMap<Id, Id> = HashMap::new(); // Child -> Parent
+
+        for (id, item) in &krate.index {
+            if let ItemEnum::Module(module_data) = &item.inner {
+                tree.all_modules.insert(*id);
+                let mut children = Vec::new();
+                for child_id in &module_data.items {
+                    if let Some(child_item) = krate.index.get(child_id) {
+                        if let ItemEnum::Module(_) = child_item.inner {
+                            children.push(*child_id);
+                            parent_map.insert(*child_id, *id);
+                        }
+                    }
+                }
+                if !children.is_empty() {
+                    // Sort children alphabetically by name/path here for consistent ordering within a parent
+                    children.sort_by_key(|child_id| {
+                        krate
+                            .paths
+                            .get(child_id)
+                            .map(|p| p.path.join("::"))
+                            .unwrap_or_default()
+                    });
+                    tree.children.insert(*id, children);
+                }
+            }
+        }
+
+        // Identify top-level modules (excluding crate root)
+        for module_id in &tree.all_modules {
+            if *module_id != krate.root && !parent_map.contains_key(module_id) {
+                tree.top_level_modules.push(*module_id);
+            }
+        }
+
+        // Sort top-level modules alphabetically by path
+        tree.top_level_modules.sort_by_key(|id| {
+            krate
+                .paths
+                .get(id)
+                .map(|p| p.path.join("::"))
+                .unwrap_or_default()
+        });
+
+        tree
     }
 
     fn get_item_kind(&self, id: &Id) -> Option<ItemKind> {
@@ -3102,7 +3166,8 @@ impl<'a> DocPrinter<'a> {
 
         if let Some(item) = self.krate.index.get(id) {
             // Skip printing details for 'Use' items, they are handled by resolution
-            if matches!(item.inner, ItemEnum::Use(_)) {
+            // Also skip Modules here, they are handled by the main traversal in finalize
+            if matches!(item.inner, ItemEnum::Use(_) | ItemEnum::Module(_)) {
                 return;
             }
 
@@ -4367,7 +4432,7 @@ impl<'a> DocPrinter<'a> {
                         | ItemKind::AssocConst
                         | ItemKind::AssocType
                         | ItemKind::Use
-                        | ItemKind::Module => continue, // Skip modules here
+                        | ItemKind::Module => continue, // Skip modules, impls, variants etc. here
                         _ => {}
                     }
                     items_by_kind.entry(kind).or_default().push(*id);
@@ -4386,7 +4451,7 @@ impl<'a> DocPrinter<'a> {
                 (ItemKind::Macro, "Macros"), // Includes ProcMacros displayed as Macro
                 (ItemKind::ProcAttribute, "Attribute Macros"),
                 (ItemKind::ProcDerive, "Derive Macros"),
-                // (ItemKind::Module, "Submodules"), // Removed: Modules handled by main loop
+                // Submodules are NOT printed here anymore
                 (ItemKind::Struct, "Structs"),
                 (ItemKind::Enum, "Enums"),
                 (ItemKind::Union, "Unions"),
@@ -4477,8 +4542,49 @@ impl<'a> DocPrinter<'a> {
             include_other: self.include_other,
             template_mode: self.template_mode,
             printed_ids: self.printed_ids.clone(), // Clone printed IDs too? Or share? Let's share for now. No, clone needed for isolation.
-            output: String::new(), // New empty output
+            output: String::new(),                 // New empty output
             base_level: self.base_level,
+            module_tree: self.module_tree.clone(), // Clone module tree as well
+        }
+    }
+
+    /// Recursive function to print modules and their contents depth-first.
+    fn print_module_recursive(&mut self, module_id: Id, module_header_level: usize) {
+        // Skip if not selected or already printed
+        if !self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id) {
+            return;
+        }
+
+        if let Some(item) = self.krate.index.get(&module_id) {
+            let module_path_str = format_id_path_canonical(&module_id, self.krate); // Use canonical path
+            let display_path = if module_path_str.is_empty() {
+                "::".to_string() // Special case for crate root path string
+            } else {
+                module_path_str
+            };
+
+            // Print module header (always H2)
+            writeln!(
+                self.output,
+                "\n{} Module: `{}`\n", // Module header uses level 2
+                "#".repeat(module_header_level),
+                display_path
+            )
+            .unwrap();
+            self.printed_ids.insert(module_id); // Mark module as printed *before* printing contents
+
+            // Print module docs (using helper)
+            self.print_docs(item, module_header_level);
+
+            // Print module contents (non-module items only)
+            self.print_module_contents(&module_id, module_header_level);
+
+            // Recursively print child modules
+            if let Some(children) = self.module_tree.children.get(&module_id) {
+                for child_id in children {
+                    self.print_module_recursive(*child_id, module_header_level); // Recurse with same level
+                }
+            }
         }
     }
 
@@ -4501,10 +4607,7 @@ impl<'a> DocPrinter<'a> {
         .unwrap();
 
         // Print Crate Documentation (using helper)
-        // Create a temporary DocPrinter to isolate output for the crate docs
-        let mut temp_printer = self.clone_with_new_output();
-        temp_printer.print_docs(root_item, crate_header_level);
-        write!(self.output, "{}", temp_printer.output).unwrap();
+        self.print_docs(root_item, crate_header_level);
 
 
         // --- Print Top-Level Sections (Macros first, then Modules) ---
@@ -4538,54 +4641,17 @@ impl<'a> DocPrinter<'a> {
             }
         }
 
-        // --- Modules (Flattened, Depth-First) ---
-        // Collect all module IDs from the index
-        let mut all_module_ids: Vec<Id> = self
-            .krate
-            .index
-            .iter()
-            .filter(|(_, item)| matches!(item.inner, ItemEnum::Module(_)))
-            .map(|(id, _)| *id)
-            .collect();
-
-        // Sort modules by path depth and then alphabetically
-        all_module_ids.sort_by_key(|id| {
-            self.krate
-                .paths
-                .get(id)
-                .map(|p| (p.path.len(), p.path.join("::")))
-                .unwrap_or((usize::MAX, String::new())) // Put modules without paths last
-        });
-
-        // Print modules in sorted order
+        // --- Modules (Depth-First Traversal) ---
         let module_header_level = section_level; // ## (level 2) for module headers
-        for module_id in all_module_ids {
-            // Skip if not selected or already printed (e.g., if it was part of a skipped 'Other' item)
-            if !self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id) {
-                continue;
-            }
 
-            if let Some(item) = self.krate.index.get(&module_id) {
-                let module_path_str = format_id_path_canonical(&module_id, self.krate); // Use canonical path
-                writeln!(
-                    self.output,
-                    "\n{} Module: `{}`\n", // Module header uses level 2
-                    "#".repeat(module_header_level),
-                    module_path_str
-                )
-                .unwrap();
-                self.printed_ids.insert(module_id); // Mark module as printed *before* printing contents
+        // 1. Print Crate Root Module explicitly
+        self.print_module_recursive(self.krate.root, module_header_level);
 
-                // Print module docs (using helper)
-                // Create a temporary DocPrinter to isolate output
-                let mut temp_printer = self.clone_with_new_output();
-                temp_printer.print_docs(item, module_header_level);
-                write!(self.output, "{}", temp_printer.output).unwrap();
-
-
-                // Print module contents (non-module items only)
-                self.print_module_contents(&module_id, module_header_level);
-            }
+        // 2. Iterate through sorted top-level modules and print recursively
+        // Clone the list to avoid borrowing issues
+        let top_level_ids = self.module_tree.top_level_modules.clone();
+        for module_id in top_level_ids {
+            self.print_module_recursive(module_id, module_header_level);
         }
 
 
@@ -4602,7 +4668,7 @@ impl<'a> DocPrinter<'a> {
                         ItemEnum::Impl(_)
                             | ItemEnum::Use { .. }
                             | ItemEnum::StructField(_)
-                            | ItemEnum::Module(_)
+                            | ItemEnum::Module(_) // Modules explicitly skipped here
                     ) && item.name.is_some()
                     {
                         unprinted_ids.push(*id);
