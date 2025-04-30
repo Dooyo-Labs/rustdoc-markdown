@@ -44,6 +44,15 @@ use tracing_subscriber::EnvFilter;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 const TEMPLATE_PLACEHOLDER: &str = "*FILL IN WHAT YOU KNOW HERE*";
+const AUTO_TRAITS: &[&str] = &[
+    "Send",
+    "Sync",
+    "Unpin",
+    "UnwindSafe",
+    "RefUnwindSafe",
+    "Freeze",
+    // Add other common auto traits if needed
+];
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -2008,11 +2017,13 @@ fn clean_trait_path(path_str: &str) -> String {
         .replace("core::cmp::", "")
         .replace("core::clone::", "")
         .replace("core::hash::", "")
+        .replace("core::panic::unwind_safe::", "") // For UnwindSafe/RefUnwindSafe
         // Keep core::option::Option ? Maybe not needed as often in where clauses.
         .replace("core::", "") // General core removal last
         .replace("alloc::string::", "") // Clean alloc paths too
         .replace("alloc::vec::", "")
         .replace("alloc::boxed::", "")
+        .replace("alloc::borrow::", "") // For Borrow/BorrowMut/ToOwned
         .replace("alloc::", "") // General alloc removal
         .replace("std::", "") // Also clean std paths potentially used via prelude
 }
@@ -3840,19 +3851,30 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
+            let mut auto_trait_impls: Vec<(&Item, String)> = Vec::new();
+            let mut blanket_impl_data: Vec<(&Item, &Impl, String)> = Vec::new();
             let mut simple_impl_data: Vec<(&Item, &Impl, String)> = Vec::new();
-            let mut generic_or_blanket_impls = Vec::new(); // Store items for later processing
+            let mut generic_or_complex_impls = Vec::new(); // Store items for later processing
 
-            // First pass: Identify simple non-blanket impls
+            // First pass: Categorize trait impls
             for impl_item in &trait_impls {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    // Check if it's a blanket impl first
-                    if imp.blanket_impl.is_some() {
-                        generic_or_blanket_impls.push(*impl_item);
-                        continue;
-                    }
-                    // Check if it's a simple non-blanket impl
                     if let Some(trait_path) = &imp.trait_ {
+                        let cleaned_path = clean_trait_path(&format_path(trait_path, self.krate));
+
+                        // Check for Auto Traits (synthetic only)
+                        if imp.is_synthetic && AUTO_TRAITS.contains(&cleaned_path.as_str()) {
+                            auto_trait_impls.push((impl_item, cleaned_path));
+                            continue;
+                        }
+
+                        // Check for Blanket Impls (non-auto-trait)
+                        if imp.blanket_impl.is_some() {
+                            blanket_impl_data.push((impl_item, imp, cleaned_path));
+                            continue;
+                        }
+
+                        // Check for Simple Impls (non-blanket, non-auto-trait)
                         let is_simple = imp.generics.params.is_empty()
                             && imp.generics.where_predicates.is_empty()
                             && trait_path.args.as_ref().map_or(true, |args| {
@@ -3871,26 +3893,50 @@ impl<'a> DocPrinter<'a> {
                             });
 
                         if is_simple {
-                            let cleaned_path =
-                                clean_trait_path(&format_path(trait_path, self.krate));
                             simple_impl_data.push((impl_item, imp, cleaned_path));
                         } else {
-                            generic_or_blanket_impls.push(*impl_item);
+                            generic_or_complex_impls.push(*impl_item);
                         }
                     }
                 }
             }
 
-            // Sort simple non-blanket impls by their cleaned path string
+            // Sort each category
+            auto_trait_impls.sort_by(|a, b| a.1.cmp(&b.1));
+            blanket_impl_data.sort_by(|a, b| a.2.cmp(&b.2));
             simple_impl_data.sort_by(|a, b| a.2.cmp(&b.2));
+            generic_or_complex_impls.sort_by_key(|item| {
+                if let ItemEnum::Impl(imp) = &item.inner {
+                    imp.trait_.as_ref().map(|p| format_path(p, self.krate))
+                } else {
+                    None // Should not happen
+                }
+            });
 
-            // Print simple non-blanket impls as a list first AND mark their items as printed
+
+            // Print Auto Traits first (simple list) AND mark them printed
+            if !auto_trait_impls.is_empty() {
+                 for (impl_item, cleaned_path) in &auto_trait_impls {
+                     writeln!(self.output, "- {}", cleaned_path).unwrap();
+                     self.printed_ids.insert(impl_item.id);
+                     // Also mark associated items (usually none for auto traits)
+                     if let ItemEnum::Impl(imp) = &impl_item.inner {
+                          for assoc_item_id in &imp.items {
+                              if self.selected_ids.contains(assoc_item_id) {
+                                  self.printed_ids.insert(*assoc_item_id);
+                              }
+                          }
+                     }
+                 }
+                 writeln!(self.output).unwrap(); // Add blank line after list
+            }
+
+            // Print Simple non-blanket/non-auto impls next (simple list) AND mark them printed
             if !simple_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &simple_impl_data {
                     writeln!(self.output, "- `{}`", cleaned_path).unwrap();
-                    // Mark the simple impl item itself as printed
                     self.printed_ids.insert(impl_item.id);
-                    // ALSO mark all associated items within this simple impl as printed
+                    // Mark associated items
                     for assoc_item_id in &imp.items {
                         if self.selected_ids.contains(assoc_item_id) {
                             self.printed_ids.insert(*assoc_item_id);
@@ -3900,62 +3946,54 @@ impl<'a> DocPrinter<'a> {
                 writeln!(self.output).unwrap(); // Add blank line after list
             }
 
-            // Sort generic/blanket impls for consistent output (e.g., by trait name)
-            generic_or_blanket_impls.sort_by_key(|item| {
-                if let ItemEnum::Impl(imp) = &item.inner {
-                    imp.trait_.as_ref().map(|p| format_path(p, self.krate))
-                } else {
-                    None // Should not happen
-                }
-            });
+             // Print Blanket Impls next (list + optional where clause) AND mark them printed
+            if !blanket_impl_data.is_empty() {
+                 for (impl_item, imp, cleaned_path) in &blanket_impl_data {
+                    writeln!(self.output, "- `{}`", cleaned_path).unwrap();
+                    self.printed_ids.insert(impl_item.id);
 
-            // Print blanket and generic/complex non-blanket impls
-            for impl_item in generic_or_blanket_impls {
-                // Skip if already printed (e.g., if it was somehow also simple)
+                    if !imp.generics.where_predicates.is_empty() {
+                        let where_clause = format_generics_where_only(
+                            &imp.generics.where_predicates,
+                            self.krate,
+                        );
+                        // Format and indent the where clause
+                        let code_block = format!("```rust\n{}\n```", where_clause);
+                        let indented_block = indent_string(&code_block, 4);
+                        writeln!(self.output, "\n{}\n", indented_block).unwrap();
+                    } else {
+                        writeln!(self.output).unwrap(); // Blank line if no where clause
+                    }
+                    // Mark associated items
+                    for assoc_item_id in &imp.items {
+                        if self.selected_ids.contains(assoc_item_id) {
+                             self.printed_ids.insert(*assoc_item_id);
+                        }
+                    }
+                 }
+                 // No extra blank line needed here, handled by item printing or next section
+            }
+
+
+            // Print generic/complex non-blanket/non-auto impls last (full blocks)
+            for impl_item in generic_or_complex_impls {
+                // Skip if already printed (shouldn't happen with current logic, but safe)
                 if self.printed_ids.contains(&impl_item.id) {
                     continue;
                 }
-
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    if let Some(trait_path) = &imp.trait_ { // Ensure it's a trait impl
-                        let cleaned_trait_path = clean_trait_path(&format_path(trait_path, self.krate));
+                    // generate_impl_trait_block marks printed IDs internally
+                    if let Some(impl_block_str) = self.generate_impl_trait_block(impl_item, imp, impl_section_level) {
+                        // Get cleaned path for list item
+                         let cleaned_path = imp.trait_.as_ref()
+                             .map(|tp| clean_trait_path(&format_path(tp, self.krate)))
+                             .unwrap_or_else(|| "{InherentImpl}".to_string()); // Should not happen here
+                         writeln!(self.output, "- `{}`", cleaned_path).unwrap();
+                         writeln!(self.output).unwrap(); // Blank line after list item
 
-                        // Check for blanket implementation using blanket_impl field
-                        if imp.blanket_impl.is_some() {
-                            // Handle blanket impl
-                            writeln!(self.output, "- `{}`", cleaned_trait_path).unwrap();
-                            self.printed_ids.insert(impl_item.id); // Mark blanket impl printed
-
-                            if !imp.generics.where_predicates.is_empty() {
-                                let where_clause = format_generics_where_only(
-                                    &imp.generics.where_predicates,
-                                    self.krate,
-                                );
-                                // Format and indent the where clause
-                                let code_block = format!("```rust\n{}\n```", where_clause);
-                                let indented_block = indent_string(&code_block, 4);
-                                writeln!(self.output, "\n{}\n", indented_block).unwrap(); // Add newlines around block
-                            } else {
-                                // Add a blank line after the list item if no where clause
-                                writeln!(self.output).unwrap();
-                            }
-                            // Mark associated items printed for blanket impl
-                            for assoc_item_id in &imp.items {
-                                if self.selected_ids.contains(assoc_item_id) {
-                                    self.printed_ids.insert(*assoc_item_id);
-                                }
-                            }
-                        } else {
-                            // Handle complex/generic non-blanket impl
-                            writeln!(self.output, "- `{}`", cleaned_trait_path).unwrap();
-                            writeln!(self.output).unwrap(); // Blank line after list item
-                            // generate_impl_trait_block marks printed IDs internally
-                            if let Some(impl_block_str) = self.generate_impl_trait_block(impl_item, imp, impl_section_level) {
-                                let full_code_block = format!("```rust\n{}\n```", impl_block_str);
-                                let indented_block = indent_string(&full_code_block, 4);
-                                writeln!(self.output, "{}\n", indented_block).unwrap();
-                            }
-                        }
+                         let full_code_block = format!("```rust\n{}\n```", impl_block_str);
+                         let indented_block = indent_string(&full_code_block, 4);
+                         writeln!(self.output, "{}\n", indented_block).unwrap();
                     }
                 }
             }
@@ -4060,6 +4098,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Generates the full code block string for a trait impl, including associated items.
+    /// Returns None if the impl block was already printed or shouldn't be printed (e.g., simple impl handled elsewhere).
     /// `section_level` is the level of the "Implementations" or "Trait Implementations" header (e.g., 4).
     fn generate_impl_trait_block(
         &mut self,
