@@ -3241,7 +3241,6 @@ impl<'a> DocPrinter<'a> {
         };
 
         let mut has_printable_field = false;
-        let mut printed_any_field = false;
 
         // First pass: Mark unselected/undocumented/non-templated fields printed and check if any are printable.
         for field_id in &all_field_ids {
@@ -3275,8 +3274,15 @@ impl<'a> DocPrinter<'a> {
             }
         );
 
-        // Only print the "Fields" section if there's a printable field or stripped fields exist
-        if !has_printable_field && !has_stripped {
+        if has_stripped {
+            writeln!(self.output, "_[Private fields hidden]_").unwrap();
+            if has_printable_field {
+                writeln!(self.output).unwrap();
+            }
+        }
+
+        // Only print the "Fields" section if there's a printable field
+        if !has_printable_field {
             return;
         }
 
@@ -3288,19 +3294,12 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
+        let mut _printed_any_field = false;
         // Second pass: Print details for fields that have printable docs
         for field_id in &all_field_ids {
             if self.print_field_details(field_id, fields_header_level) {
-                printed_any_field = true;
+                _printed_any_field = true;
             }
-        }
-
-        if has_stripped {
-            // Add newline before stripped message only if fields were printed
-            if printed_any_field {
-                writeln!(self.output).unwrap();
-            }
-            writeln!(self.output, "_[Private fields hidden]_").unwrap();
         }
     }
 
@@ -3961,7 +3960,7 @@ impl<'a> DocPrinter<'a> {
             // Print Simple non-blanket/non-auto impls next (simple list) AND mark them printed
             if !simple_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &simple_impl_data {
-                    writeln!(self.output, "- `{}`", cleaned_path).unwrap();
+                    writeln!(self.output, "- {}", cleaned_path).unwrap();
                     self.printed_ids.insert(impl_item.id);
                     // Mark associated items
                     for assoc_item_id in &imp.items {
@@ -3976,20 +3975,24 @@ impl<'a> DocPrinter<'a> {
              // Print Blanket Impls next (list + optional where clause) AND mark them printed
             if !blanket_impl_data.is_empty() {
                  for (impl_item, imp, cleaned_path) in &blanket_impl_data {
-                    writeln!(self.output, "- `{}`", cleaned_path).unwrap();
                     self.printed_ids.insert(impl_item.id);
-
                     if !imp.generics.where_predicates.is_empty() {
                         let where_clause = format_generics_where_only(
                             &imp.generics.where_predicates,
                             self.krate,
                         );
-                        // Format and indent the where clause
-                        let code_block = format!("```rust\n{}\n```", where_clause);
-                        let indented_block = indent_string(&code_block, 4);
-                        writeln!(self.output, "\n{}\n", indented_block).unwrap();
+
+                        if where_clause.lines().count() == 1 {
+                            writeln!(self.output, "- `{cleaned_path}` (`{where_clause}`)").unwrap();
+                        } else {
+                            writeln!(self.output, "- `{cleaned_path}`").unwrap();
+                            // Format and indent the where clause
+                            let code_block = format!("```rust\n{}\n```", where_clause);
+                            let indented_block = indent_string(&code_block, 4);
+                            writeln!(self.output, "\n{}\n", indented_block).unwrap();
+                        }
                     } else {
-                        writeln!(self.output).unwrap(); // Blank line if no where clause
+                        writeln!(self.output, "- `{cleaned_path}`").unwrap();
                     }
                     // Mark associated items
                     for assoc_item_id in &imp.items {
