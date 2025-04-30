@@ -3209,6 +3209,18 @@ impl<'a> DocPrinter<'a> {
                 writeln!(self.output, "```rust\n{}\n```\n", code).unwrap();
             }
 
+            let has_stripped = matches!(
+                &item.inner,
+                ItemEnum::Struct(Struct {
+                    kind: StructKind::Plain { has_stripped_fields: true, .. },
+                    ..
+                })
+            );
+
+            if has_stripped {
+                writeln!(self.output, "_[Private fields hidden]_\n").unwrap();
+            }
+
             // Print Documentation (using the helper method)
             self.print_docs(item, item_header_level);
 
@@ -3306,21 +3318,6 @@ impl<'a> DocPrinter<'a> {
             } else {
                 // If item doesn't exist in index but ID was present, mark it printed to avoid issues
                 self.printed_ids.insert(*field_id);
-            }
-        }
-
-        let has_stripped = matches!(
-            &s.kind,
-            StructKind::Plain {
-                has_stripped_fields: true,
-                ..
-            }
-        );
-
-        if has_stripped {
-            writeln!(self.output, "_[Private fields hidden]_").unwrap();
-            if has_printable_field {
-                writeln!(self.output).unwrap();
             }
         }
 
