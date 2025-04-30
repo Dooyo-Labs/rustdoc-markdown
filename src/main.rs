@@ -3935,7 +3935,7 @@ impl<'a> DocPrinter<'a> {
             // Print Auto Traits first (simple list) AND mark them printed
             if !auto_trait_impls.is_empty() {
                  for (impl_item, cleaned_path) in &auto_trait_impls {
-                     writeln!(self.output, "- {}", cleaned_path).unwrap();
+                     writeln!(self.output, "- `{}`", cleaned_path).unwrap();
                      self.printed_ids.insert(impl_item.id);
                      // Also mark associated items (usually none for auto traits)
                      if let ItemEnum::Impl(imp) = &impl_item.inner {
@@ -3952,7 +3952,7 @@ impl<'a> DocPrinter<'a> {
             // Print Simple non-blanket/non-auto impls next (simple list) AND mark them printed
             if !simple_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &simple_impl_data {
-                    writeln!(self.output, "- {}", cleaned_path).unwrap();
+                    writeln!(self.output, "- `{}`", cleaned_path).unwrap();
                     self.printed_ids.insert(impl_item.id);
                     // Mark associated items
                     for assoc_item_id in &imp.items {
