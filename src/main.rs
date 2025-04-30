@@ -222,7 +222,8 @@ impl IdGraph {
                 target,
                 label: label.clone(),
             };
-            if self.edges.insert(edge) {
+            // Clone edge before inserting into the HashSet to avoid move error
+            if self.edges.insert(edge.clone()) {
                 // Also update the adjacency list for forward traversal (needed for dump)
                 self.adjacency
                     .entry(source)
