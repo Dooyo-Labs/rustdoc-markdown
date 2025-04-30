@@ -2998,7 +2998,7 @@ fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
 }
 
 /// Represents the module hierarchy.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)] // Added Clone derive
 struct ModuleTree {
     /// Maps a module ID to its direct submodule IDs.
     children: HashMap<Id, Vec<Id>>,
@@ -4580,9 +4580,10 @@ impl<'a> DocPrinter<'a> {
             self.print_module_contents(&module_id, module_header_level);
 
             // Recursively print child modules
-            if let Some(children) = self.module_tree.children.get(&module_id) {
+            // Clone children list to avoid borrow checker issue (E0502)
+            if let Some(children) = self.module_tree.children.get(&module_id).cloned() {
                 for child_id in children {
-                    self.print_module_recursive(*child_id, module_header_level); // Recurse with same level
+                    self.print_module_recursive(child_id, module_header_level); // Recurse with same level
                 }
             }
         }
