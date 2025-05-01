@@ -5195,28 +5195,34 @@ async fn main() -> Result<()> {
         description: package_data
             .description
             .as_ref()
-            .and_then(|d| d.as_local().cloned()), // Use .cloned() on Option<&T>
+            .and_then(|d| d.as_local())
+            .cloned(),
         homepage: package_data
             .homepage
             .as_ref()
-            .and_then(|h| h.as_local().cloned()), // Use .cloned() on Option<&T>
+            .and_then(|h| h.as_local())
+            .cloned(),
         repository: package_data
             .repository
             .as_ref()
-            .and_then(|r| r.as_local().cloned()), // Use .cloned() on Option<&T>
+            .and_then(|r| r.as_local())
+            .cloned(),
         categories: package_data
             .categories
             .as_ref()
-            .and_then(|c| c.as_local().cloned()) // Use .cloned() on Option<&T>
-            .unwrap_or_default(), // Handle Option<Vec<String>> after as_local()
+            .and_then(|c| c.as_local())
+            .cloned()
+            .unwrap_or_default(),
         license: package_data
             .license
             .as_ref()
-            .and_then(|l| l.as_local().cloned()), // Use .cloned() on Option<&T>
+            .and_then(|l| l.as_local())
+            .cloned(),
         rust_version: package_data
             .rust_version
             .as_ref()
-            .and_then(|rv| rv.as_local().cloned()), // Use .cloned() on Option<&T>
+            .and_then(|rv| rv.as_local())
+            .cloned(),
         edition: package_data
             .edition
             .as_ref()
