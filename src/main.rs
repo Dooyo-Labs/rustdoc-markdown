@@ -34,7 +34,7 @@ use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
     Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
-}; // Removed HeadingLevel and Tag
+};
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
@@ -1985,22 +1985,33 @@ fn adjust_markdown_headers(markdown: &str, base_level: usize) -> String {
     let parser = CmarkParser::new(markdown);
     let transformed_events = parser.map(|event| match event {
         Event::Start(Tag::Heading { level, id, classes, attrs }) => {
-            let old_level_usize: usize = level.into();
+            // Explicitly match on HeadingLevel variants to get usize
+            let old_level_usize = match level {
+                pulldown_cmark::HeadingLevel::H1 => 1,
+                pulldown_cmark::HeadingLevel::H2 => 2,
+                pulldown_cmark::HeadingLevel::H3 => 3,
+                pulldown_cmark::HeadingLevel::H4 => 4,
+                pulldown_cmark::HeadingLevel::H5 => 5,
+                pulldown_cmark::HeadingLevel::H6 => 6,
+            };
             let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
-            // Use pulldown_cmark::HeadingLevel
             let new_level = pulldown_cmark::HeadingLevel::try_from(new_level_usize)
-                .unwrap_or(pulldown_cmark::HeadingLevel::H6); // Default to H6 if conversion fails
-                                                              // Use pulldown_cmark::Tag
+                .unwrap_or(pulldown_cmark::HeadingLevel::H6);
             Event::Start(pulldown_cmark::Tag::Heading { level: new_level, id, classes, attrs })
         }
         Event::End(TagEnd::Heading(level)) => {
-            // Use pulldown_cmark::TagEnd
-            let old_level_usize: usize = level.into();
+            // Explicitly match on HeadingLevel variants to get usize
+            let old_level_usize = match level {
+                pulldown_cmark::HeadingLevel::H1 => 1,
+                pulldown_cmark::HeadingLevel::H2 => 2,
+                pulldown_cmark::HeadingLevel::H3 => 3,
+                pulldown_cmark::HeadingLevel::H4 => 4,
+                pulldown_cmark::HeadingLevel::H5 => 5,
+                pulldown_cmark::HeadingLevel::H6 => 6,
+            };
             let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
-            // Use pulldown_cmark::HeadingLevel
             let new_level = pulldown_cmark::HeadingLevel::try_from(new_level_usize)
                 .unwrap_or(pulldown_cmark::HeadingLevel::H6);
-            // Use pulldown_cmark::TagEnd
             Event::End(pulldown_cmark::TagEnd::Heading(new_level))
         }
         _ => event,
