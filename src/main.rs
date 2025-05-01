@@ -17,12 +17,14 @@
 //! tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 //! rustdoc-json = "*"
 //! rustup-toolchain = "0.1"
+//! cargo-manifest = "0.19"
 //! ```
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::cognitive_complexity)] // Allow complex functions for now
 
 use anyhow::{anyhow, bail, Context, Result};
+use cargo_manifest::{FeatureSet, Manifest};
 use clap::Parser;
 use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
@@ -147,6 +149,20 @@ struct CrateVersion {
     yanked: bool,
     #[serde(skip)]
     semver: Option<Version>, // Parsed version, populated later
+}
+
+// --- Manifest Data ---
+
+#[derive(Debug, Clone, Default)]
+struct CrateManifestData {
+    description: Option<String>,
+    homepage: Option<String>,
+    repository: Option<String>,
+    categories: Vec<String>,
+    license: Option<String>,
+    rust_version: Option<String>,
+    edition: Option<String>,
+    features: FeatureSet, // Using cargo-manifest's FeatureSet
 }
 
 // --- ID Graph Structures ---
@@ -3013,10 +3029,11 @@ struct ModuleTree {
 
 struct DocPrinter<'a> {
     krate: &'a Crate,
-    readme_content: Option<String>, // Add field for README content
+    manifest: &'a CrateManifestData, // Add field for manifest data
+    readme_content: Option<String>,   // Add field for README content
     selected_ids: &'a HashSet<Id>,
     resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
-    graph: &'a IdGraph, // Add graph reference
+    graph: &'a IdGraph,                                // Add graph reference
     include_other: bool,
     template_mode: bool, // New flag for template mode
     printed_ids: HashSet<Id>,
@@ -3029,17 +3046,19 @@ struct DocPrinter<'a> {
 impl<'a> DocPrinter<'a> {
     fn new(
         krate: &'a Crate,
-        readme_content: Option<String>, // Accept README content
+        manifest: &'a CrateManifestData, // Accept manifest data
+        readme_content: Option<String>,   // Accept README content
         selected_ids: &'a HashSet<Id>,
         resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
-        graph: &'a IdGraph, // Add graph parameter
+        graph: &'a IdGraph,                                // Add graph parameter
         include_other: bool,
         template_mode: bool, // Add template mode flag
     ) -> Self {
         let module_tree = Self::build_module_tree(krate);
         DocPrinter {
             krate,
-            readme_content, // Store README content
+            manifest,         // Store manifest data
+            readme_content,   // Store README content
             selected_ids,
             resolved_modules, // Store resolved modules
             graph,            // Store graph reference
@@ -3301,7 +3320,6 @@ impl<'a> DocPrinter<'a> {
 
         // Print Documentation (using the helper method)
         self.print_docs(item);
-
 
         match &item.inner {
             ItemEnum::Struct(s) => self.print_struct_fields(item, s),
@@ -3913,7 +3931,7 @@ impl<'a> DocPrinter<'a> {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
             let mut summary = String::new();
             // Get level AFTER incrementing for the item header
-            let assoc_item_header_level = self.get_current_header_level();
+            // let assoc_item_header_level = self.get_current_header_level(); // Level not needed here
 
             // Add code block for associated functions if they have attrs/where clauses
             if let ItemEnum::Function(f) = &item.inner {
@@ -4727,6 +4745,7 @@ impl<'a> DocPrinter<'a> {
     fn clone_with_new_output(&self) -> Self {
         DocPrinter {
             krate: self.krate,
+            manifest: self.manifest, // Pass manifest reference
             readme_content: self.readme_content.clone(), // Clone README content
             selected_ids: self.selected_ids,
             resolved_modules: self.resolved_modules,
@@ -4804,6 +4823,11 @@ impl<'a> DocPrinter<'a> {
         // Clear doc path before starting
         self.doc_path.clear();
 
+        // Print Crate Description (if available) - NEW
+        if let Some(desc) = &self.manifest.description {
+            writeln!(self.output, "{}\n", desc).unwrap();
+        }
+
         // Print Crate Header (# Crate Name (Version)) - No prefix
         writeln!(
             self.output,
@@ -4815,6 +4839,73 @@ impl<'a> DocPrinter<'a> {
         .unwrap();
         // Push H2 level before starting sections/modules
         self.push_level();
+
+        // Print Manifest Section (H2) - NEW
+        let manifest_section_level = self.get_current_header_level(); // Should be 2
+        let manifest_header_prefix = self.get_header_prefix();
+        writeln!(
+            self.output,
+            "{} {} Manifest\n",
+            "#".repeat(manifest_section_level),
+            manifest_header_prefix
+        )
+        .unwrap();
+
+        // Use simple list format for manifest details
+        if let Some(hp) = &self.manifest.homepage {
+            writeln!(self.output, "- Homepage: <{}>", hp).unwrap();
+        }
+        if let Some(repo) = &self.manifest.repository {
+            writeln!(self.output, "- Repository: <{}>", repo).unwrap();
+        }
+        if !self.manifest.categories.is_empty() {
+            writeln!(
+                self.output,
+                "- Categories: {}",
+                self.manifest.categories.join(", ")
+            )
+            .unwrap();
+        }
+        if let Some(lic) = &self.manifest.license {
+            writeln!(self.output, "- License: {}", lic).unwrap();
+        }
+        if let Some(rv) = &self.manifest.rust_version {
+            writeln!(self.output, "- rust-version: `{}`", rv).unwrap();
+        }
+        if let Some(ed) = &self.manifest.edition {
+            writeln!(self.output, "- edition: `{}`", ed).unwrap();
+        }
+        writeln!(self.output).unwrap(); // Add a newline after the list
+
+        // Print Features Sub-section (H3) - NEW
+        let features_section_level = self.get_current_header_level() + 1; // H3
+        self.push_level(); // Push for the H3 features section
+        let features_header_prefix = self.get_header_prefix();
+        writeln!(
+            self.output,
+            "{} {} Features\n",
+            "#".repeat(features_section_level),
+            features_header_prefix
+        )
+        .unwrap();
+
+        // List features or state None
+        if self.manifest.features.is_empty() {
+            writeln!(self.output, "- None").unwrap();
+        } else {
+            // Sort features for consistent output
+            let mut sorted_features: Vec<_> = self.manifest.features.keys().collect();
+            sorted_features.sort_unstable();
+            for feature_name in sorted_features {
+                // TODO: Maybe show what features a feature enables? Requires more parsing.
+                writeln!(self.output, "- `{}`", feature_name).unwrap();
+            }
+        }
+        writeln!(self.output).unwrap(); // Add newline after features list
+        self.pop_level(); // Pop H3 features level
+
+        // Increment H2 counter for the next section (README or Macros)
+        self.increment_current_level();
 
         // Print README content if available
         if let Some(readme) = &self.readme_content {
@@ -4955,7 +5046,7 @@ impl<'a> DocPrinter<'a> {
                         self.print_item_details(id);
 
                         // Get level AFTER printing details for graph context
-                        let item_level = self.get_current_header_level(); // Should be H3+1 = H4
+                        // let item_level = self.get_current_header_level(); // Should be H3+1 = H4 // Level not needed here
 
                         // Print Source Location (if available) ONLY for "Other" items
                         if let Some(span) = &item.span {
@@ -5025,6 +5116,7 @@ impl<'a> DocPrinter<'a> {
 
 fn generate_documentation(
     krate: &Crate,
+    manifest: &CrateManifestData, // Accept manifest data
     readme_content: Option<String>, // Accept README content
     selected_ids: &HashSet<Id>,
     resolved_modules: &HashMap<Id, ResolvedModule>, // Accept resolved modules
@@ -5042,7 +5134,8 @@ fn generate_documentation(
 
     let printer = DocPrinter::new(
         krate,
-        readme_content, // Pass README content
+        manifest,         // Pass manifest data
+        readme_content,   // Pass README content
         selected_ids,
         resolved_modules,
         graph,
@@ -5093,6 +5186,32 @@ async fn main() -> Result<()> {
         .with_context(|| format!("Failed to create build directory: {}", build_path.display()))?;
 
     let crate_dir = download_and_unpack_crate(&client, &target_version, &build_path).await?;
+
+    // --- Load Cargo.toml ---
+    let manifest_path = crate_dir.join("Cargo.toml");
+    let manifest = Manifest::from_path(&manifest_path).with_context(|| {
+        format!(
+            "Failed to read or parse Cargo.toml: {}",
+            manifest_path.display()
+        )
+    })?;
+
+    // Extract relevant manifest data (handle potential missing fields)
+    let manifest_data = CrateManifestData {
+        description: manifest.package().description().map(str::to_string),
+        homepage: manifest.package().homepage().map(str::to_string),
+        repository: manifest.package().repository().map(str::to_string),
+        categories: manifest
+            .package()
+            .categories()
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        license: manifest.package().license().map(str::to_string),
+        rust_version: manifest.package().rust_version().map(|rv| rv.to_string()), // Adjust if rv is not String
+        edition: manifest.package().edition().to_string().into(), // Assuming edition is always present and displayable
+        features: manifest.features().clone(),                   // Clone the FeatureSet
+    };
 
     // --- Locate and Read README ---
     let readme_content = if args.no_readme {
@@ -5227,9 +5346,10 @@ async fn main() -> Result<()> {
     }
 
     // --- Generate Documentation ---
-    // Pass resolved modules, full graph, template flag, and README content
+    // Pass resolved modules, full graph, template flag, README content, and manifest data
     let documentation = generate_documentation(
         &krate,
+        &manifest_data, // Pass manifest data here
         readme_content, // Pass README content here
         &selected_ids,
         &resolved_modules,
