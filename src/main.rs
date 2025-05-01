@@ -4813,17 +4813,26 @@ impl<'a> DocPrinter<'a> {
             crate_version
         )
         .unwrap();
+        // Push H2 level before starting sections/modules
+        self.push_level();
 
         // Print README content if available
         if let Some(readme) = &self.readme_content {
             info!("Injecting README content.");
+            let section_level = self.get_current_header_level(); // Should be 2
+            let header_prefix = self.get_header_prefix();
+            writeln!(
+                self.output,
+                "\n{} {} README\n",
+                "#".repeat(section_level),
+                header_prefix
+            )
+            .unwrap();
             // Adjust headers starting from level 2 (since it's under the H1 crate header)
             let adjusted_readme = adjust_markdown_headers(readme, 2);
             writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+            self.increment_current_level(); // Increment H2 counter
         }
-
-        // Push H2 level before starting sections/modules
-        self.push_level();
 
         // --- Print Top-Level Sections (Macros first, then Modules) ---
 
@@ -4844,7 +4853,6 @@ impl<'a> DocPrinter<'a> {
                 .collect();
 
             if !macro_ids.is_empty() {
-                self.increment_current_level(); // Increment H2 counter for Macros section
                 let section_level = self.get_current_header_level(); // Should be 2
                 let header_prefix = self.get_header_prefix();
                 writeln!(
@@ -4864,6 +4872,7 @@ impl<'a> DocPrinter<'a> {
                     self.print_item_details(&id); // Macro details at level 3
                 }
                 self.pop_level(); // Pop H3 level
+                self.increment_current_level(); // Increment H2 counter
             }
         }
 
