@@ -35,7 +35,7 @@ use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
-use std::fs::File;
+use std::fs::{self, File}; // Import fs module
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
@@ -121,6 +121,10 @@ struct Args {
     /// Output mustache template markers (`{{MISSING_DOCS_1_2_...}}`) instead of the actual documentation for items with docstrings.
     #[arg(long)]
     template: bool,
+
+    /// Do not embed the crate's README file in the output.
+    #[arg(long)]
+    no_readme: bool,
 }
 
 /// Parses a string into an `Id`.
@@ -3009,6 +3013,7 @@ struct ModuleTree {
 
 struct DocPrinter<'a> {
     krate: &'a Crate,
+    readme_content: Option<String>, // Add field for README content
     selected_ids: &'a HashSet<Id>,
     resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
     graph: &'a IdGraph, // Add graph reference
@@ -3024,6 +3029,7 @@ struct DocPrinter<'a> {
 impl<'a> DocPrinter<'a> {
     fn new(
         krate: &'a Crate,
+        readme_content: Option<String>, // Accept README content
         selected_ids: &'a HashSet<Id>,
         resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
         graph: &'a IdGraph, // Add graph parameter
@@ -3033,6 +3039,7 @@ impl<'a> DocPrinter<'a> {
         let module_tree = Self::build_module_tree(krate);
         DocPrinter {
             krate,
+            readme_content, // Store README content
             selected_ids,
             resolved_modules, // Store resolved modules
             graph,            // Store graph reference
@@ -4720,6 +4727,7 @@ impl<'a> DocPrinter<'a> {
     fn clone_with_new_output(&self) -> Self {
         DocPrinter {
             krate: self.krate,
+            readme_content: self.readme_content.clone(), // Clone README content
             selected_ids: self.selected_ids,
             resolved_modules: self.resolved_modules,
             graph: self.graph,
@@ -4734,8 +4742,10 @@ impl<'a> DocPrinter<'a> {
 
     /// Recursive function to print modules and their contents depth-first.
     fn print_module_recursive(&mut self, module_id: Id) {
-        // Skip if not selected or already printed
-        if !self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id) {
+        // Skip if not selected or already printed (except root module)
+        if module_id != self.krate.root
+            && (!self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id))
+        {
             return;
         }
 
@@ -4744,9 +4754,9 @@ impl<'a> DocPrinter<'a> {
             let header_prefix = self.get_header_prefix();
             let module_path_str = format_id_path_canonical(&module_id, self.krate); // Use canonical path
             let display_path = if module_path_str.is_empty() {
-                "::".to_string() // Special case for crate root path string
+                item.name.as_deref().unwrap_or("::") // Use item name for root if path is empty
             } else {
-                module_path_str
+                &module_path_str
             };
 
             // Print module header (always H2)
@@ -4759,7 +4769,8 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
-            self.printed_ids.insert(module_id); // Mark module as printed
+            // Mark module as printed only AFTER printing its header
+            self.printed_ids.insert(module_id);
 
             self.push_level();
 
@@ -4775,8 +4786,7 @@ impl<'a> DocPrinter<'a> {
             // Recursively print child modules
             // Clone children list to avoid borrow checker issue
             if let Some(children) = self.module_tree.children.get(&module_id).cloned() {
-                // Push H2 level again for children (they will increment it themselves)
-                // No, the recursive call will handle incrementing the *current* level.
+                // No need to manage level here, the recursive call handles it
                 for child_id in children {
                     self.print_module_recursive(child_id);
                 }
@@ -4803,6 +4813,14 @@ impl<'a> DocPrinter<'a> {
             crate_version
         )
         .unwrap();
+
+        // Print README content if available
+        if let Some(readme) = &self.readme_content {
+            info!("Injecting README content.");
+            // Adjust headers starting from level 2 (since it's under the H1 crate header)
+            let adjusted_readme = adjust_markdown_headers(readme, 2);
+            writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+        }
 
         // Push H2 level before starting sections/modules
         self.push_level();
@@ -4998,6 +5016,7 @@ impl<'a> DocPrinter<'a> {
 
 fn generate_documentation(
     krate: &Crate,
+    readme_content: Option<String>, // Accept README content
     selected_ids: &HashSet<Id>,
     resolved_modules: &HashMap<Id, ResolvedModule>, // Accept resolved modules
     graph: &IdGraph,                                 // Accept graph
@@ -5014,6 +5033,7 @@ fn generate_documentation(
 
     let printer = DocPrinter::new(
         krate,
+        readme_content, // Pass README content
         selected_ids,
         resolved_modules,
         graph,
@@ -5064,6 +5084,35 @@ async fn main() -> Result<()> {
         .with_context(|| format!("Failed to create build directory: {}", build_path.display()))?;
 
     let crate_dir = download_and_unpack_crate(&client, &target_version, &build_path).await?;
+
+    // --- Locate and Read README ---
+    let readme_content = if args.no_readme {
+        None
+    } else {
+        let readme_md_path = crate_dir.join("README.md");
+        let readme_path = crate_dir.join("README");
+        let readme_file_path = if readme_md_path.exists() {
+            Some(readme_md_path)
+        } else if readme_path.exists() {
+            Some(readme_path)
+        } else {
+            None
+        };
+
+        if let Some(path) = readme_file_path {
+            info!("Found README file: {}", path.display());
+            match fs::read_to_string(&path) {
+                Ok(content) => Some(content),
+                Err(e) => {
+                    warn!("Failed to read README file at {}: {}", path.display(), e);
+                    None
+                }
+            }
+        } else {
+            info!("No README.md or README file found in crate root.");
+            None
+        }
+    };
 
     // Use the *actual* crate name from the API response, as it might differ in casing
     let actual_crate_name = &target_version.crate_name;
@@ -5169,14 +5218,15 @@ async fn main() -> Result<()> {
     }
 
     // --- Generate Documentation ---
-    // Pass resolved modules, full graph, and template flag to documentation generator
+    // Pass resolved modules, full graph, template flag, and README content
     let documentation = generate_documentation(
         &krate,
+        readme_content, // Pass README content here
         &selected_ids,
-        &resolved_modules, // Pass resolved modules
+        &resolved_modules,
         &full_graph,
         args.include_other,
-        args.template, // Pass template flag
+        args.template,
     )?;
 
     // --- Output Documentation ---
