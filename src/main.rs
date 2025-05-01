@@ -32,9 +32,9 @@ use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
-    GenericParamDef, Generics, HeadingLevel, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait,
-    Primitive, Struct, StructKind, Tag, Term, Trait, Type, Variant, VariantKind, WherePredicate,
-}; // Import HeadingLevel and Tag
+    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
+    Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+}; // Removed HeadingLevel and Tag
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
@@ -47,7 +47,7 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 
 // Import pulldown-cmark related items
-use pulldown_cmark::{Event, Parser as CmarkParser};
+use pulldown_cmark::{Event, HeadingLevel, Parser as CmarkParser, Tag, TagEnd}; // Import HeadingLevel, Tag, TagEnd
 use pulldown_cmark_to_cmark::cmark;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
@@ -1987,16 +1987,21 @@ fn adjust_markdown_headers(markdown: &str, base_level: usize) -> String {
         Event::Start(Tag::Heading { level, id, classes, attrs }) => {
             let old_level_usize: usize = level.into();
             let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
-            let new_level = HeadingLevel::try_from(new_level_usize)
-                .unwrap_or(HeadingLevel::H6); // Default to H6 if conversion fails
-            Event::Start(Tag::Heading { level: new_level, id, classes, attrs })
+            // Use pulldown_cmark::HeadingLevel
+            let new_level = pulldown_cmark::HeadingLevel::try_from(new_level_usize)
+                .unwrap_or(pulldown_cmark::HeadingLevel::H6); // Default to H6 if conversion fails
+                                                              // Use pulldown_cmark::Tag
+            Event::Start(pulldown_cmark::Tag::Heading { level: new_level, id, classes, attrs })
         }
-        Event::End(rustdoc_types::TagEnd::Heading(level)) => {
+        Event::End(TagEnd::Heading(level)) => {
+            // Use pulldown_cmark::TagEnd
             let old_level_usize: usize = level.into();
             let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
-            let new_level = HeadingLevel::try_from(new_level_usize)
-                .unwrap_or(HeadingLevel::H6);
-            Event::End(rustdoc_types::TagEnd::Heading(new_level))
+            // Use pulldown_cmark::HeadingLevel
+            let new_level = pulldown_cmark::HeadingLevel::try_from(new_level_usize)
+                .unwrap_or(pulldown_cmark::HeadingLevel::H6);
+            // Use pulldown_cmark::TagEnd
+            Event::End(pulldown_cmark::TagEnd::Heading(new_level))
         }
         _ => event,
     });
