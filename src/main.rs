@@ -4815,11 +4815,6 @@ impl<'a> DocPrinter<'a> {
         // Clear doc path before starting
         self.doc_path.clear();
 
-        // Print Crate Description (if available) - NEW
-        if let Some(desc) = &self.manifest.description {
-            writeln!(self.output, "{}\n", desc).unwrap();
-        }
-
         // Print Crate Header (# Crate Name (Version)) - No prefix
         writeln!(
             self.output,
@@ -4831,6 +4826,11 @@ impl<'a> DocPrinter<'a> {
         .unwrap();
         // Push H2 level before starting sections/modules
         self.push_level();
+
+        // Print Crate Description (if available) - NEW
+        if let Some(desc) = &self.manifest.description {
+            writeln!(self.output, "{}\n", desc).unwrap();
+        }
 
         // Print Manifest Section (H2) - NEW
         let manifest_section_level = self.get_current_header_level(); // Should be 2
