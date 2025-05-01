@@ -4037,13 +4037,6 @@ impl<'a> DocPrinter<'a> {
             |impl_item| matches!(&impl_item.inner, ItemEnum::Impl(i) if i.trait_.is_none()),
         );
 
-        // Increment level for the "Implementations" section
-        //self.increment_current_level();
-        let impl_section_level = self.get_current_header_level();
-
-        // Push a new level for the items *within* the Implementations section
-        //self.push_level();
-
         // --- Inherent Impls ---
         if !inherent_impls.is_empty() {
             for impl_item in inherent_impls {
@@ -4268,8 +4261,6 @@ impl<'a> DocPrinter<'a> {
 
             self.increment_current_level();
         }
-
-        //self.pop_level(); // Pop the Implementations section level
     }
 
     /// Prints implementors *of* a trait. Handles template mode for the impl docs.
@@ -4331,6 +4322,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Helper to format a single-line impl block or trait impl header
+    #[allow(dead_code)] // Keep for potential future use
     fn format_impl_header(&self, imp: &Impl) -> String {
         let mut impl_header = String::new();
         if imp.is_unsafe {
@@ -5189,7 +5181,7 @@ async fn main() -> Result<()> {
 
     // --- Load Cargo.toml ---
     let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest = Manifest::from_path(&manifest_path).with_context(|| {
+    let manifest: Manifest = Manifest::from_path(&manifest_path).with_context(|| {
         format!(
             "Failed to read or parse Cargo.toml: {}",
             manifest_path.display()
@@ -5197,20 +5189,26 @@ async fn main() -> Result<()> {
     })?;
 
     // Extract relevant manifest data (handle potential missing fields)
+    // Use .package field (Option<Package>) then access fields on the Package struct
+    let package_data = manifest.package.as_ref().unwrap(); // Assume package exists
     let manifest_data = CrateManifestData {
-        description: manifest.package().description().map(str::to_string),
-        homepage: manifest.package().homepage().map(str::to_string),
-        repository: manifest.package().repository().map(str::to_string),
-        categories: manifest
-            .package()
-            .categories()
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-        license: manifest.package().license().map(str::to_string),
-        rust_version: manifest.package().rust_version().map(|rv| rv.to_string()), // Adjust if rv is not String
-        edition: manifest.package().edition().to_string().into(), // Assuming edition is always present and displayable
-        features: manifest.features().clone(),                   // Clone the FeatureSet
+        description: package_data.description.as_deref().map(str::to_string),
+        homepage: package_data.homepage.as_deref().map(str::to_string),
+        repository: package_data.repository.as_deref().map(str::to_string),
+        categories: package_data
+            .categories
+            .as_ref()
+            .map(|v| v.clone())
+            .unwrap_or_default(), // Handle Option<MaybeInherited<Vec<String>>>
+        license: package_data.license.as_deref().map(str::to_string),
+        rust_version: package_data.rust_version.as_deref().map(str::to_string),
+        edition: package_data
+            .edition
+            .as_ref()
+            .map(|e| e.to_string())
+            .unwrap_or_default()
+            .into(), // Handle Option<MaybeInherited<Edition>>
+        features: manifest.features.clone().unwrap_or_default(), // Use manifest.features field
     };
 
     // --- Locate and Read README ---
