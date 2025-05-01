@@ -1,7 +1,20 @@
 # rustdoc_types API (0.39.0)
 
+Types for rustdoc's json output
 
-## 1: README
+## 1: Manifest
+
+- Repository: <https://github.com/rust-lang/rustdoc-types>
+- License: MIT OR Apache-2.0
+- edition: `2018`
+
+### 1.1: Features
+
+- `default`
+- `rustc-hash`
+
+
+## 2: README
 
 ### Rustdoc Types
 
@@ -68,7 +81,7 @@ dual licensed as above, without any additional terms or conditions.
 
 
 
-## 2: Module: `rustdoc_types`
+## 3: Module: `rustdoc_types`
 
 Rustdoc's JSON output interface
 
@@ -88,9 +101,9 @@ increase the number of collisions.
 [2]: https://crates.io/crates/rustc-hash
 
 
-### 2.1: Structs
+### 3.1: Structs
 
-#### 2.1.1: `struct AssocItemConstraint`
+#### 3.1.1: `struct AssocItemConstraint`
 
 ```rust
 pub struct AssocItemConstraint {
@@ -108,21 +121,21 @@ IntoIterator<Item = u32, IntoIter: Clone>
              ^^^^^^^^^^  ^^^^^^^^^^^^^^^
 ```
 
-##### 2.1.1.1: Fields
+##### 3.1.1.1: Fields
 
-###### 2.1.1.1.1: `name`
+###### 3.1.1.1.1: `name`
 
 The name of the associated type/constant.
 
-###### 2.1.1.1.2: `args`
+###### 3.1.1.1.2: `args`
 
 Arguments provided to the associated type/constant.
 
-###### 2.1.1.1.3: `binding`
+###### 3.1.1.1.3: `binding`
 
 The kind of bound applied to the associated type/constant.
 
-##### 2.1.1.2: Trait Implementations for `AssocItemConstraint`
+##### 3.1.1.2: Trait Implementations for `AssocItemConstraint`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -158,7 +171,7 @@ The kind of bound applied to the associated type/constant.
     ```
 
 
-#### 2.1.2: `struct Constant`
+#### 3.1.2: `struct Constant`
 
 ```rust
 pub struct Constant {
@@ -170,23 +183,23 @@ pub struct Constant {
 
 A constant.
 
-##### 2.1.2.1: Fields
+##### 3.1.2.1: Fields
 
-###### 2.1.2.1.1: `expr`
+###### 3.1.2.1.1: `expr`
 
 The stringified expression of this constant. Note that its mapping to the original
 source code is unstable and it's not guaranteed that it'll match the source code.
 
-###### 2.1.2.1.2: `value`
+###### 3.1.2.1.2: `value`
 
 The value of the evaluated expression for this constant, which is only computed for numeric
 types.
 
-###### 2.1.2.1.3: `is_literal`
+###### 3.1.2.1.3: `is_literal`
 
 Whether this constant is a bool, numeric, string, or char literal.
 
-##### 2.1.2.2: Trait Implementations for `Constant`
+##### 3.1.2.2: Trait Implementations for `Constant`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -222,7 +235,7 @@ Whether this constant is a bool, numeric, string, or char literal.
     ```
 
 
-#### 2.1.3: `struct Crate`
+#### 3.1.3: `struct Crate`
 
 ```rust
 pub struct Crate {
@@ -242,39 +255,39 @@ It contains all type/documentation information
 about the language items in the local crate, as well as info about external items to allow
 tools to find or link to them.
 
-##### 2.1.3.1: Fields
+##### 3.1.3.1: Fields
 
-###### 2.1.3.1.1: `root`
+###### 3.1.3.1.1: `root`
 
 The id of the root [`Module`] item of the local crate.
 
-###### 2.1.3.1.2: `crate_version`
+###### 3.1.3.1.2: `crate_version`
 
 The version string given to `--crate-version`, if any.
 
-###### 2.1.3.1.3: `includes_private`
+###### 3.1.3.1.3: `includes_private`
 
 Whether or not the output includes private items.
 
-###### 2.1.3.1.4: `index`
+###### 3.1.3.1.4: `index`
 
 A collection of all items in the local crate as well as some external traits and their
 items that are referenced locally.
 
-###### 2.1.3.1.5: `paths`
+###### 3.1.3.1.5: `paths`
 
 Maps IDs to fully qualified paths and other info helpful for generating links.
 
-###### 2.1.3.1.6: `external_crates`
+###### 3.1.3.1.6: `external_crates`
 
 Maps `crate_id` of items to a crate name and html_root_url if it exists.
 
-###### 2.1.3.1.7: `format_version`
+###### 3.1.3.1.7: `format_version`
 
 A single version number to be used in the future when making backwards incompatible changes
 to the JSON output.
 
-##### 2.1.3.2: Trait Implementations for `Crate`
+##### 3.1.3.2: Trait Implementations for `Crate`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -309,7 +322,7 @@ to the JSON output.
     ```
 
 
-#### 2.1.4: `struct Deprecation`
+#### 3.1.4: `struct Deprecation`
 
 ```rust
 pub struct Deprecation {
@@ -320,17 +333,17 @@ pub struct Deprecation {
 
 Information about the deprecation of an [`Item`].
 
-##### 2.1.4.1: Fields
+##### 3.1.4.1: Fields
 
-###### 2.1.4.1.1: `since`
+###### 3.1.4.1.1: `since`
 
 Usually a version number when this [`Item`] first became deprecated.
 
-###### 2.1.4.1.2: `note`
+###### 3.1.4.1.2: `note`
 
 The reason for deprecation and/or what alternatives to use.
 
-##### 2.1.4.2: Trait Implementations for `Deprecation`
+##### 3.1.4.2: Trait Implementations for `Deprecation`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -366,7 +379,7 @@ The reason for deprecation and/or what alternatives to use.
     ```
 
 
-#### 2.1.5: `struct Discriminant`
+#### 3.1.5: `struct Discriminant`
 
 ```rust
 pub struct Discriminant {
@@ -377,9 +390,9 @@ pub struct Discriminant {
 
 The value that distinguishes a variant in an [`Enum`] from other variants.
 
-##### 2.1.5.1: Fields
+##### 3.1.5.1: Fields
 
-###### 2.1.5.1.1: `expr`
+###### 3.1.5.1.1: `expr`
 
 The expression that produced the discriminant.
 
@@ -390,13 +403,13 @@ interpreted.
 In some cases, when the value is too complex, this may be `"{ _ }"`.
 When this occurs is unstable, and may change without notice.
 
-###### 2.1.5.1.2: `value`
+###### 3.1.5.1.2: `value`
 
 The numerical value of the discriminant. Stored as a string due to
 JSON's poor support for large integers, and the fact that it would need
 to store from [`i128::MIN`] to [`u128::MAX`].
 
-##### 2.1.5.2: Trait Implementations for `Discriminant`
+##### 3.1.5.2: Trait Implementations for `Discriminant`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -432,7 +445,7 @@ to store from [`i128::MIN`] to [`u128::MAX`].
     ```
 
 
-#### 2.1.6: `struct DynTrait`
+#### 3.1.6: `struct DynTrait`
 
 ```rust
 pub struct DynTrait {
@@ -443,13 +456,13 @@ pub struct DynTrait {
 
 Dynamic trait object type (`dyn Trait`).
 
-##### 2.1.6.1: Fields
+##### 3.1.6.1: Fields
 
-###### 2.1.6.1.1: `traits`
+###### 3.1.6.1.1: `traits`
 
 All the traits implemented. One of them is the vtable, and the rest must be auto traits.
 
-###### 2.1.6.1.2: `lifetime`
+###### 3.1.6.1.2: `lifetime`
 
 The lifetime of the whole dyn object
 ```text
@@ -459,7 +472,7 @@ dyn Debug + 'static
             this part
 ```
 
-##### 2.1.6.2: Trait Implementations for `DynTrait`
+##### 3.1.6.2: Trait Implementations for `DynTrait`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -495,7 +508,7 @@ dyn Debug + 'static
     ```
 
 
-#### 2.1.7: `struct Enum`
+#### 3.1.7: `struct Enum`
 
 ```rust
 pub struct Enum {
@@ -508,27 +521,27 @@ pub struct Enum {
 
 An `enum`.
 
-##### 2.1.7.1: Fields
+##### 3.1.7.1: Fields
 
-###### 2.1.7.1.1: `generics`
+###### 3.1.7.1.1: `generics`
 
 Information about the type parameters and `where` clauses of the enum.
 
-###### 2.1.7.1.2: `has_stripped_variants`
+###### 3.1.7.1.2: `has_stripped_variants`
 
 Whether any variants have been removed from the result, due to being private or hidden.
 
-###### 2.1.7.1.3: `variants`
+###### 3.1.7.1.3: `variants`
 
 The list of variants in the enum.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Variant`]
 
-###### 2.1.7.1.4: `impls`
+###### 3.1.7.1.4: `impls`
 
 `impl`s for the enum.
 
-##### 2.1.7.2: Trait Implementations for `Enum`
+##### 3.1.7.2: Trait Implementations for `Enum`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -564,7 +577,7 @@ All of the corresponding [`Item`]s are of kind [`ItemEnum::Variant`]
     ```
 
 
-#### 2.1.8: `struct ExternalCrate`
+#### 3.1.8: `struct ExternalCrate`
 
 ```rust
 pub struct ExternalCrate {
@@ -575,9 +588,9 @@ pub struct ExternalCrate {
 
 Metadata of a crate, either the same crate on which `rustdoc` was invoked, or its dependency.
 
-##### 2.1.8.1: Fields
+##### 3.1.8.1: Fields
 
-###### 2.1.8.1.1: `name`
+###### 3.1.8.1.1: `name`
 
 The name of the crate.
 
@@ -588,11 +601,11 @@ this field will be `regex_syntax` (which uses an `_`, not a `-`).
 [crate-name]: https://doc.rust-lang.org/stable/cargo/reference/cargo-targets.html#the-name-field
 [package-name]: https://doc.rust-lang.org/stable/cargo/reference/manifest.html#the-name-field
 
-###### 2.1.8.1.2: `html_root_url`
+###### 3.1.8.1.2: `html_root_url`
 
 The root URL at which the crate's documentation lives.
 
-##### 2.1.8.2: Trait Implementations for `ExternalCrate`
+##### 3.1.8.2: Trait Implementations for `ExternalCrate`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -628,7 +641,7 @@ The root URL at which the crate's documentation lives.
     ```
 
 
-#### 2.1.9: `struct Function`
+#### 3.1.9: `struct Function`
 
 ```rust
 pub struct Function {
@@ -641,25 +654,25 @@ pub struct Function {
 
 A function declaration (including methods and other associated functions).
 
-##### 2.1.9.1: Fields
+##### 3.1.9.1: Fields
 
-###### 2.1.9.1.1: `sig`
+###### 3.1.9.1.1: `sig`
 
 Information about the function signature, or declaration.
 
-###### 2.1.9.1.2: `generics`
+###### 3.1.9.1.2: `generics`
 
 Information about the function’s type parameters and `where` clauses.
 
-###### 2.1.9.1.3: `header`
+###### 3.1.9.1.3: `header`
 
 Information about core properties of the function, e.g. whether it's `const`, its ABI, etc.
 
-###### 2.1.9.1.4: `has_body`
+###### 3.1.9.1.4: `has_body`
 
 Whether the function has a body, i.e. an implementation.
 
-##### 2.1.9.2: Trait Implementations for `Function`
+##### 3.1.9.2: Trait Implementations for `Function`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -695,7 +708,7 @@ Whether the function has a body, i.e. an implementation.
     ```
 
 
-#### 2.1.10: `struct FunctionHeader`
+#### 3.1.10: `struct FunctionHeader`
 
 ```rust
 pub struct FunctionHeader {
@@ -708,25 +721,25 @@ pub struct FunctionHeader {
 
 A set of fundamental properties of a function.
 
-##### 2.1.10.1: Fields
+##### 3.1.10.1: Fields
 
-###### 2.1.10.1.1: `is_const`
+###### 3.1.10.1.1: `is_const`
 
 Is this function marked as `const`?
 
-###### 2.1.10.1.2: `is_unsafe`
+###### 3.1.10.1.2: `is_unsafe`
 
 Is this function unsafe?
 
-###### 2.1.10.1.3: `is_async`
+###### 3.1.10.1.3: `is_async`
 
 Is this function async?
 
-###### 2.1.10.1.4: `abi`
+###### 3.1.10.1.4: `abi`
 
 The ABI used by the function.
 
-##### 2.1.10.2: Trait Implementations for `FunctionHeader`
+##### 3.1.10.2: Trait Implementations for `FunctionHeader`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -762,7 +775,7 @@ The ABI used by the function.
     ```
 
 
-#### 2.1.11: `struct FunctionPointer`
+#### 3.1.11: `struct FunctionPointer`
 
 ```rust
 pub struct FunctionPointer {
@@ -774,13 +787,13 @@ pub struct FunctionPointer {
 
 A type that is a function pointer.
 
-##### 2.1.11.1: Fields
+##### 3.1.11.1: Fields
 
-###### 2.1.11.1.1: `sig`
+###### 3.1.11.1.1: `sig`
 
 The signature of the function.
 
-###### 2.1.11.1.2: `generic_params`
+###### 3.1.11.1.2: `generic_params`
 
 Used for Higher-Rank Trait Bounds (HRTBs)
 
@@ -789,11 +802,11 @@ Used for Higher-Rank Trait Bounds (HRTBs)
 // ^^^^^^^
 ```
 
-###### 2.1.11.1.3: `header`
+###### 3.1.11.1.3: `header`
 
 The core properties of the function, such as the ABI it conforms to, whether it's unsafe, etc.
 
-##### 2.1.11.2: Trait Implementations for `FunctionPointer`
+##### 3.1.11.2: Trait Implementations for `FunctionPointer`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -829,7 +842,7 @@ The core properties of the function, such as the ABI it conforms to, whether it'
     ```
 
 
-#### 2.1.12: `struct FunctionSignature`
+#### 3.1.12: `struct FunctionSignature`
 
 ```rust
 pub struct FunctionSignature {
@@ -841,20 +854,20 @@ pub struct FunctionSignature {
 
 The signature of a function.
 
-##### 2.1.12.1: Fields
+##### 3.1.12.1: Fields
 
-###### 2.1.12.1.1: `inputs`
+###### 3.1.12.1.1: `inputs`
 
 List of argument names and their type.
 
 Note that not all names will be valid identifiers, as some of
 them may be patterns.
 
-###### 2.1.12.1.2: `output`
+###### 3.1.12.1.2: `output`
 
 The output type, if specified.
 
-###### 2.1.12.1.3: `is_c_variadic`
+###### 3.1.12.1.3: `is_c_variadic`
 
 Whether the function accepts an arbitrary amount of trailing arguments the C way.
 
@@ -862,7 +875,7 @@ Whether the function accepts an arbitrary amount of trailing arguments the C way
 fn printf(fmt: &str, ...);
 ```
 
-##### 2.1.12.2: Trait Implementations for `FunctionSignature`
+##### 3.1.12.2: Trait Implementations for `FunctionSignature`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -898,7 +911,7 @@ fn printf(fmt: &str, ...);
     ```
 
 
-#### 2.1.13: `struct GenericParamDef`
+#### 3.1.13: `struct GenericParamDef`
 
 ```rust
 pub struct GenericParamDef {
@@ -909,9 +922,9 @@ pub struct GenericParamDef {
 
 One generic parameter accepted by an item.
 
-##### 2.1.13.1: Fields
+##### 3.1.13.1: Fields
 
-###### 2.1.13.1.1: `name`
+###### 3.1.13.1.1: `name`
 
 Name of the parameter.
 ```rust
@@ -919,12 +932,12 @@ fn f<'resource, Resource>(x: &'resource Resource) {}
 //    ^^^^^^^^  ^^^^^^^^
 ```
 
-###### 2.1.13.1.2: `kind`
+###### 3.1.13.1.2: `kind`
 
 The kind of the parameter and data specific to a particular parameter kind, e.g. type
 bounds.
 
-##### 2.1.13.2: Trait Implementations for `GenericParamDef`
+##### 3.1.13.2: Trait Implementations for `GenericParamDef`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -960,7 +973,7 @@ bounds.
     ```
 
 
-#### 2.1.14: `struct Generics`
+#### 3.1.14: `struct Generics`
 
 ```rust
 pub struct Generics {
@@ -971,17 +984,17 @@ pub struct Generics {
 
 Generic parameters accepted by an item and `where` clauses imposed on it and the parameters.
 
-##### 2.1.14.1: Fields
+##### 3.1.14.1: Fields
 
-###### 2.1.14.1.1: `params`
+###### 3.1.14.1.1: `params`
 
 A list of generic parameter definitions (e.g. `<T: Clone + Hash, U: Copy>`).
 
-###### 2.1.14.1.2: `where_predicates`
+###### 3.1.14.1.2: `where_predicates`
 
 A list of where predicates (e.g. `where T: Iterator, T::Item: Copy`).
 
-##### 2.1.14.2: Trait Implementations for `Generics`
+##### 3.1.14.2: Trait Implementations for `Generics`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1017,7 +1030,7 @@ A list of where predicates (e.g. `where T: Iterator, T::Item: Copy`).
     ```
 
 
-#### 2.1.15: `struct Id`
+#### 3.1.15: `struct Id`
 
 ```rust
 pub struct Id(pub u32);
@@ -1035,7 +1048,7 @@ Rustdoc makes no guarantees about the inner value of Id's. Applications
 should treat them as opaque keys to lookup items, and avoid attempting
 to parse them, or otherwise depend on any implementation details.
 
-##### 2.1.15.1: Trait Implementations for `Id`
+##### 3.1.15.1: Trait Implementations for `Id`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1072,7 +1085,7 @@ to parse them, or otherwise depend on any implementation details.
     ```
 
 
-#### 2.1.16: `struct Impl`
+#### 3.1.16: `struct Impl`
 
 ```rust
 pub struct Impl {
@@ -1090,17 +1103,17 @@ pub struct Impl {
 
 An `impl` block.
 
-##### 2.1.16.1: Fields
+##### 3.1.16.1: Fields
 
-###### 2.1.16.1.1: `is_unsafe`
+###### 3.1.16.1.1: `is_unsafe`
 
 Whether this impl is for an unsafe trait.
 
-###### 2.1.16.1.2: `generics`
+###### 3.1.16.1.2: `generics`
 
 Information about the impl’s type parameters and `where` clauses.
 
-###### 2.1.16.1.3: `provided_trait_methods`
+###### 3.1.16.1.3: `provided_trait_methods`
 
 The list of the names of all the trait methods that weren't mentioned in this impl but
 were provided by the trait itself.
@@ -1115,29 +1128,29 @@ impl PartialEq for Foo {
 ```
 This field will be `["ne"]`, as it has a default implementation defined for it.
 
-###### 2.1.16.1.4: `trait_`
+###### 3.1.16.1.4: `trait_`
 
 The trait being implemented or `None` if the impl is inherent, which means
 `impl Struct {}` as opposed to `impl Trait for Struct {}`.
 
-###### 2.1.16.1.5: `for_`
+###### 3.1.16.1.5: `for_`
 
 The type that the impl block is for.
 
-###### 2.1.16.1.6: `items`
+###### 3.1.16.1.6: `items`
 
 The list of associated items contained in this impl block.
 
-###### 2.1.16.1.7: `is_negative`
+###### 3.1.16.1.7: `is_negative`
 
 Whether this is a negative impl (e.g. `!Sized` or `!Send`).
 
-###### 2.1.16.1.8: `is_synthetic`
+###### 3.1.16.1.8: `is_synthetic`
 
 Whether this is an impl that’s implied by the compiler
 (for autotraits, e.g. `Send` or `Sync`).
 
-##### 2.1.16.2: Trait Implementations for `Impl`
+##### 3.1.16.2: Trait Implementations for `Impl`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1173,7 +1186,7 @@ Whether this is an impl that’s implied by the compiler
     ```
 
 
-#### 2.1.17: `struct Item`
+#### 3.1.17: `struct Item`
 
 ```rust
 pub struct Item {
@@ -1195,41 +1208,41 @@ Anything that can hold documentation - modules, structs, enums, functions, trait
 The `Item` data type holds fields that can apply to any of these,
 and leaves kind-specific details (like function args or enum variants) to the `inner` field.
 
-##### 2.1.17.1: Fields
+##### 3.1.17.1: Fields
 
-###### 2.1.17.1.1: `id`
+###### 3.1.17.1.1: `id`
 
 The unique identifier of this item. Can be used to find this item in various mappings.
 
-###### 2.1.17.1.2: `crate_id`
+###### 3.1.17.1.2: `crate_id`
 
 This can be used as a key to the `external_crates` map of [`Crate`] to see which crate
 this item came from.
 
-###### 2.1.17.1.3: `name`
+###### 3.1.17.1.3: `name`
 
 Some items such as impls don't have names.
 
-###### 2.1.17.1.4: `span`
+###### 3.1.17.1.4: `span`
 
 The source location of this item (absent if it came from a macro expansion or inline
 assembly).
 
-###### 2.1.17.1.5: `visibility`
+###### 3.1.17.1.5: `visibility`
 
 By default all documented items are public, but you can tell rustdoc to output private items
 so this field is needed to differentiate.
 
-###### 2.1.17.1.6: `docs`
+###### 3.1.17.1.6: `docs`
 
 The full markdown docstring of this item. Absent if there is no documentation at all,
 Some("") if there is some documentation but it is empty (EG `#[doc = ""]`).
 
-###### 2.1.17.1.7: `links`
+###### 3.1.17.1.7: `links`
 
 This mapping resolves [intra-doc links](https://github.com/rust-lang/rfcs/blob/master/text/1946-intra-rustdoc-links.md) from the docstring to their IDs
 
-###### 2.1.17.1.8: `attrs`
+###### 3.1.17.1.8: `attrs`
 
 Attributes on this item.
 
@@ -1249,15 +1262,15 @@ Other attributes may appear debug-printed. For example:
 As an internal implementation detail subject to change, this debug-printing format
 is currently equivalent to the HIR pretty-printing of parsed attributes.
 
-###### 2.1.17.1.9: `deprecation`
+###### 3.1.17.1.9: `deprecation`
 
 Information about the item’s deprecation, if present.
 
-###### 2.1.17.1.10: `inner`
+###### 3.1.17.1.10: `inner`
 
 The type-specific fields describing this item.
 
-##### 2.1.17.2: Trait Implementations for `Item`
+##### 3.1.17.2: Trait Implementations for `Item`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1292,7 +1305,7 @@ The type-specific fields describing this item.
     ```
 
 
-#### 2.1.18: `struct ItemSummary`
+#### 3.1.18: `struct ItemSummary`
 
 ```rust
 pub struct ItemSummary {
@@ -1309,14 +1322,14 @@ information. This struct should contain enough to generate a link/reference to t
 question, or can be used by a tool that takes the json output of multiple crates to find
 the actual item definition with all the relevant info.
 
-##### 2.1.18.1: Fields
+##### 3.1.18.1: Fields
 
-###### 2.1.18.1.1: `crate_id`
+###### 3.1.18.1.1: `crate_id`
 
 Can be used to look up the name and html_root_url of the crate this item came from in the
 `external_crates` map.
 
-###### 2.1.18.1.2: `path`
+###### 3.1.18.1.2: `path`
 
 The list of path components for the fully qualified path of this item (e.g.
 `["std", "io", "lazy", "Lazy"]` for `std::io::lazy::Lazy`).
@@ -1326,11 +1339,11 @@ defined. Currently, this is the full path to where the item was defined. Eg
 [`String`] is currently `["alloc", "string", "String"]` and [`HashMap`][`std::collections::HashMap`]
 is `["std", "collections", "hash", "map", "HashMap"]`, but this is subject to change.
 
-###### 2.1.18.1.3: `kind`
+###### 3.1.18.1.3: `kind`
 
 Whether this item is a struct, trait, macro, etc.
 
-##### 2.1.18.2: Trait Implementations for `ItemSummary`
+##### 3.1.18.2: Trait Implementations for `ItemSummary`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1366,7 +1379,7 @@ Whether this item is a struct, trait, macro, etc.
     ```
 
 
-#### 2.1.19: `struct Module`
+#### 3.1.19: `struct Module`
 
 ```rust
 pub struct Module {
@@ -1378,25 +1391,25 @@ pub struct Module {
 
 A module declaration, e.g. `mod foo;` or `mod foo {}`.
 
-##### 2.1.19.1: Fields
+##### 3.1.19.1: Fields
 
-###### 2.1.19.1.1: `is_crate`
+###### 3.1.19.1.1: `is_crate`
 
 Whether this is the root item of a crate.
 
 This item doesn't correspond to any construction in the source code and is generated by the
 compiler.
 
-###### 2.1.19.1.2: `items`
+###### 3.1.19.1.2: `items`
 
 [`Item`]s declared inside this module.
 
-###### 2.1.19.1.3: `is_stripped`
+###### 3.1.19.1.3: `is_stripped`
 
 If `true`, this module is not part of the public API, but it contains
 items that are re-exported as public API.
 
-##### 2.1.19.2: Trait Implementations for `Module`
+##### 3.1.19.2: Trait Implementations for `Module`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1432,7 +1445,7 @@ items that are re-exported as public API.
     ```
 
 
-#### 2.1.20: `struct Path`
+#### 3.1.20: `struct Path`
 
 ```rust
 pub struct Path {
@@ -1444,9 +1457,9 @@ pub struct Path {
 
 A type that has a simple path to it. This is the kind of type of structs, unions, enums, etc.
 
-##### 2.1.20.1: Fields
+##### 3.1.20.1: Fields
 
-###### 2.1.20.1.1: `path`
+###### 3.1.20.1.1: `path`
 
 The path of the type.
 
@@ -1460,11 +1473,11 @@ pub type Vec2 = Vec<i32>; // path: "Vec"
 pub type Vec3 = std::prelude::v1::Vec<i32>; // path: "std::prelude::v1::Vec"
 ```
 
-###### 2.1.20.1.2: `id`
+###### 3.1.20.1.2: `id`
 
 The ID of the type.
 
-###### 2.1.20.1.3: `args`
+###### 3.1.20.1.3: `args`
 
 Generic arguments to the type.
 
@@ -1473,7 +1486,7 @@ std::borrow::Cow<'static, str>
 //              ^^^^^^^^^^^^^^
 ```
 
-##### 2.1.20.2: Trait Implementations for `Path`
+##### 3.1.20.2: Trait Implementations for `Path`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1509,7 +1522,7 @@ std::borrow::Cow<'static, str>
     ```
 
 
-#### 2.1.21: `struct PolyTrait`
+#### 3.1.21: `struct PolyTrait`
 
 ```rust
 pub struct PolyTrait {
@@ -1520,13 +1533,13 @@ pub struct PolyTrait {
 
 A trait and potential HRTBs
 
-##### 2.1.21.1: Fields
+##### 3.1.21.1: Fields
 
-###### 2.1.21.1.1: `trait_`
+###### 3.1.21.1.1: `trait_`
 
 The path to the trait.
 
-###### 2.1.21.1.2: `generic_params`
+###### 3.1.21.1.2: `generic_params`
 
 Used for Higher-Rank Trait Bounds (HRTBs)
 ```text
@@ -1534,7 +1547,7 @@ dyn for<'a> Fn() -> &'a i32"
     ^^^^^^^
 ```
 
-##### 2.1.21.2: Trait Implementations for `PolyTrait`
+##### 3.1.21.2: Trait Implementations for `PolyTrait`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1570,7 +1583,7 @@ dyn for<'a> Fn() -> &'a i32"
     ```
 
 
-#### 2.1.22: `struct Primitive`
+#### 3.1.22: `struct Primitive`
 
 ```rust
 pub struct Primitive {
@@ -1581,17 +1594,17 @@ pub struct Primitive {
 
 A primitive type declaration. Declarations of this kind can only come from the core library.
 
-##### 2.1.22.1: Fields
+##### 3.1.22.1: Fields
 
-###### 2.1.22.1.1: `name`
+###### 3.1.22.1.1: `name`
 
 The name of the type.
 
-###### 2.1.22.1.2: `impls`
+###### 3.1.22.1.2: `impls`
 
 The implementations, inherent and of traits, on the primitive type.
 
-##### 2.1.22.2: Trait Implementations for `Primitive`
+##### 3.1.22.2: Trait Implementations for `Primitive`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1627,7 +1640,7 @@ The implementations, inherent and of traits, on the primitive type.
     ```
 
 
-#### 2.1.23: `struct ProcMacro`
+#### 3.1.23: `struct ProcMacro`
 
 ```rust
 pub struct ProcMacro {
@@ -1638,13 +1651,13 @@ pub struct ProcMacro {
 
 A procedural macro.
 
-##### 2.1.23.1: Fields
+##### 3.1.23.1: Fields
 
-###### 2.1.23.1.1: `kind`
+###### 3.1.23.1.1: `kind`
 
 How this macro is supposed to be called: `foo!()`, `#[foo]` or `#[derive(foo)]`
 
-###### 2.1.23.1.2: `helpers`
+###### 3.1.23.1.2: `helpers`
 
 Helper attributes defined by a macro to be used inside it.
 
@@ -1662,7 +1675,7 @@ enum Option<T> {
 }
 ```
 
-##### 2.1.23.2: Trait Implementations for `ProcMacro`
+##### 3.1.23.2: Trait Implementations for `ProcMacro`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1698,7 +1711,7 @@ enum Option<T> {
     ```
 
 
-#### 2.1.24: `struct Span`
+#### 3.1.24: `struct Span`
 
 ```rust
 pub struct Span {
@@ -1710,21 +1723,21 @@ pub struct Span {
 
 A range of source code.
 
-##### 2.1.24.1: Fields
+##### 3.1.24.1: Fields
 
-###### 2.1.24.1.1: `filename`
+###### 3.1.24.1.1: `filename`
 
 The path to the source file for this span relative to the path `rustdoc` was invoked with.
 
-###### 2.1.24.1.2: `begin`
+###### 3.1.24.1.2: `begin`
 
 Zero indexed Line and Column of the first character of the `Span`
 
-###### 2.1.24.1.3: `end`
+###### 3.1.24.1.3: `end`
 
 Zero indexed Line and Column of the last character of the `Span`
 
-##### 2.1.24.2: Trait Implementations for `Span`
+##### 3.1.24.2: Trait Implementations for `Span`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1760,7 +1773,7 @@ Zero indexed Line and Column of the last character of the `Span`
     ```
 
 
-#### 2.1.25: `struct Static`
+#### 3.1.25: `struct Static`
 
 ```rust
 pub struct Static {
@@ -1773,23 +1786,23 @@ pub struct Static {
 
 A `static` declaration.
 
-##### 2.1.25.1: Fields
+##### 3.1.25.1: Fields
 
-###### 2.1.25.1.1: `type_`
+###### 3.1.25.1.1: `type_`
 
 The type of the static.
 
-###### 2.1.25.1.2: `is_mutable`
+###### 3.1.25.1.2: `is_mutable`
 
 This is `true` for mutable statics, declared as `static mut X: T = f();`
 
-###### 2.1.25.1.3: `expr`
+###### 3.1.25.1.3: `expr`
 
 The stringified expression for the initial value.
 
 It's not guaranteed that it'll match the actual source code for the initial value.
 
-###### 2.1.25.1.4: `is_unsafe`
+###### 3.1.25.1.4: `is_unsafe`
 
 Is the static `unsafe`?
 
@@ -1806,7 +1819,7 @@ static C: i32 = 0;     // safe
 static mut D: i32 = 0; // safe
 ```
 
-##### 2.1.25.2: Trait Implementations for `Static`
+##### 3.1.25.2: Trait Implementations for `Static`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1842,7 +1855,7 @@ static mut D: i32 = 0; // safe
     ```
 
 
-#### 2.1.26: `struct Struct`
+#### 3.1.26: `struct Struct`
 
 ```rust
 pub struct Struct {
@@ -1854,23 +1867,23 @@ pub struct Struct {
 
 A `struct`.
 
-##### 2.1.26.1: Fields
+##### 3.1.26.1: Fields
 
-###### 2.1.26.1.1: `kind`
+###### 3.1.26.1.1: `kind`
 
 The kind of the struct (e.g. unit, tuple-like or struct-like) and the data specific to it,
 i.e. fields.
 
-###### 2.1.26.1.2: `generics`
+###### 3.1.26.1.2: `generics`
 
 The generic parameters and where clauses on this struct.
 
-###### 2.1.26.1.3: `impls`
+###### 3.1.26.1.3: `impls`
 
 All impls (both of traits and inherent) for this struct.
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Impl`].
 
-##### 2.1.26.2: Trait Implementations for `Struct`
+##### 3.1.26.2: Trait Implementations for `Struct`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1906,7 +1919,7 @@ All of the corresponding [`Item`]s are of kind [`ItemEnum::Impl`].
     ```
 
 
-#### 2.1.27: `struct Trait`
+#### 3.1.27: `struct Trait`
 
 ```rust
 pub struct Trait {
@@ -1922,40 +1935,40 @@ pub struct Trait {
 
 A `trait` declaration.
 
-##### 2.1.27.1: Fields
+##### 3.1.27.1: Fields
 
-###### 2.1.27.1.1: `is_auto`
+###### 3.1.27.1.1: `is_auto`
 
 Whether the trait is marked `auto` and is thus implemented automatically
 for all applicable types.
 
-###### 2.1.27.1.2: `is_unsafe`
+###### 3.1.27.1.2: `is_unsafe`
 
 Whether the trait is marked as `unsafe`.
 
-###### 2.1.27.1.3: `is_dyn_compatible`
+###### 3.1.27.1.3: `is_dyn_compatible`
 
 Whether the trait is [dyn compatible](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)[^1].
 
 [^1]: Formerly known as "object safe".
 
-###### 2.1.27.1.4: `items`
+###### 3.1.27.1.4: `items`
 
 Associated [`Item`]s that can/must be implemented by the `impl` blocks.
 
-###### 2.1.27.1.5: `generics`
+###### 3.1.27.1.5: `generics`
 
 Information about the type parameters and `where` clauses of the trait.
 
-###### 2.1.27.1.6: `bounds`
+###### 3.1.27.1.6: `bounds`
 
 Constraints that must be met by the implementor of the trait.
 
-###### 2.1.27.1.7: `implementations`
+###### 3.1.27.1.7: `implementations`
 
 The implementations of the trait.
 
-##### 2.1.27.2: Trait Implementations for `Trait`
+##### 3.1.27.2: Trait Implementations for `Trait`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -1991,7 +2004,7 @@ The implementations of the trait.
     ```
 
 
-#### 2.1.28: `struct TraitAlias`
+#### 3.1.28: `struct TraitAlias`
 
 ```rust
 pub struct TraitAlias {
@@ -2004,17 +2017,17 @@ A trait alias declaration, e.g. `trait Int = Add + Sub + Mul + Div;`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/41517)
 
-##### 2.1.28.1: Fields
+##### 3.1.28.1: Fields
 
-###### 2.1.28.1.1: `generics`
+###### 3.1.28.1.1: `generics`
 
 Information about the type parameters and `where` clauses of the alias.
 
-###### 2.1.28.1.2: `params`
+###### 3.1.28.1.2: `params`
 
 The bounds that are associated with the alias.
 
-##### 2.1.28.2: Trait Implementations for `TraitAlias`
+##### 3.1.28.2: Trait Implementations for `TraitAlias`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2050,7 +2063,7 @@ The bounds that are associated with the alias.
     ```
 
 
-#### 2.1.29: `struct TypeAlias`
+#### 3.1.29: `struct TypeAlias`
 
 ```rust
 pub struct TypeAlias {
@@ -2061,17 +2074,17 @@ pub struct TypeAlias {
 
 A type alias declaration, e.g. `type Pig = std::borrow::Cow<'static, str>;`
 
-##### 2.1.29.1: Fields
+##### 3.1.29.1: Fields
 
-###### 2.1.29.1.1: `type_`
+###### 3.1.29.1.1: `type_`
 
 The type referred to by this alias.
 
-###### 2.1.29.1.2: `generics`
+###### 3.1.29.1.2: `generics`
 
 Information about the type parameters and `where` clauses of the alias.
 
-##### 2.1.29.2: Trait Implementations for `TypeAlias`
+##### 3.1.29.2: Trait Implementations for `TypeAlias`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2107,7 +2120,7 @@ Information about the type parameters and `where` clauses of the alias.
     ```
 
 
-#### 2.1.30: `struct Union`
+#### 3.1.30: `struct Union`
 
 ```rust
 pub struct Union {
@@ -2120,29 +2133,29 @@ pub struct Union {
 
 A `union`.
 
-##### 2.1.30.1: Fields
+##### 3.1.30.1: Fields
 
-###### 2.1.30.1.1: `generics`
+###### 3.1.30.1.1: `generics`
 
 The generic parameters and where clauses on this union.
 
-###### 2.1.30.1.2: `has_stripped_fields`
+###### 3.1.30.1.2: `has_stripped_fields`
 
 Whether any fields have been removed from the result, due to being private or hidden.
 
-###### 2.1.30.1.3: `fields`
+###### 3.1.30.1.3: `fields`
 
 The list of fields in the union.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::StructField`].
 
-###### 2.1.30.1.4: `impls`
+###### 3.1.30.1.4: `impls`
 
 All impls (both of traits and inherent) for this union.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Impl`].
 
-##### 2.1.30.2: Trait Implementations for `Union`
+##### 3.1.30.2: Trait Implementations for `Union`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2178,7 +2191,7 @@ All of the corresponding [`Item`]s are of kind [`ItemEnum::Impl`].
     ```
 
 
-#### 2.1.31: `struct Use`
+#### 3.1.31: `struct Use`
 
 ```rust
 pub struct Use {
@@ -2191,29 +2204,29 @@ pub struct Use {
 
 A `use` statement.
 
-##### 2.1.31.1: Fields
+##### 3.1.31.1: Fields
 
-###### 2.1.31.1.1: `source`
+###### 3.1.31.1.1: `source`
 
 The full path being imported.
 
-###### 2.1.31.1.2: `name`
+###### 3.1.31.1.2: `name`
 
 May be different from the last segment of `source` when renaming imports:
 `use source as name;`
 
-###### 2.1.31.1.3: `id`
+###### 3.1.31.1.3: `id`
 
 The ID of the item being imported. Will be `None` in case of re-exports of primitives:
 ```rust
 pub use i32 as my_i32;
 ```
 
-###### 2.1.31.1.4: `is_glob`
+###### 3.1.31.1.4: `is_glob`
 
 Whether this statement is a wildcard `use`, e.g. `use source::*;`
 
-##### 2.1.31.2: Trait Implementations for `Use`
+##### 3.1.31.2: Trait Implementations for `Use`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2249,7 +2262,7 @@ Whether this statement is a wildcard `use`, e.g. `use source::*;`
     ```
 
 
-#### 2.1.32: `struct Variant`
+#### 3.1.32: `struct Variant`
 
 ```rust
 pub struct Variant {
@@ -2260,17 +2273,17 @@ pub struct Variant {
 
 A variant of an enum.
 
-##### 2.1.32.1: Fields
+##### 3.1.32.1: Fields
 
-###### 2.1.32.1.1: `kind`
+###### 3.1.32.1.1: `kind`
 
 Whether the variant is plain, a tuple-like, or struct-like. Contains the fields.
 
-###### 2.1.32.1.2: `discriminant`
+###### 3.1.32.1.2: `discriminant`
 
 The discriminant, if explicitly specified.
 
-##### 2.1.32.2: Trait Implementations for `Variant`
+##### 3.1.32.2: Trait Implementations for `Variant`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2306,9 +2319,9 @@ The discriminant, if explicitly specified.
     ```
 
 
-### 2.2: Enums
+### 3.2: Enums
 
-#### 2.2.1: `enum Abi`
+#### 3.2.1: `enum Abi`
 
 ```rust
 pub enum Abi {
@@ -2334,49 +2347,49 @@ latter variant.
 See the [Rustonomicon section](https://doc.rust-lang.org/nightly/nomicon/ffi.html#ffi-and-unwinding)
 on unwinding for more info.
 
-##### 2.2.1.2: Variants
+##### 3.2.1.2: Variants
 
-###### 2.2.1.2.2: `Rust`
+###### 3.2.1.2.2: `Rust`
 
 The default ABI, but that can also be written explicitly with `extern "Rust"`.
 
-###### 2.2.1.2.3: `C { unwind: bool }`
+###### 3.2.1.2.3: `C { unwind: bool }`
 
 Can be specified as `extern "C"` or, as a shorthand, just `extern`.
 
-###### 2.2.1.2.4: `Cdecl { unwind: bool }`
+###### 3.2.1.2.4: `Cdecl { unwind: bool }`
 
 Can be specified as `extern "cdecl"`.
 
-###### 2.2.1.2.5: `Stdcall { unwind: bool }`
+###### 3.2.1.2.5: `Stdcall { unwind: bool }`
 
 Can be specified as `extern "stdcall"`.
 
-###### 2.2.1.2.6: `Fastcall { unwind: bool }`
+###### 3.2.1.2.6: `Fastcall { unwind: bool }`
 
 Can be specified as `extern "fastcall"`.
 
-###### 2.2.1.2.7: `Aapcs { unwind: bool }`
+###### 3.2.1.2.7: `Aapcs { unwind: bool }`
 
 Can be specified as `extern "aapcs"`.
 
-###### 2.2.1.2.8: `Win64 { unwind: bool }`
+###### 3.2.1.2.8: `Win64 { unwind: bool }`
 
 Can be specified as `extern "win64"`.
 
-###### 2.2.1.2.9: `SysV64 { unwind: bool }`
+###### 3.2.1.2.9: `SysV64 { unwind: bool }`
 
 Can be specified as `extern "sysv64"`.
 
-###### 2.2.1.2.10: `System { unwind: bool }`
+###### 3.2.1.2.10: `System { unwind: bool }`
 
 Can be specified as `extern "system"`.
 
-###### 2.2.1.2.11: `Other(String)`
+###### 3.2.1.2.11: `Other(String)`
 
 Any other ABI, including unstable ones.
 
-##### 2.2.1.2: Trait Implementations for `Abi`
+##### 3.2.1.2: Trait Implementations for `Abi`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2412,7 +2425,7 @@ Any other ABI, including unstable ones.
     ```
 
 
-#### 2.2.2: `enum AssocItemConstraintKind`
+#### 3.2.2: `enum AssocItemConstraintKind`
 
 ```rust
 pub enum AssocItemConstraintKind {
@@ -2423,9 +2436,9 @@ pub enum AssocItemConstraintKind {
 
 The way in which an associate type/constant is bound.
 
-##### 2.2.2.2: Variants
+##### 3.2.2.2: Variants
 
-###### 2.2.2.2.2: `Equality(rustdoc_types::Term)`
+###### 3.2.2.2.2: `Equality(rustdoc_types::Term)`
 
 The required value/type is specified exactly. e.g.
 ```text
@@ -2433,7 +2446,7 @@ Iterator<Item = u32, IntoIter: DoubleEndedIterator>
          ^^^^^^^^^^
 ```
 
-###### 2.2.2.2.3: `Constraint(Vec<rustdoc_types::GenericBound>)`
+###### 3.2.2.2.3: `Constraint(Vec<rustdoc_types::GenericBound>)`
 
 The type is required to satisfy a set of bounds.
 ```text
@@ -2441,7 +2454,7 @@ Iterator<Item = u32, IntoIter: DoubleEndedIterator>
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-##### 2.2.2.2: Trait Implementations for `AssocItemConstraintKind`
+##### 3.2.2.2: Trait Implementations for `AssocItemConstraintKind`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2477,7 +2490,7 @@ Iterator<Item = u32, IntoIter: DoubleEndedIterator>
     ```
 
 
-#### 2.2.3: `enum GenericArg`
+#### 3.2.3: `enum GenericArg`
 
 ```rust
 pub enum GenericArg {
@@ -2492,9 +2505,9 @@ One argument in a list of generic arguments to a path segment.
 
 Part of [`GenericArgs`].
 
-##### 2.2.3.2: Variants
+##### 3.2.3.2: Variants
 
-###### 2.2.3.2.2: `Lifetime(String)`
+###### 3.2.3.2.2: `Lifetime(String)`
 
 A lifetime argument.
 ```text
@@ -2502,7 +2515,7 @@ std::borrow::Cow<'static, str>
                  ^^^^^^^
 ```
 
-###### 2.2.3.2.3: `Type(rustdoc_types::Type)`
+###### 3.2.3.2.3: `Type(rustdoc_types::Type)`
 
 A type argument.
 ```text
@@ -2510,7 +2523,7 @@ std::borrow::Cow<'static, str>
                           ^^^
 ```
 
-###### 2.2.3.2.4: `Const(rustdoc_types::Constant)`
+###### 3.2.3.2.4: `Const(rustdoc_types::Constant)`
 
 A constant as a generic argument.
 ```text
@@ -2518,7 +2531,7 @@ core::array::IntoIter<u32, { 640 * 1024 }>
                            ^^^^^^^^^^^^^^
 ```
 
-###### 2.2.3.2.5: `Infer`
+###### 3.2.3.2.5: `Infer`
 
 A generic argument that's explicitly set to be inferred.
 ```text
@@ -2526,7 +2539,7 @@ std::vec::Vec::<_>::new()
                 ^
 ```
 
-##### 2.2.3.2: Trait Implementations for `GenericArg`
+##### 3.2.3.2: Trait Implementations for `GenericArg`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2562,7 +2575,7 @@ std::vec::Vec::<_>::new()
     ```
 
 
-#### 2.2.4: `enum GenericArgs`
+#### 3.2.4: `enum GenericArgs`
 
 ```rust
 pub enum GenericArgs {
@@ -2579,15 +2592,15 @@ std::option::Option::<u32>::None
                      ^^^^^
 ```
 
-##### 2.2.4.2: Variants
+##### 3.2.4.2: Variants
 
-###### 2.2.4.2.2: `AngleBracketed { args: Vec<rustdoc_types::GenericArg>, constraints: Vec<rustdoc_types::AssocItemConstraint> }`
+###### 3.2.4.2.2: `AngleBracketed { args: Vec<rustdoc_types::GenericArg>, constraints: Vec<rustdoc_types::AssocItemConstraint> }`
 
 `<'a, 32, B: Copy, C = u32>`
 
-####### 2.2.4.2.2.2: Fields
+####### 3.2.4.2.2.2: Fields
 
-######## 2.2.4.2.2.2.2: `args`
+######## 3.2.4.2.2.2.2: `args`
 
 The list of each argument on this type.
 ```text
@@ -2595,29 +2608,29 @@ The list of each argument on this type.
  ^^^^^^
 ```
 
-######## 2.2.4.2.2.2.3: `constraints`
+######## 3.2.4.2.2.2.3: `constraints`
 
 Associated type or constant bindings (e.g. `Item=i32` or `Item: Clone`) for this type.
 
-###### 2.2.4.2.3: `Parenthesized { inputs: Vec<rustdoc_types::Type>, output: option::Option<rustdoc_types::Type> }`
+###### 3.2.4.2.3: `Parenthesized { inputs: Vec<rustdoc_types::Type>, output: option::Option<rustdoc_types::Type> }`
 
 `Fn(A, B) -> C`
 
-####### 2.2.4.2.3.2: Fields
+####### 3.2.4.2.3.2: Fields
 
-######## 2.2.4.2.3.2.2: `inputs`
+######## 3.2.4.2.3.2.2: `inputs`
 
 The input types, enclosed in parentheses.
 
-######## 2.2.4.2.3.2.3: `output`
+######## 3.2.4.2.3.2.3: `output`
 
 The output type provided after the `->`, if present.
 
-###### 2.2.4.2.4: `ReturnTypeNotation`
+###### 3.2.4.2.4: `ReturnTypeNotation`
 
 `T::method(..)`
 
-##### 2.2.4.2: Trait Implementations for `GenericArgs`
+##### 3.2.4.2: Trait Implementations for `GenericArgs`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2653,7 +2666,7 @@ The output type provided after the `->`, if present.
     ```
 
 
-#### 2.2.5: `enum GenericBound`
+#### 3.2.5: `enum GenericBound`
 
 ```rust
 pub enum GenericBound {
@@ -2665,19 +2678,19 @@ pub enum GenericBound {
 
 Either a trait bound or a lifetime bound.
 
-##### 2.2.5.2: Variants
+##### 3.2.5.2: Variants
 
-###### 2.2.5.2.2: `TraitBound { trait_: rustdoc_types::Path, generic_params: Vec<rustdoc_types::GenericParamDef>, modifier: rustdoc_types::TraitBoundModifier }`
+###### 3.2.5.2.2: `TraitBound { trait_: rustdoc_types::Path, generic_params: Vec<rustdoc_types::GenericParamDef>, modifier: rustdoc_types::TraitBoundModifier }`
 
 A trait bound.
 
-####### 2.2.5.2.2.2: Fields
+####### 3.2.5.2.2.2: Fields
 
-######## 2.2.5.2.2.2.2: `trait_`
+######## 3.2.5.2.2.2.2: `trait_`
 
 The full path to the trait.
 
-######## 2.2.5.2.2.2.3: `generic_params`
+######## 3.2.5.2.2.2.3: `generic_params`
 
 Used for Higher-Rank Trait Bounds (HRTBs)
 ```text
@@ -2687,11 +2700,11 @@ where F: for<'a, 'b> Fn(&'a u8, &'b u8)
          this part
 ```
 
-######## 2.2.5.2.2.2.4: `modifier`
+######## 3.2.5.2.2.2.4: `modifier`
 
 The context for which a trait is supposed to be used, e.g. `const
 
-###### 2.2.5.2.3: `Outlives(String)`
+###### 3.2.5.2.3: `Outlives(String)`
 
 A lifetime bound, e.g.
 ```rust
@@ -2699,11 +2712,11 @@ fn f<'a, T>(x: &'a str, y: &T) where T: 'a {}
 //                                     ^^^
 ```
 
-###### 2.2.5.2.4: `Use(Vec<rustdoc_types::PreciseCapturingArg>)`
+###### 3.2.5.2.4: `Use(Vec<rustdoc_types::PreciseCapturingArg>)`
 
 `use<'a, T>` precise-capturing bound syntax
 
-##### 2.2.5.2: Trait Implementations for `GenericBound`
+##### 3.2.5.2: Trait Implementations for `GenericBound`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2739,7 +2752,7 @@ fn f<'a, T>(x: &'a str, y: &T) where T: 'a {}
     ```
 
 
-#### 2.2.6: `enum GenericParamDefKind`
+#### 3.2.6: `enum GenericParamDefKind`
 
 ```rust
 pub enum GenericParamDefKind {
@@ -2751,15 +2764,15 @@ pub enum GenericParamDefKind {
 
 The kind of a [`GenericParamDef`].
 
-##### 2.2.6.2: Variants
+##### 3.2.6.2: Variants
 
-###### 2.2.6.2.2: `Lifetime { outlives: Vec<String> }`
+###### 3.2.6.2.2: `Lifetime { outlives: Vec<String> }`
 
 Denotes a lifetime parameter.
 
-####### 2.2.6.2.2.2: Fields
+####### 3.2.6.2.2.2: Fields
 
-######## 2.2.6.2.2.2.2: `outlives`
+######## 3.2.6.2.2.2.2: `outlives`
 
 Lifetimes that this lifetime parameter is required to outlive.
 
@@ -2768,13 +2781,13 @@ fn f<'a, 'b, 'resource: 'a + 'b>(a: &'a str, b: &'b str, res: &'resource str) {}
 //                      ^^^^^^^
 ```
 
-###### 2.2.6.2.3: `Type { bounds: Vec<rustdoc_types::GenericBound>, default: option::Option<rustdoc_types::Type>, is_synthetic: bool }`
+###### 3.2.6.2.3: `Type { bounds: Vec<rustdoc_types::GenericBound>, default: option::Option<rustdoc_types::Type>, is_synthetic: bool }`
 
 Denotes a type parameter.
 
-####### 2.2.6.2.3.2: Fields
+####### 3.2.6.2.3.2: Fields
 
-######## 2.2.6.2.3.2.2: `bounds`
+######## 3.2.6.2.3.2.2: `bounds`
 
 Bounds applied directly to the type. Note that the bounds from `where` clauses
 that constrain this parameter won't appear here.
@@ -2784,7 +2797,7 @@ fn default2<T: Default>() -> [T; 2] where T: Clone { todo!() }
 //             ^^^^^^^
 ```
 
-######## 2.2.6.2.3.2.3: `default`
+######## 3.2.6.2.3.2.3: `default`
 
 The default type for this parameter, if provided, e.g.
 
@@ -2793,7 +2806,7 @@ trait PartialEq<Rhs = Self> {}
 //                    ^^^^
 ```
 
-######## 2.2.6.2.3.2.4: `is_synthetic`
+######## 3.2.6.2.3.2.4: `is_synthetic`
 
 This is normally `false`, which means that this generic parameter is
 declared in the Rust source text.
@@ -2819,22 +2832,22 @@ In this example, the generic parameter named `impl Trait` (and which
 is bound by `Trait`) is synthetic, because it was not originally in
 the Rust source text.
 
-###### 2.2.6.2.4: `Const { type_: rustdoc_types::Type, default: option::Option<String> }`
+###### 3.2.6.2.4: `Const { type_: rustdoc_types::Type, default: option::Option<String> }`
 
 Denotes a constant parameter.
 
-####### 2.2.6.2.4.2: Fields
+####### 3.2.6.2.4.2: Fields
 
-######## 2.2.6.2.4.2.2: `type_`
+######## 3.2.6.2.4.2.2: `type_`
 
 The type of the constant as declared.
 
-######## 2.2.6.2.4.2.3: `default`
+######## 3.2.6.2.4.2.3: `default`
 
 The stringified expression for the default value, if provided. It's not guaranteed that
 it'll match the actual source code for the default value.
 
-##### 2.2.6.2: Trait Implementations for `GenericParamDefKind`
+##### 3.2.6.2: Trait Implementations for `GenericParamDefKind`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -2870,7 +2883,7 @@ it'll match the actual source code for the default value.
     ```
 
 
-#### 2.2.7: `enum ItemEnum`
+#### 3.2.7: `enum ItemEnum`
 
 ```rust
 pub enum ItemEnum {
@@ -2902,122 +2915,122 @@ Specific fields of an item.
 
 Part of [`Item`].
 
-##### 2.2.7.2: Variants
+##### 3.2.7.2: Variants
 
-###### 2.2.7.2.2: `Module(rustdoc_types::Module)`
+###### 3.2.7.2.2: `Module(rustdoc_types::Module)`
 
 A module declaration, e.g. `mod foo;` or `mod foo {}`
 
-###### 2.2.7.2.3: `ExternCrate { name: String, rename: option::Option<String> }`
+###### 3.2.7.2.3: `ExternCrate { name: String, rename: option::Option<String> }`
 
 A crate imported via the `extern crate` syntax.
 
-####### 2.2.7.2.3.2: Fields
+####### 3.2.7.2.3.2: Fields
 
-######## 2.2.7.2.3.2.2: `name`
+######## 3.2.7.2.3.2.2: `name`
 
 The name of the imported crate.
 
-######## 2.2.7.2.3.2.3: `rename`
+######## 3.2.7.2.3.2.3: `rename`
 
 If the crate is renamed, this is its name in the crate.
 
-###### 2.2.7.2.4: `Use(rustdoc_types::Use)`
+###### 3.2.7.2.4: `Use(rustdoc_types::Use)`
 
 An import of 1 or more items into scope, using the `use` keyword.
 
-###### 2.2.7.2.5: `Union(rustdoc_types::Union)`
+###### 3.2.7.2.5: `Union(rustdoc_types::Union)`
 
 A `union` declaration.
 
-###### 2.2.7.2.6: `Struct(rustdoc_types::Struct)`
+###### 3.2.7.2.6: `Struct(rustdoc_types::Struct)`
 
 A `struct` declaration.
 
-###### 2.2.7.2.7: `StructField(rustdoc_types::Type)`
+###### 3.2.7.2.7: `StructField(rustdoc_types::Type)`
 
 A field of a struct.
 
-###### 2.2.7.2.8: `Enum(rustdoc_types::Enum)`
+###### 3.2.7.2.8: `Enum(rustdoc_types::Enum)`
 
 An `enum` declaration.
 
-###### 2.2.7.2.9: `Variant(rustdoc_types::Variant)`
+###### 3.2.7.2.9: `Variant(rustdoc_types::Variant)`
 
 A variant of a enum.
 
-###### 2.2.7.2.10: `Function(rustdoc_types::Function)`
+###### 3.2.7.2.10: `Function(rustdoc_types::Function)`
 
 A function declaration (including methods and other associated functions)
 
-###### 2.2.7.2.11: `Trait(rustdoc_types::Trait)`
+###### 3.2.7.2.11: `Trait(rustdoc_types::Trait)`
 
 A `trait` declaration.
 
-###### 2.2.7.2.12: `TraitAlias(rustdoc_types::TraitAlias)`
+###### 3.2.7.2.12: `TraitAlias(rustdoc_types::TraitAlias)`
 
 A trait alias declaration, e.g. `trait Int = Add + Sub + Mul + Div;`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/41517)
 
-###### 2.2.7.2.13: `Impl(rustdoc_types::Impl)`
+###### 3.2.7.2.13: `Impl(rustdoc_types::Impl)`
 
 An `impl` block.
 
-###### 2.2.7.2.14: `TypeAlias(rustdoc_types::TypeAlias)`
+###### 3.2.7.2.14: `TypeAlias(rustdoc_types::TypeAlias)`
 
 A type alias declaration, e.g. `type Pig = std::borrow::Cow<'static, str>;`
 
-###### 2.2.7.2.15: `Constant { type_: rustdoc_types::Type, const_: rustdoc_types::Constant }`
+###### 3.2.7.2.15: `Constant { type_: rustdoc_types::Type, const_: rustdoc_types::Constant }`
 
 The declaration of a constant, e.g. `const GREETING: &str = "Hi :3";`
 
-####### 2.2.7.2.15.2: Fields
+####### 3.2.7.2.15.2: Fields
 
-######## 2.2.7.2.15.2.2: `type_`
+######## 3.2.7.2.15.2.2: `type_`
 
 The type of the constant.
 
-######## 2.2.7.2.15.2.3: `const_`
+######## 3.2.7.2.15.2.3: `const_`
 
 The declared constant itself.
 
-###### 2.2.7.2.16: `Static(rustdoc_types::Static)`
+###### 3.2.7.2.16: `Static(rustdoc_types::Static)`
 
 A declaration of a `static`.
 
-###### 2.2.7.2.17: `ExternType`
+###### 3.2.7.2.17: `ExternType`
 
 `type`s from an `extern` block.
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/43467)
 
-###### 2.2.7.2.18: `Macro(String)`
+###### 3.2.7.2.18: `Macro(String)`
 
 A macro_rules! declarative macro. Contains a single string with the source
 representation of the macro with the patterns stripped.
 
-###### 2.2.7.2.19: `ProcMacro(rustdoc_types::ProcMacro)`
+###### 3.2.7.2.19: `ProcMacro(rustdoc_types::ProcMacro)`
 
 A procedural macro.
 
-###### 2.2.7.2.20: `Primitive(rustdoc_types::Primitive)`
+###### 3.2.7.2.20: `Primitive(rustdoc_types::Primitive)`
 
 A primitive type, e.g. `u32`.
 
 [`Item`]s of this kind only come from the core library.
 
-###### 2.2.7.2.21: `AssocConst { type_: rustdoc_types::Type, value: option::Option<String> }`
+###### 3.2.7.2.21: `AssocConst { type_: rustdoc_types::Type, value: option::Option<String> }`
 
 An associated constant of a trait or a type.
 
-####### 2.2.7.2.21.2: Fields
+####### 3.2.7.2.21.2: Fields
 
-######## 2.2.7.2.21.2.2: `type_`
+######## 3.2.7.2.21.2.2: `type_`
 
 The type of the constant.
 
-######## 2.2.7.2.21.2.3: `value`
+######## 3.2.7.2.21.2.3: `value`
 
 Inside a trait declaration, this is the default value for the associated constant,
 if provided.
@@ -3032,17 +3045,17 @@ const X: usize = 640 * 1024;
 //               ^^^^^^^^^^
 ```
 
-###### 2.2.7.2.22: `AssocType { generics: rustdoc_types::Generics, bounds: Vec<rustdoc_types::GenericBound>, type_: option::Option<rustdoc_types::Type> }`
+###### 3.2.7.2.22: `AssocType { generics: rustdoc_types::Generics, bounds: Vec<rustdoc_types::GenericBound>, type_: option::Option<rustdoc_types::Type> }`
 
 An associated type of a trait or a type.
 
-####### 2.2.7.2.22.2: Fields
+####### 3.2.7.2.22.2: Fields
 
-######## 2.2.7.2.22.2.2: `generics`
+######## 3.2.7.2.22.2.2: `generics`
 
 The generic parameters and where clauses on ahis associated type.
 
-######## 2.2.7.2.22.2.3: `bounds`
+######## 3.2.7.2.22.2.3: `bounds`
 
 The bounds for this associated type. e.g.
 ```rust
@@ -3053,7 +3066,7 @@ trait IntoIterator {
 }
 ```
 
-######## 2.2.7.2.22.2.4: `type_`
+######## 3.2.7.2.22.2.4: `type_`
 
 Inside a trait declaration, this is the default for the associated type, if provided.
 Inside an impl block, this is the type assigned to the associated type, and will always
@@ -3064,7 +3077,7 @@ type X = usize;
 //       ^^^^^
 ```
 
-##### 2.2.7.2: Trait Implementations for `ItemEnum`
+##### 3.2.7.2: Trait Implementations for `ItemEnum`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3100,7 +3113,7 @@ type X = usize;
     ```
 
 
-#### 2.2.8: `enum ItemKind`
+#### 3.2.8: `enum ItemKind`
 
 ```rust
 pub enum ItemKind {
@@ -3134,117 +3147,117 @@ The fundamental kind of an item. Unlike [`ItemEnum`], this does not carry any ad
 
 Part of [`ItemSummary`].
 
-##### 2.2.8.2: Variants
+##### 3.2.8.2: Variants
 
-###### 2.2.8.2.2: `Module`
+###### 3.2.8.2.2: `Module`
 
 A module declaration, e.g. `mod foo;` or `mod foo {}`
 
-###### 2.2.8.2.3: `ExternCrate`
+###### 3.2.8.2.3: `ExternCrate`
 
 A crate imported via the `extern crate` syntax.
 
-###### 2.2.8.2.4: `Use`
+###### 3.2.8.2.4: `Use`
 
 An import of 1 or more items into scope, using the `use` keyword.
 
-###### 2.2.8.2.5: `Struct`
+###### 3.2.8.2.5: `Struct`
 
 A `struct` declaration.
 
-###### 2.2.8.2.6: `StructField`
+###### 3.2.8.2.6: `StructField`
 
 A field of a struct.
 
-###### 2.2.8.2.7: `Union`
+###### 3.2.8.2.7: `Union`
 
 A `union` declaration.
 
-###### 2.2.8.2.8: `Enum`
+###### 3.2.8.2.8: `Enum`
 
 An `enum` declaration.
 
-###### 2.2.8.2.9: `Variant`
+###### 3.2.8.2.9: `Variant`
 
 A variant of a enum.
 
-###### 2.2.8.2.10: `Function`
+###### 3.2.8.2.10: `Function`
 
 A function declaration, e.g. `fn f() {}`
 
-###### 2.2.8.2.11: `TypeAlias`
+###### 3.2.8.2.11: `TypeAlias`
 
 A type alias declaration, e.g. `type Pig = std::borrow::Cow<'static, str>;`
 
-###### 2.2.8.2.12: `Constant`
+###### 3.2.8.2.12: `Constant`
 
 The declaration of a constant, e.g. `const GREETING: &str = "Hi :3";`
 
-###### 2.2.8.2.13: `Trait`
+###### 3.2.8.2.13: `Trait`
 
 A `trait` declaration.
 
-###### 2.2.8.2.14: `TraitAlias`
+###### 3.2.8.2.14: `TraitAlias`
 
 A trait alias declaration, e.g. `trait Int = Add + Sub + Mul + Div;`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/41517)
 
-###### 2.2.8.2.15: `Impl`
+###### 3.2.8.2.15: `Impl`
 
 An `impl` block.
 
-###### 2.2.8.2.16: `Static`
+###### 3.2.8.2.16: `Static`
 
 A `static` declaration.
 
-###### 2.2.8.2.17: `ExternType`
+###### 3.2.8.2.17: `ExternType`
 
 `type`s from an `extern` block.
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/43467)
 
-###### 2.2.8.2.18: `Macro`
+###### 3.2.8.2.18: `Macro`
 
 A macro declaration.
 
 Corresponds to either `ItemEnum::Macro(_)`
 or `ItemEnum::ProcMacro(ProcMacro { kind: MacroKind::Bang })`
 
-###### 2.2.8.2.19: `ProcAttribute`
+###### 3.2.8.2.19: `ProcAttribute`
 
 A procedural macro attribute.
 
 Corresponds to `ItemEnum::ProcMacro(ProcMacro { kind: MacroKind::Attr })`
 
-###### 2.2.8.2.20: `ProcDerive`
+###### 3.2.8.2.20: `ProcDerive`
 
 A procedural macro usable in the `#[derive()]` attribute.
 
 Corresponds to `ItemEnum::ProcMacro(ProcMacro { kind: MacroKind::Derive })`
 
-###### 2.2.8.2.21: `AssocConst`
+###### 3.2.8.2.21: `AssocConst`
 
 An associated constant of a trait or a type.
 
-###### 2.2.8.2.22: `AssocType`
+###### 3.2.8.2.22: `AssocType`
 
 An associated type of a trait or a type.
 
-###### 2.2.8.2.23: `Primitive`
+###### 3.2.8.2.23: `Primitive`
 
 A primitive type, e.g. `u32`.
 
 [`Item`]s of this kind only come from the core library.
 
-###### 2.2.8.2.24: `Keyword`
+###### 3.2.8.2.24: `Keyword`
 
 A keyword declaration.
 
 [`Item`]s of this kind only come from the come library and exist solely
 to carry documentation for the respective keywords.
 
-##### 2.2.8.2: Trait Implementations for `ItemKind`
+##### 3.2.8.2: Trait Implementations for `ItemKind`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3281,7 +3294,7 @@ to carry documentation for the respective keywords.
     ```
 
 
-#### 2.2.9: `enum MacroKind`
+#### 3.2.9: `enum MacroKind`
 
 ```rust
 pub enum MacroKind {
@@ -3293,21 +3306,21 @@ pub enum MacroKind {
 
 The way a [`ProcMacro`] is declared to be used.
 
-##### 2.2.9.2: Variants
+##### 3.2.9.2: Variants
 
-###### 2.2.9.2.2: `Bang`
+###### 3.2.9.2.2: `Bang`
 
 A bang macro `foo!()`.
 
-###### 2.2.9.2.3: `Attr`
+###### 3.2.9.2.3: `Attr`
 
 An attribute macro `#[foo]`.
 
-###### 2.2.9.2.4: `Derive`
+###### 3.2.9.2.4: `Derive`
 
 A derive macro `#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]`
 
-##### 2.2.9.2: Trait Implementations for `MacroKind`
+##### 3.2.9.2: Trait Implementations for `MacroKind`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3344,7 +3357,7 @@ A derive macro `#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deseriali
     ```
 
 
-#### 2.2.10: `enum PreciseCapturingArg`
+#### 3.2.10: `enum PreciseCapturingArg`
 
 ```rust
 pub enum PreciseCapturingArg {
@@ -3355,23 +3368,23 @@ pub enum PreciseCapturingArg {
 
 One precise capturing argument. See [the rust reference](https://doc.rust-lang.org/reference/types/impl-trait.html#precise-capturing).
 
-##### 2.2.10.2: Variants
+##### 3.2.10.2: Variants
 
-###### 2.2.10.2.2: `Lifetime(String)`
+###### 3.2.10.2.2: `Lifetime(String)`
 
 A lifetime.
 ```rust
 pub fn hello<'a, T, const N: usize>() -> impl Sized + use<'a, T, N> {}
 //                                                        ^^
 
-###### 2.2.10.2.3: `Param(String)`
+###### 3.2.10.2.3: `Param(String)`
 
 A type or constant parameter.
 ```rust
 pub fn hello<'a, T, const N: usize>() -> impl Sized + use<'a, T, N> {}
 //                                                            ^  ^
 
-##### 2.2.10.2: Trait Implementations for `PreciseCapturingArg`
+##### 3.2.10.2: Trait Implementations for `PreciseCapturingArg`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3407,7 +3420,7 @@ pub fn hello<'a, T, const N: usize>() -> impl Sized + use<'a, T, N> {}
     ```
 
 
-#### 2.2.11: `enum StructKind`
+#### 3.2.11: `enum StructKind`
 
 ```rust
 pub enum StructKind {
@@ -3419,9 +3432,9 @@ pub enum StructKind {
 
 The kind of a [`Struct`] and the data specific to it, i.e. fields.
 
-##### 2.2.11.2: Variants
+##### 3.2.11.2: Variants
 
-###### 2.2.11.2.2: `Unit`
+###### 3.2.11.2.2: `Unit`
 
 A struct with no fields and no parentheses.
 
@@ -3429,7 +3442,7 @@ A struct with no fields and no parentheses.
 pub struct Unit;
 ```
 
-###### 2.2.11.2.3: `Tuple(Vec<option::Option<rustdoc_types::Id>>)`
+###### 3.2.11.2.3: `Tuple(Vec<option::Option<rustdoc_types::Id>>)`
 
 A struct with unnamed fields.
 
@@ -3442,7 +3455,7 @@ pub struct TupleStruct(i32);
 pub struct EmptyTupleStruct();
 ```
 
-###### 2.2.11.2.4: `Plain { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
+###### 3.2.11.2.4: `Plain { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
 
 A struct with named fields.
 
@@ -3451,19 +3464,19 @@ pub struct PlainStruct { x: i32 }
 pub struct EmptyPlainStruct {}
 ```
 
-####### 2.2.11.2.4.2: Fields
+####### 3.2.11.2.4.2: Fields
 
-######## 2.2.11.2.4.2.2: `fields`
+######## 3.2.11.2.4.2.2: `fields`
 
 The list of fields in the struct.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::StructField`].
 
-######## 2.2.11.2.4.2.3: `has_stripped_fields`
+######## 3.2.11.2.4.2.3: `has_stripped_fields`
 
 Whether any fields have been removed from the result, due to being private or hidden.
 
-##### 2.2.11.2: Trait Implementations for `StructKind`
+##### 3.2.11.2: Trait Implementations for `StructKind`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3499,7 +3512,7 @@ Whether any fields have been removed from the result, due to being private or hi
     ```
 
 
-#### 2.2.12: `enum Term`
+#### 3.2.12: `enum Term`
 
 ```rust
 pub enum Term {
@@ -3511,9 +3524,9 @@ pub enum Term {
 Either a type or a constant, usually stored as the right-hand side of an equation in places like
 [`AssocItemConstraint`]
 
-##### 2.2.12.2: Variants
+##### 3.2.12.2: Variants
 
-###### 2.2.12.2.2: `Type(rustdoc_types::Type)`
+###### 3.2.12.2.2: `Type(rustdoc_types::Type)`
 
 A type.
 
@@ -3522,7 +3535,7 @@ fn f(x: impl IntoIterator<Item = u32>) {}
 //                               ^^^
 ```
 
-###### 2.2.12.2.3: `Constant(rustdoc_types::Constant)`
+###### 3.2.12.2.3: `Constant(rustdoc_types::Constant)`
 
 A constant.
 
@@ -3535,7 +3548,7 @@ fn f(x: impl Foo<BAR = 42>) {}
 //                     ^^
 ```
 
-##### 2.2.12.2: Trait Implementations for `Term`
+##### 3.2.12.2: Trait Implementations for `Term`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3571,7 +3584,7 @@ fn f(x: impl Foo<BAR = 42>) {}
     ```
 
 
-#### 2.2.13: `enum TraitBoundModifier`
+#### 3.2.13: `enum TraitBoundModifier`
 
 ```rust
 pub enum TraitBoundModifier {
@@ -3583,24 +3596,24 @@ pub enum TraitBoundModifier {
 
 A set of modifiers applied to a trait.
 
-##### 2.2.13.2: Variants
+##### 3.2.13.2: Variants
 
-###### 2.2.13.2.2: `None`
+###### 3.2.13.2.2: `None`
 
 Marks the absence of a modifier.
 
-###### 2.2.13.2.3: `Maybe`
+###### 3.2.13.2.3: `Maybe`
 
 Indicates that the trait bound relaxes a trait bound applied to a parameter by default,
 e.g. `T: Sized?`, the `Sized` trait is required for all generic type parameters by default
 unless specified otherwise with this modifier.
 
-###### 2.2.13.2.4: `MaybeConst`
+###### 3.2.13.2.4: `MaybeConst`
 
 Indicates that the trait bound must be applicable in both a run-time and a compile-time
 context.
 
-##### 2.2.13.2: Trait Implementations for `TraitBoundModifier`
+##### 3.2.13.2: Trait Implementations for `TraitBoundModifier`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3637,7 +3650,7 @@ context.
     ```
 
 
-#### 2.2.14: `enum Type`
+#### 3.2.14: `enum Type`
 
 ```rust
 pub enum Type {
@@ -3660,114 +3673,114 @@ pub enum Type {
 
 A type.
 
-##### 2.2.14.2: Variants
+##### 3.2.14.2: Variants
 
-###### 2.2.14.2.2: `ResolvedPath(rustdoc_types::Path)`
+###### 3.2.14.2.2: `ResolvedPath(rustdoc_types::Path)`
 
 Structs, enums, unions and type aliases, e.g. `std::option::Option<u32>`
 
-###### 2.2.14.2.3: `DynTrait(rustdoc_types::DynTrait)`
+###### 3.2.14.2.3: `DynTrait(rustdoc_types::DynTrait)`
 
 Dynamic trait object type (`dyn Trait`).
 
-###### 2.2.14.2.4: `Generic(String)`
+###### 3.2.14.2.4: `Generic(String)`
 
 Parameterized types. The contained string is the name of the parameter.
 
-###### 2.2.14.2.5: `Primitive(String)`
+###### 3.2.14.2.5: `Primitive(String)`
 
 Built-in numeric types (e.g. `u32`, `f32`), `bool`, `char`.
 
-###### 2.2.14.2.6: `FunctionPointer(Box<rustdoc_types::FunctionPointer>)`
+###### 3.2.14.2.6: `FunctionPointer(Box<rustdoc_types::FunctionPointer>)`
 
 A function pointer type, e.g. `fn(u32) -> u32`, `extern "C" fn() -> *const u8`
 
-###### 2.2.14.2.7: `Tuple(Vec<rustdoc_types::Type>)`
+###### 3.2.14.2.7: `Tuple(Vec<rustdoc_types::Type>)`
 
 A tuple type, e.g. `(String, u32, Box<usize>)`
 
-###### 2.2.14.2.8: `Slice(Box<rustdoc_types::Type>)`
+###### 3.2.14.2.8: `Slice(Box<rustdoc_types::Type>)`
 
 An unsized slice type, e.g. `[u32]`.
 
-###### 2.2.14.2.9: `Array { type_: Box<rustdoc_types::Type>, len: String }`
+###### 3.2.14.2.9: `Array { type_: Box<rustdoc_types::Type>, len: String }`
 
 An array type, e.g. `[u32; 15]`
 
-####### 2.2.14.2.9.2: Fields
+####### 3.2.14.2.9.2: Fields
 
-######## 2.2.14.2.9.2.2: `type_`
+######## 3.2.14.2.9.2.2: `type_`
 
 The type of the contained element.
 
-######## 2.2.14.2.9.2.3: `len`
+######## 3.2.14.2.9.2.3: `len`
 
 The stringified expression that is the length of the array.
 
 Keep in mind that it's not guaranteed to match the actual source code of the expression.
 
-###### 2.2.14.2.10: `Pat { type_: Box<rustdoc_types::Type> }`
+###### 3.2.14.2.10: `Pat { type_: Box<rustdoc_types::Type> }`
 
 A pattern type, e.g. `u32 is 1..`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/123646)
 
-####### 2.2.14.2.10.2: Fields
+####### 3.2.14.2.10.2: Fields
 
-######## 2.2.14.2.10.2.2: `type_`
+######## 3.2.14.2.10.2.2: `type_`
 
 The base type, e.g. the `u32` in `u32 is 1..`
 
 
 _[Private fields hidden]_
-###### 2.2.14.2.11: `ImplTrait(Vec<rustdoc_types::GenericBound>)`
+###### 3.2.14.2.11: `ImplTrait(Vec<rustdoc_types::GenericBound>)`
 
 An opaque type that satisfies a set of bounds, `impl TraitA + TraitB + ...`
 
-###### 2.2.14.2.12: `Infer`
+###### 3.2.14.2.12: `Infer`
 
 A type that's left to be inferred, `_`
 
-###### 2.2.14.2.13: `RawPointer { is_mutable: bool, type_: Box<rustdoc_types::Type> }`
+###### 3.2.14.2.13: `RawPointer { is_mutable: bool, type_: Box<rustdoc_types::Type> }`
 
 A raw pointer type, e.g. `*mut u32`, `*const u8`, etc.
 
-####### 2.2.14.2.13.2: Fields
+####### 3.2.14.2.13.2: Fields
 
-######## 2.2.14.2.13.2.2: `is_mutable`
+######## 3.2.14.2.13.2.2: `is_mutable`
 
 This is `true` for `*mut _` and `false` for `*const _`.
 
-######## 2.2.14.2.13.2.3: `type_`
+######## 3.2.14.2.13.2.3: `type_`
 
 The type of the pointee.
 
-###### 2.2.14.2.14: `BorrowedRef { lifetime: option::Option<String>, is_mutable: bool, type_: Box<rustdoc_types::Type> }`
+###### 3.2.14.2.14: `BorrowedRef { lifetime: option::Option<String>, is_mutable: bool, type_: Box<rustdoc_types::Type> }`
 
 `&'a mut String`, `&str`, etc.
 
-####### 2.2.14.2.14.2: Fields
+####### 3.2.14.2.14.2: Fields
 
-######## 2.2.14.2.14.2.2: `lifetime`
+######## 3.2.14.2.14.2.2: `lifetime`
 
 The name of the lifetime of the reference, if provided.
 
-######## 2.2.14.2.14.2.3: `is_mutable`
+######## 3.2.14.2.14.2.3: `is_mutable`
 
 This is `true` for `&mut i32` and `false` for `&i32`
 
-######## 2.2.14.2.14.2.4: `type_`
+######## 3.2.14.2.14.2.4: `type_`
 
 The type of the pointee, e.g. the `i32` in `&'a mut i32`
 
-###### 2.2.14.2.15: `QualifiedPath { name: String, args: Box<rustdoc_types::GenericArgs>, self_type: Box<rustdoc_types::Type>, trait_: option::Option<rustdoc_types::Path> }`
+###### 3.2.14.2.15: `QualifiedPath { name: String, args: Box<rustdoc_types::GenericArgs>, self_type: Box<rustdoc_types::Type>, trait_: option::Option<rustdoc_types::Path> }`
 
 Associated types like `<Type as Trait>::Name` and `T::Item` where
 `T: Iterator` or inherent associated types like `Struct::Name`.
 
-####### 2.2.14.2.15.2: Fields
+####### 3.2.14.2.15.2: Fields
 
-######## 2.2.14.2.15.2.2: `name`
+######## 3.2.14.2.15.2.2: `name`
 
 The name of the associated type in the parent type.
 
@@ -3776,7 +3789,7 @@ The name of the associated type in the parent type.
 //                                            ^^^^
 ```
 
-######## 2.2.14.2.15.2.3: `args`
+######## 3.2.14.2.15.2.3: `args`
 
 The generic arguments provided to the associated type.
 
@@ -3785,7 +3798,7 @@ The generic arguments provided to the associated type.
 //                                                          ^^^^^^^^^
 ```
 
-######## 2.2.14.2.15.2.4: `self_type`
+######## 3.2.14.2.15.2.4: `self_type`
 
 The type with which this type is associated.
 
@@ -3794,11 +3807,11 @@ The type with which this type is associated.
 // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-######## 2.2.14.2.15.2.5: `trait_`
+######## 3.2.14.2.15.2.5: `trait_`
 
 `None` iff this is an *inherent* associated type.
 
-##### 2.2.14.2: Trait Implementations for `Type`
+##### 3.2.14.2: Trait Implementations for `Type`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3834,7 +3847,7 @@ The type with which this type is associated.
     ```
 
 
-#### 2.2.15: `enum VariantKind`
+#### 3.2.15: `enum VariantKind`
 
 ```rust
 pub enum VariantKind {
@@ -3846,9 +3859,9 @@ pub enum VariantKind {
 
 The kind of an [`Enum`] [`Variant`] and the data specific to it, i.e. fields.
 
-##### 2.2.15.2: Variants
+##### 3.2.15.2: Variants
 
-###### 2.2.15.2.2: `Plain`
+###### 3.2.15.2.2: `Plain`
 
 A variant with no parentheses
 
@@ -3859,7 +3872,7 @@ enum Demo {
 }
 ```
 
-###### 2.2.15.2.3: `Tuple(Vec<option::Option<rustdoc_types::Id>>)`
+###### 3.2.15.2.3: `Tuple(Vec<option::Option<rustdoc_types::Id>>)`
 
 A variant with unnamed fields.
 
@@ -3874,7 +3887,7 @@ enum Demo {
 }
 ```
 
-###### 2.2.15.2.4: `Struct { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
+###### 3.2.15.2.4: `Struct { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
 
 A variant with named fields.
 
@@ -3885,18 +3898,18 @@ enum Demo {
 }
 ```
 
-####### 2.2.15.2.4.2: Fields
+####### 3.2.15.2.4.2: Fields
 
-######## 2.2.15.2.4.2.2: `fields`
+######## 3.2.15.2.4.2.2: `fields`
 
 The list of variants in the enum.
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Variant`].
 
-######## 2.2.15.2.4.2.3: `has_stripped_fields`
+######## 3.2.15.2.4.2.3: `has_stripped_fields`
 
 Whether any variants have been removed from the result, due to being private or hidden.
 
-##### 2.2.15.2: Trait Implementations for `VariantKind`
+##### 3.2.15.2: Trait Implementations for `VariantKind`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -3932,7 +3945,7 @@ Whether any variants have been removed from the result, due to being private or 
     ```
 
 
-#### 2.2.16: `enum Visibility`
+#### 3.2.16: `enum Visibility`
 
 ```rust
 pub enum Visibility {
@@ -3945,39 +3958,39 @@ pub enum Visibility {
 
 Visibility of an [`Item`].
 
-##### 2.2.16.2: Variants
+##### 3.2.16.2: Variants
 
-###### 2.2.16.2.2: `Public`
+###### 3.2.16.2.2: `Public`
 
 Explicitly public visibility set with `pub`.
 
-###### 2.2.16.2.3: `Default`
+###### 3.2.16.2.3: `Default`
 
 For the most part items are private by default. The exceptions are associated items of
 public traits and variants of public enums.
 
-###### 2.2.16.2.4: `Crate`
+###### 3.2.16.2.4: `Crate`
 
 Explicitly crate-wide visibility set with `pub(crate)`
 
-###### 2.2.16.2.5: `Restricted { parent: rustdoc_types::Id, path: String }`
+###### 3.2.16.2.5: `Restricted { parent: rustdoc_types::Id, path: String }`
 
 For `pub(in path)` visibility.
 
-####### 2.2.16.2.5.2: Fields
+####### 3.2.16.2.5.2: Fields
 
-######## 2.2.16.2.5.2.2: `parent`
+######## 3.2.16.2.5.2.2: `parent`
 
 ID of the module to which this visibility restricts items.
 
-######## 2.2.16.2.5.2.3: `path`
+######## 3.2.16.2.5.2.3: `path`
 
 The path with which [`parent`] was referenced
 (like `super::super` or `crate::foo::bar`).
 
 [`parent`]: Visibility::Restricted::parent
 
-##### 2.2.16.2: Trait Implementations for `Visibility`
+##### 3.2.16.2: Trait Implementations for `Visibility`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -4013,7 +4026,7 @@ The path with which [`parent`] was referenced
     ```
 
 
-#### 2.2.17: `enum WherePredicate`
+#### 3.2.17: `enum WherePredicate`
 
 ```rust
 pub enum WherePredicate {
@@ -4029,15 +4042,15 @@ fn default<T>() -> T where T: Default { T::default() }
 //                         ^^^^^^^^^^
 ```
 
-##### 2.2.17.2: Variants
+##### 3.2.17.2: Variants
 
-###### 2.2.17.2.2: `BoundPredicate { type_: rustdoc_types::Type, bounds: Vec<rustdoc_types::GenericBound>, generic_params: Vec<rustdoc_types::GenericParamDef> }`
+###### 3.2.17.2.2: `BoundPredicate { type_: rustdoc_types::Type, bounds: Vec<rustdoc_types::GenericBound>, generic_params: Vec<rustdoc_types::GenericParamDef> }`
 
 A type is expected to comply with a set of bounds
 
-####### 2.2.17.2.2.2: Fields
+####### 3.2.17.2.2.2: Fields
 
-######## 2.2.17.2.2.2.2: `type_`
+######## 3.2.17.2.2.2.2: `type_`
 
 The type that's being constrained.
 
@@ -4046,7 +4059,7 @@ fn f<T>(x: T) where for<'a> &'a T: Iterator {}
 //                              ^
 ```
 
-######## 2.2.17.2.2.2.3: `bounds`
+######## 3.2.17.2.2.2.3: `bounds`
 
 The set of bounds that constrain the type.
 
@@ -4055,7 +4068,7 @@ fn f<T>(x: T) where for<'a> &'a T: Iterator {}
 //                                 ^^^^^^^^
 ```
 
-######## 2.2.17.2.2.2.4: `generic_params`
+######## 3.2.17.2.2.2.4: `generic_params`
 
 Used for Higher-Rank Trait Bounds (HRTBs)
 ```rust
@@ -4063,35 +4076,35 @@ fn f<T>(x: T) where for<'a> &'a T: Iterator {}
 //                  ^^^^^^^
 ```
 
-###### 2.2.17.2.3: `LifetimePredicate { lifetime: String, outlives: Vec<String> }`
+###### 3.2.17.2.3: `LifetimePredicate { lifetime: String, outlives: Vec<String> }`
 
 A lifetime is expected to outlive other lifetimes.
 
-####### 2.2.17.2.3.2: Fields
+####### 3.2.17.2.3.2: Fields
 
-######## 2.2.17.2.3.2.2: `lifetime`
+######## 3.2.17.2.3.2.2: `lifetime`
 
 The name of the lifetime.
 
-######## 2.2.17.2.3.2.3: `outlives`
+######## 3.2.17.2.3.2.3: `outlives`
 
 The lifetimes that must be encompassed by the lifetime.
 
-###### 2.2.17.2.4: `EqPredicate { lhs: rustdoc_types::Type, rhs: rustdoc_types::Term }`
+###### 3.2.17.2.4: `EqPredicate { lhs: rustdoc_types::Type, rhs: rustdoc_types::Term }`
 
 A type must exactly equal another type.
 
-####### 2.2.17.2.4.2: Fields
+####### 3.2.17.2.4.2: Fields
 
-######## 2.2.17.2.4.2.2: `lhs`
+######## 3.2.17.2.4.2.2: `lhs`
 
 The left side of the equation.
 
-######## 2.2.17.2.4.2.3: `rhs`
+######## 3.2.17.2.4.2.3: `rhs`
 
 The right side of the equation.
 
-##### 2.2.17.2: Trait Implementations for `WherePredicate`
+##### 3.2.17.2: Trait Implementations for `WherePredicate`
 
 - `Freeze`
 - `RefUnwindSafe`
@@ -4127,9 +4140,9 @@ The right side of the equation.
     ```
 
 
-### 2.3: Constants
+### 3.3: Constants
 
-#### 2.3.1: `const FORMAT_VERSION`
+#### 3.3.1: `const FORMAT_VERSION`
 
 The version of JSON output that this crate represents.
 
@@ -6116,4 +6129,2800 @@ directory does not exist.
 
 
 ## 2: Module: `{id:54}`
+
+# pulldown_cmark API (0.13.0)
+
+A pull parser for CommonMark
+
+## 1: Manifest
+
+- Repository: <https://github.com/raphlinus/pulldown-cmark>
+- Categories: text-processing
+- License: MIT
+- rust-version: `1.71.1`
+- edition: `2021`
+
+### 1.1: Features
+
+- `default`
+- `gen-tests`
+- `html`
+- `simd`
+
+
+## 2: README
+
+### pulldown-cmark
+
+[![Tests](https://github.com/pulldown-cmark/pulldown-cmark/actions/workflows/rust.yml/badge.svg)](https://github.com/pulldown-cmark/pulldown-cmark/actions/workflows/rust.yml)
+[![Docs](https://docs.rs/pulldown-cmark/badge.svg)](https://docs.rs/pulldown-cmark)
+[![Crates.io](https://img.shields.io/crates/v/pulldown-cmark.svg?maxAge=2592000)](https://crates.io/crates/pulldown-cmark)
+
+[Documentation](https://docs.rs/pulldown-cmark/)
+
+This library is a pull parser for [CommonMark](http://commonmark.org/), written
+in [Rust](http://www.rust-lang.org/). It comes with a simple command-line tool,
+useful for rendering to HTML, and is also designed to be easy to use from as
+a library.
+
+It is designed to be:
+
+* Fast; a bare minimum of allocation and copying
+* Safe; written in pure Rust with no unsafe blocks (except in the opt-in SIMD feature)
+* Versatile; in particular source-maps are supported
+* Correct; the goal is 100% compliance with the [CommonMark spec](http://spec.commonmark.org/)
+
+Further, it optionally supports parsing footnotes,
+[Github flavored tables](https://github.github.com/gfm/#tables-extension-),
+[Github flavored task lists](https://github.github.com/gfm/#task-list-items-extension-) and
+[strikethrough](https://github.github.com/gfm/#strikethrough-extension-).
+
+Rustc 1.71.1 or newer is required to build the crate.
+
+#### Example
+
+Example usage:
+
+```rust
+// Create parser with example Markdown text.
+let markdown_input = "hello world";
+let parser = pulldown_cmark::Parser::new(markdown_input);
+
+// Write to a new String buffer.
+let mut html_output = String::new();
+pulldown_cmark::html::push_html(&mut html_output, parser);
+assert_eq!(&html_output, "<p>hello world</p>\n");
+```
+
+#### Why a pull parser?
+
+There are many parsers for Markdown and its variants, but to my knowledge none
+use pull parsing. Pull parsing has become popular for XML, especially for
+memory-conscious applications, because it uses dramatically less memory than
+constructing a document tree, but is much easier to use than push parsers. Push
+parsers are notoriously difficult to use, and also often error-prone because of
+the need for user to delicately juggle state in a series of callbacks.
+
+In a clean design, the parsing and rendering stages are neatly separated, but
+this is often sacrificed in the name of performance and expedience. Many Markdown
+implementations mix parsing and rendering together, and even designs that try
+to separate them (such as the popular [hoedown](https://github.com/hoedown/hoedown)),
+make the assumption that the rendering process can be fully represented as a
+serialized string.
+
+Pull parsing is in some sense the most versatile architecture. It's possible to
+drive a push interface, also with minimal memory, and quite straightforward to
+construct an AST. Another advantage is that source-map information (the mapping
+between parsed blocks and offsets within the source text) is readily available;
+you can call `into_offset_iter()` to create an iterator that yields `(Event, Range)`
+pairs, where the second element is the event's corresponding range in the source
+document.
+
+While manipulating ASTs is the most flexible way to transform documents,
+operating on iterators is surprisingly easy, and quite efficient. Here, for
+example, is the code to transform soft line breaks into hard breaks:
+
+```rust
+let parser = parser.map(|event| match event {
+	Event::SoftBreak => Event::HardBreak,
+	_ => event
+});
+```
+
+Or expanding an abbreviation in text:
+
+```rust
+let parser = parser.map(|event| match event {
+	Event::Text(text) => Event::Text(text.replace("abbr", "abbreviation").into()),
+	_ => event
+});
+```
+
+Another simple example is code to determine the max nesting level:
+
+```rust
+let mut max_nesting = 0;
+let mut level = 0;
+for event in parser {
+	match event {
+		Event::Start(_) => {
+			level += 1;
+			max_nesting = std::cmp::max(max_nesting, level);
+		}
+		Event::End(_) => level -= 1,
+		_ => ()
+	}
+}
+```
+
+Note that consecutive text events can happen due to the manner in which the
+parser evaluates the source. A utility `TextMergeStream` exists to improve
+the comfort of iterating the events:
+
+```rust
+use pulldown_cmark::{Event, Parser, Options};
+
+let markdown_input = "Hello world, this is a ~~complicated~~ *very simple* example.";
+
+let iterator = TextMergeStream::new(Parser::new(markdown_input));
+
+for event in iterator {
+    match event {
+        Event::Text(text) => println!("{}", text),
+        _ => {}
+    }
+}
+```
+
+There are some basic but fully functional examples of the usage of the crate in the
+`examples` directory of this repository.
+
+#### Using Rust idiomatically
+
+A lot of the internal scanning code is written at a pretty low level (it
+pretty much scans byte patterns for the bits of syntax), but the external
+interface is designed to be idiomatic Rust.
+
+Pull parsers are at heart an iterator of events (start and end tags, text,
+and other bits and pieces). The parser data structure implements the
+Rust Iterator trait directly, and Event is an enum. Thus, you can use the
+full power and expressivity of Rust's iterator infrastructure, including
+for loops and `map` (as in the examples above), collecting the events into
+a vector (for recording, playback, and manipulation), and more.
+
+Further, the `Text` event (representing text) is a small copy-on-write string.
+The vast majority of text fragments are just
+slices of the source document. For these, copy-on-write gives a convenient
+representation that requires no allocation or copying, but allocated
+strings are available when they're needed. Thus, when rendering text to
+HTML, most text is copied just once, from the source document to the
+HTML buffer.
+
+When using the pulldown-cmark's own HTML renderer, make sure to write to a buffered
+target like a `Vec<u8>` or `String`. Since it performs many (very) small writes, writing
+directly to stdout, files, or sockets is detrimental to performance. Such writers can
+be wrapped in a [`BufWriter`](https://doc.rust-lang.org/std/io/struct.BufWriter.html).
+
+#### Build options
+
+By default, the binary is built as well. If you don't want/need it, then build like this:
+
+```bash
+> cargo build --no-default-features
+```
+
+Or add this package as dependency of your project using `cargo add`:
+
+```bash
+> cargo add pulldown-cmark --no-default-features
+```
+
+SIMD accelerated scanners are available for the x64 platform from version 0.5 onwards. To
+enable them, build with simd feature:
+
+```bash
+> cargo build --release --features simd
+```
+
+Or add this package as dependency of your project with the feature using `cargo add`:
+
+```bash
+> cargo add pulldown-cmark --no-default-features --features=simd
+```
+
+For a higher release performance you may want this configuration in your profile release:
+
+```
+lto = true
+codegen-units = 1
+panic = "abort"
+```
+
+#### Authors
+
+The main author is Raph Levien. The implementation of the new design (v0.3+) was
+completed by Marcus Klaas de Vries. Since 2023, the development has been driven
+by Martín Pozo, Michael Howell, Roope Salmi and Martin Geisler.
+
+#### License
+
+This software is under the MIT license. See details in [license file](./LICENSE).
+
+#### Contributions
+
+We gladly accept contributions via GitHub pull requests. Please see
+[CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+
+
+
+## 3: Module: `pulldown_cmark`
+
+Pull parser for [CommonMark](https://commonmark.org). This crate provides a [Parser](struct.Parser.html) struct
+which is an iterator over [Event](enum.Event.html)s. This iterator can be used
+directly, or to output HTML using the [HTML module](html/index.html).
+
+By default, only CommonMark features are enabled. To use extensions like tables,
+footnotes or task lists, enable them by setting the corresponding flags in the
+[Options](struct.Options.html) struct.
+
+#### Example
+```rust
+use pulldown_cmark::{Parser, Options};
+
+let markdown_input = "Hello world, this is a ~~complicated~~ *very simple* example.";
+
+// Set up options and parser. Strikethroughs are not part of the CommonMark standard
+// and we therefore must enable it explicitly.
+let mut options = Options::empty();
+options.insert(Options::ENABLE_STRIKETHROUGH);
+let parser = Parser::new_ext(markdown_input, options);
+
+#### #[cfg(feature = "html")] {
+// Write to String buffer.
+let mut html_output = String::new();
+pulldown_cmark::html::push_html(&mut html_output, parser);
+
+// Check that the output is what we expected.
+let expected_html = "<p>Hello world, this is a <del>complicated</del> <em>very simple</em> example.</p>\n";
+assert_eq!(expected_html, &html_output);
+#### }
+```
+
+Note that consecutive text events can happen due to the manner in which the
+parser evaluates the source. A utility `TextMergeStream` exists to improve
+the comfort of iterating the events:
+
+```rust
+use pulldown_cmark::{Event, Parser, TextMergeStream};
+
+let markdown_input = "Hello world, this is a ~~complicated~~ *very simple* example.";
+
+let iterator = TextMergeStream::new(Parser::new(markdown_input));
+
+for event in iterator {
+    match event {
+        Event::Text(text) => println!("{}", text),
+        _ => {}
+    }
+}
+```
+
+
+### 3.1: Structs
+
+#### 3.1.1: `struct BrokenLink<'a>`
+
+```rust
+pub struct BrokenLink<'a> {
+    pub span: range::Range<usize>,
+    pub link_type: pulldown_cmark::LinkType,
+    pub reference: pulldown_cmark::strings::CowStr<'a>,
+}
+```
+
+##### 3.1.1.2: `impl<'a> pulldown_cmark::parse::BrokenLink<'a>`
+
+###### 3.1.1.2.2: `fn into_static(self: Self) -> pulldown_cmark::parse::BrokenLink<'static>`
+
+Moves the link into version with a static lifetime.
+
+The `reference` member is cloned to a Boxed or Inline version.
+
+##### 3.1.1.2: Trait Implementations for `BrokenLink`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.2: `struct DefaultBrokenLinkCallback`
+
+```rust
+pub struct DefaultBrokenLinkCallback;
+```
+
+Broken link callback that does nothing.
+
+##### 3.1.2.1: Trait Implementations for `DefaultBrokenLinkCallback`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+- `pulldown_cmark::parse::BrokenLinkCallback<'input>`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.3: `struct InlineStr`
+
+```rust
+pub struct InlineStr {}
+```
+
+_[Private fields hidden]_
+
+An inline string that can contain almost three words
+of utf-8 text.
+
+##### 3.1.3.1: Trait Implementations for `InlineStr`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Display`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `convert::AsRef<str>`
+- `convert::From<char>`
+- `convert::TryFrom<&str>`
+- `deref::Deref`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `ToString` (`where T: Display + ?Sized`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `deref::Receiver`
+
+    ```rust
+    where
+        P: deref::Deref<Target = T> + ?Sized,
+        T: ?Sized
+    ```
+
+
+#### 3.1.4: `struct InvalidHeadingLevel`
+
+```rust
+pub struct InvalidHeadingLevel();
+```
+
+Returned when trying to convert a `usize` into a `Heading` but it fails
+because the usize isn't a valid heading level
+
+##### 3.1.4.1: Trait Implementations for `InvalidHeadingLevel`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.5: `struct OffsetIter<'a, F = pulldown_cmark::parse::DefaultBrokenLinkCallback>`
+
+```rust
+pub struct OffsetIter<'a, F = pulldown_cmark::parse::DefaultBrokenLinkCallback> {}
+```
+
+_[Private fields hidden]_
+
+Markdown event and source range iterator.
+
+Generates tuples where the first element is the markdown event and the second
+is a the corresponding range in the source string.
+
+Constructed from a `Parser` using its
+[`into_offset_iter`](struct.Parser.html#method.into_offset_iter) method.
+
+##### 3.1.5.2: `impl<'a, F: pulldown_cmark::parse::BrokenLinkCallback<'a>> pulldown_cmark::parse::OffsetIter<'a, F>`
+
+###### 3.1.5.2.2: `fn reference_definitions(self: &Self) -> &pulldown_cmark::parse::RefDefs<'_>`
+
+Returns a reference to the internal reference definition tracker.
+
+##### 3.1.5.2: Trait Implementations for `OffsetIter`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+- `iter::traits::iterator::Iterator`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `iter::traits::collect::IntoIterator` (`where I: iter::traits::iterator::Iterator`)
+
+#### 3.1.6: `struct Options`
+
+```rust
+pub struct Options();
+```
+
+Option struct containing flags for enabling extra features
+that are not part of the CommonMark spec.
+
+##### 3.1.6.2: `impl pulldown_cmark::Options`
+
+###### 3.1.6.2.2: `const ENABLE_TABLES`
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.3: `const ENABLE_FOOTNOTES`
+
+GitHub-compatible footnote syntax.
+
+Footnotes are referenced with the syntax `[^IDENT]`,
+and defined with an identifier followed by a colon at top level.
+
+---
+
+```markdown
+Footnote referenced [^1].
+
+[^1]: footnote defined
+```
+
+Footnote referenced [^1].
+
+[^1]: footnote defined
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.4: `const ENABLE_STRIKETHROUGH`
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.5: `const ENABLE_TASKLISTS`
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.6: `const ENABLE_SMART_PUNCTUATION`
+
+Enables replacement of ASCII punctuation characters with
+Unicode ligatures and smart quotes.
+
+This includes replacing `--` with `—`, `---` with `—`, `...` with `…`,
+`"quote"` with `“quote”`, and `'quote'` with `‘quote’`.
+
+The replacement takes place during the parsing of the document.
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.7: `const ENABLE_HEADING_ATTRIBUTES`
+
+Extension to allow headings to have ID and classes.
+
+`# text { #id .class1 .class2 myattr other_attr=myvalue }`
+is interpreted as a level 1 heading
+with the content `text`, ID `id`, classes `class1` and `class2` and
+custom attributes `myattr` (without value) and
+`other_attr` with value `myvalue`.
+Note that ID, classes, and custom attributes should be space-separated.
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.8: `const ENABLE_YAML_STYLE_METADATA_BLOCKS`
+
+Metadata blocks in YAML style, i.e.:
+- starting with a `---` line
+- ending with a `---` or `...` line
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.9: `const ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS`
+
+Metadata blocks delimited by:
+- `+++` line at start
+- `+++` line at end
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.10: `const ENABLE_OLD_FOOTNOTES`
+
+Older footnote syntax. This flag implies `ENABLE_FOOTNOTES`, changing it to use an
+older syntax instead of the new, default, GitHub-compatible syntax.
+
+New syntax is different from the old syntax regarding
+indentation, nesting, and footnote references with no definition:
+
+```markdown
+[^1]: In new syntax, this is two footnote definitions.
+[^2]: In old syntax, this is a single footnote definition with two lines.
+
+[^3]:
+
+    In new syntax, this is a footnote with two paragraphs.
+
+    In old syntax, this is a footnote followed by a code block.
+
+In new syntax, this undefined footnote definition renders as
+literal text [^4]. In old syntax, it creates a dangling link.
+```
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.11: `const ENABLE_MATH`
+
+With this feature enabled, two events `Event::InlineMath` and `Event::DisplayMath`
+are emitted that conventionally contain TeX formulas.
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.12: `const ENABLE_GFM`
+
+Misc GitHub Flavored Markdown features not supported in CommonMark.
+The following features are currently behind this tag:
+- Blockquote tags ([!NOTE], [!TIP], [!IMPORTANT], [!WARNING], [!CAUTION]).
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.13: `const ENABLE_DEFINITION_LIST`
+
+Commonmark-HS-Extensions compatible definition lists.
+
+```markdown
+title 1
+  : definition 1
+title 2
+  : definition 2
+```
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.14: `const ENABLE_SUPERSCRIPT`
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.15: `const ENABLE_SUBSCRIPT`
+
+_Type: `Self`_
+_Default: `_`_
+
+###### 3.1.6.2.16: `const ENABLE_WIKILINKS`
+
+Obsidian-style Wikilinks.
+
+_Type: `Self`_
+_Default: `_`_
+
+##### 3.1.6.3: `impl pulldown_cmark::Options`
+
+###### 3.1.6.3.2: `fn empty() -> Self`
+
+```rust
+pub const fn empty() -> Self { ... }
+```
+
+Get a flags value with all bits unset.
+
+###### 3.1.6.3.3: `fn all() -> Self`
+
+```rust
+pub const fn all() -> Self { ... }
+```
+
+Get a flags value with all known bits set.
+
+###### 3.1.6.3.4: `fn bits(self: &Self) -> u32`
+
+```rust
+pub const fn bits(self: &Self) -> u32 { ... }
+```
+
+Get the underlying bits value.
+
+The returned value is exactly the bits set in this flags value.
+
+###### 3.1.6.3.5: `fn from_bits(bits: u32) -> option::Option<Self>`
+
+```rust
+pub const fn from_bits(bits: u32) -> option::Option<Self> { ... }
+```
+
+Convert from a bits value.
+
+This method will return `None` if any unknown bits are set.
+
+###### 3.1.6.3.6: `fn from_bits_truncate(bits: u32) -> Self`
+
+```rust
+pub const fn from_bits_truncate(bits: u32) -> Self { ... }
+```
+
+Convert from a bits value, unsetting any unknown bits.
+
+###### 3.1.6.3.7: `fn from_bits_retain(bits: u32) -> Self`
+
+```rust
+pub const fn from_bits_retain(bits: u32) -> Self { ... }
+```
+
+Convert from a bits value exactly.
+
+###### 3.1.6.3.8: `fn from_name(name: &str) -> option::Option<Self>`
+
+Get a flags value with the bits of a flag with the given name set.
+
+This method will return `None` if `name` is empty or doesn't
+correspond to any named flag.
+
+###### 3.1.6.3.9: `fn is_empty(self: &Self) -> bool`
+
+```rust
+pub const fn is_empty(self: &Self) -> bool { ... }
+```
+
+Whether all bits in this flags value are unset.
+
+###### 3.1.6.3.10: `fn is_all(self: &Self) -> bool`
+
+```rust
+pub const fn is_all(self: &Self) -> bool { ... }
+```
+
+Whether all known bits in this flags value are set.
+
+###### 3.1.6.3.11: `fn intersects(self: &Self, other: Self) -> bool`
+
+```rust
+pub const fn intersects(self: &Self, other: Self) -> bool { ... }
+```
+
+Whether any set bits in a source flags value are also set in a target flags value.
+
+###### 3.1.6.3.12: `fn contains(self: &Self, other: Self) -> bool`
+
+```rust
+pub const fn contains(self: &Self, other: Self) -> bool { ... }
+```
+
+Whether all set bits in a source flags value are also set in a target flags value.
+
+###### 3.1.6.3.13: `fn insert(self: &mut Self, other: Self)`
+
+The bitwise or (`|`) of the bits in two flags values.
+
+###### 3.1.6.3.14: `fn remove(self: &mut Self, other: Self)`
+
+The intersection of a source flags value with the complement of a target flags value (`&!`).
+
+This method is not equivalent to `self & !other` when `other` has unknown bits set.
+`remove` won't truncate `other`, but the `!` operator will.
+
+###### 3.1.6.3.15: `fn toggle(self: &mut Self, other: Self)`
+
+The bitwise exclusive-or (`^`) of the bits in two flags values.
+
+###### 3.1.6.3.16: `fn set(self: &mut Self, other: Self, value: bool)`
+
+Call `insert` when `value` is `true` or `remove` when `value` is `false`.
+
+###### 3.1.6.3.17: `fn intersection(self: Self, other: Self) -> Self`
+
+```rust
+pub const fn intersection(self: Self, other: Self) -> Self { ... }
+```
+
+The bitwise and (`&`) of the bits in two flags values.
+
+###### 3.1.6.3.18: `fn union(self: Self, other: Self) -> Self`
+
+```rust
+pub const fn union(self: Self, other: Self) -> Self { ... }
+```
+
+The bitwise or (`|`) of the bits in two flags values.
+
+###### 3.1.6.3.19: `fn difference(self: Self, other: Self) -> Self`
+
+```rust
+pub const fn difference(self: Self, other: Self) -> Self { ... }
+```
+
+The intersection of a source flags value with the complement of a target flags value (`&!`).
+
+This method is not equivalent to `self & !other` when `other` has unknown bits set.
+`difference` won't truncate `other`, but the `!` operator will.
+
+###### 3.1.6.3.20: `fn symmetric_difference(self: Self, other: Self) -> Self`
+
+```rust
+pub const fn symmetric_difference(self: Self, other: Self) -> Self { ... }
+```
+
+The bitwise exclusive-or (`^`) of the bits in two flags values.
+
+###### 3.1.6.3.21: `fn complement(self: Self) -> Self`
+
+```rust
+pub const fn complement(self: Self) -> Self { ... }
+```
+
+The bitwise negation (`!`) of the bits in a flags value, truncating the result.
+
+##### 3.1.6.4: `impl pulldown_cmark::Options`
+
+###### 3.1.6.4.2: `fn iter(self: &Self) -> bitflags::iter::Iter<pulldown_cmark::Options>`
+
+```rust
+pub const fn iter(self: &Self) -> bitflags::iter::Iter<pulldown_cmark::Options> { ... }
+```
+
+Yield a set of contained flags values.
+
+Each yielded flags value will correspond to a defined named flag. Any unknown bits
+will be yielded together as a final flags value.
+
+###### 3.1.6.4.3: `fn iter_names(self: &Self) -> bitflags::iter::IterNames<pulldown_cmark::Options>`
+
+```rust
+pub const fn iter_names(self: &Self) -> bitflags::iter::IterNames<pulldown_cmark::Options> { ... }
+```
+
+Yield a set of contained named flags values.
+
+This method is like [`iter`](#method.iter), except only yields bits in contained named flags.
+Any unknown bits, or bits not corresponding to a contained flag will not be yielded.
+
+##### 3.1.6.4: Trait Implementations for `Options`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Binary`
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `LowerHex`
+- `Octal`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `UpperHex`
+- `arith::Sub`
+- `arith::SubAssign`
+- `bit::BitAnd`
+- `bit::BitAndAssign`
+- `bit::BitOr`
+- `bit::BitOrAssign`
+- `bit::BitXor`
+- `bit::BitXorAssign`
+- `bit::Not`
+- `bitflags::traits::Flags`
+- `bitflags::traits::PublicFlags`
+- `iter::traits::collect::Extend<pulldown_cmark::Options>`
+- `iter::traits::collect::FromIterator<pulldown_cmark::Options>`
+- `iter::traits::collect::IntoIterator`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.7: `struct Parser<'input, F = pulldown_cmark::parse::DefaultBrokenLinkCallback>`
+
+```rust
+pub struct Parser<'input, F = pulldown_cmark::parse::DefaultBrokenLinkCallback> {}
+```
+
+_[Private fields hidden]_
+
+Markdown event iterator.
+
+##### 3.1.7.2: `impl<'input> pulldown_cmark::parse::Parser<'input, pulldown_cmark::parse::DefaultBrokenLinkCallback>`
+
+###### 3.1.7.2.2: `fn new(text: &'input str) -> Self`
+
+Creates a new event iterator for a markdown string without any options enabled.
+
+###### 3.1.7.2.3: `fn new_ext(text: &'input str, options: pulldown_cmark::Options) -> Self`
+
+Creates a new event iterator for a markdown string with given options.
+
+##### 3.1.7.3: `impl<'input, F: pulldown_cmark::parse::BrokenLinkCallback<'input>> pulldown_cmark::parse::Parser<'input, F>`
+
+###### 3.1.7.3.2: `fn new_with_broken_link_callback(text: &'input str, options: pulldown_cmark::Options, broken_link_callback: option::Option<F>) -> Self`
+
+In case the parser encounters any potential links that have a broken
+reference (e.g `[foo]` when there is no `[foo]: ` entry at the bottom)
+the provided callback will be called with the reference name,
+and the returned pair will be used as the link URL and title if it is not
+`None`.
+
+###### 3.1.7.3.3: `fn reference_definitions(self: &Self) -> &pulldown_cmark::parse::RefDefs<'_>`
+
+Returns a reference to the internal `RefDefs` object, which provides access
+to the internal map of reference definitions.
+
+###### 3.1.7.3.4: `fn into_offset_iter(self: Self) -> pulldown_cmark::parse::OffsetIter<'input, F>`
+
+Consumes the event iterator and produces an iterator that produces
+`(Event, Range)` pairs, where the `Range` value maps to the corresponding
+range in the markdown source.
+
+##### 3.1.7.3: Trait Implementations for `Parser`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+- `iter::traits::iterator::Iterator`
+- `iter::traits::marker::FusedIterator`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `iter::traits::collect::IntoIterator` (`where I: iter::traits::iterator::Iterator`)
+
+#### 3.1.8: `struct RefDefs<'input>`
+
+```rust
+pub struct RefDefs<'input>();
+```
+
+Keeps track of the reference definitions defined in the document.
+
+##### 3.1.8.2: `impl<'input, 'b, 's> pulldown_cmark::parse::RefDefs<'input> where 's: 'b`
+
+###### 3.1.8.2.2: `fn get(self: &'s Self, key: &'b str) -> option::Option<&'b pulldown_cmark::parse::LinkDef<'input>>`
+
+Performs a lookup on reference label using unicode case folding.
+
+###### 3.1.8.2.3: `fn iter(self: &'s Self) -> impl iter::traits::iterator::Iterator<Item = (&'s str, &'s pulldown_cmark::parse::LinkDef<'input>)>`
+
+Provides an iterator over all the document's reference definitions.
+
+##### 3.1.8.2: Trait Implementations for `RefDefs`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `default::Default`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.9: `struct TextMergeStream<'a, I>`
+
+```rust
+pub struct TextMergeStream<'a, I> {}
+```
+
+_[Private fields hidden]_
+
+Merge consecutive `Event::Text` events into only one.
+
+##### 3.1.9.2: `impl<'a, I> pulldown_cmark::utils::TextMergeStream<'a, I>
+  where
+    I: iter::traits::iterator::Iterator<Item = pulldown_cmark::Event<'a>>`
+
+###### 3.1.9.2.2: `fn new(iter: I) -> Self`
+
+
+##### 3.1.9.2: Trait Implementations for `TextMergeStream`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+- `iter::traits::iterator::Iterator`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `iter::traits::collect::IntoIterator` (`where I: iter::traits::iterator::Iterator`)
+
+#### 3.1.10: `struct TextMergeWithOffset<'a, I>`
+
+```rust
+pub struct TextMergeWithOffset<'a, I> {}
+```
+
+_[Private fields hidden]_
+
+Merge consecutive `Event::Text` events into only one, with offsets.
+
+Compatible with with [`OffsetIter`](crate::OffsetIter).
+
+##### 3.1.10.2: `impl<'a, I> pulldown_cmark::utils::TextMergeWithOffset<'a, I>
+  where
+    I: iter::traits::iterator::Iterator<Item = (pulldown_cmark::Event<'a>, range::Range<usize>)>`
+
+###### 3.1.10.2.2: `fn new(iter: I) -> Self`
+
+
+##### 3.1.10.2: Trait Implementations for `TextMergeWithOffset`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+- `iter::traits::iterator::Iterator`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `iter::traits::collect::IntoIterator` (`where I: iter::traits::iterator::Iterator`)
+
+### 3.2: Enums
+
+#### 3.2.1: `enum Alignment`
+
+```rust
+pub enum Alignment {
+    None,
+    Left,
+    Center,
+    Right,
+}
+```
+
+Table column text alignment.
+
+##### 3.2.1.2: Variants
+
+###### 3.2.1.2.2: `None`
+
+Default text alignment.
+
+##### 3.2.1.2: Trait Implementations for `Alignment`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.2: `enum BlockQuoteKind`
+
+```rust
+pub enum BlockQuoteKind {
+    Note,
+    Tip,
+    Important,
+    Warning,
+    Caution,
+}
+```
+
+BlockQuote kind (Note, Tip, Important, Warning, Caution).
+
+##### 3.2.2.1: Trait Implementations for `BlockQuoteKind`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.3: `enum CodeBlockKind<'a>`
+
+```rust
+pub enum CodeBlockKind<'a> {
+    Indented,
+    Fenced(pulldown_cmark::strings::CowStr<'a>),
+}
+```
+
+Codeblock kind.
+
+##### 3.2.3.2: Variants
+
+###### 3.2.3.2.2: `Fenced(pulldown_cmark::strings::CowStr<'a>)`
+
+The value contained in the tag describes the language of the code, which may be empty.
+
+##### 3.2.3.3: `impl<'a> pulldown_cmark::CodeBlockKind<'a>`
+
+###### 3.2.3.3.2: `fn is_indented(self: &Self) -> bool`
+
+
+###### 3.2.3.3.3: `fn is_fenced(self: &Self) -> bool`
+
+
+###### 3.2.3.3.4: `fn into_static(self: Self) -> pulldown_cmark::CodeBlockKind<'static>`
+
+
+##### 3.2.3.3: Trait Implementations for `CodeBlockKind`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.4: `enum CowStr<'a>`
+
+```rust
+pub enum CowStr<'a> {
+    Boxed(Box<str>),
+    Borrowed(&'a str),
+    Inlined(pulldown_cmark::strings::InlineStr),
+}
+```
+
+A copy-on-write string that can be owned, borrowed
+or inlined.
+
+It is three words long.
+
+##### 3.2.4.2: Variants
+
+###### 3.2.4.2.2: `Boxed(Box<str>)`
+
+An owned, immutable string.
+
+###### 3.2.4.2.3: `Borrowed(&'a str)`
+
+A borrowed string.
+
+###### 3.2.4.2.4: `Inlined(pulldown_cmark::strings::InlineStr)`
+
+A short inline string.
+
+##### 3.2.4.3: `impl<'a> pulldown_cmark::strings::CowStr<'a>`
+
+###### 3.2.4.3.2: `fn into_string(self: Self) -> String`
+
+
+###### 3.2.4.3.3: `fn into_static(self: Self) -> pulldown_cmark::strings::CowStr<'static>`
+
+
+##### 3.2.4.3: Trait Implementations for `CowStr`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Display`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `borrow::Borrow<str>`
+- `convert::AsRef<str>`
+- `convert::From<&'a str>`
+- `convert::From<Cow<'a, char>>`
+- `convert::From<Cow<'a, str>>`
+- `convert::From<String>`
+- `convert::From<char>`
+- `convert::From<pulldown_cmark::strings::CowStr<'a>>`
+- `convert::From<pulldown_cmark::strings::CowStr<'a>>`
+- `deref::Deref`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `ToString` (`where T: Display + ?Sized`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `deref::Receiver`
+
+    ```rust
+    where
+        P: deref::Deref<Target = T> + ?Sized,
+        T: ?Sized
+    ```
+
+
+#### 3.2.5: `enum Event<'a>`
+
+```rust
+pub enum Event<'a> {
+    Start(pulldown_cmark::Tag<'a>),
+    End(pulldown_cmark::TagEnd),
+    Text(pulldown_cmark::strings::CowStr<'a>),
+    Code(pulldown_cmark::strings::CowStr<'a>),
+    InlineMath(pulldown_cmark::strings::CowStr<'a>),
+    DisplayMath(pulldown_cmark::strings::CowStr<'a>),
+    Html(pulldown_cmark::strings::CowStr<'a>),
+    InlineHtml(pulldown_cmark::strings::CowStr<'a>),
+    FootnoteReference(pulldown_cmark::strings::CowStr<'a>),
+    SoftBreak,
+    HardBreak,
+    Rule,
+    TaskListMarker(bool),
+}
+```
+
+Markdown events that are generated in a preorder traversal of the document
+tree, with additional `End` events whenever all of an inner node's children
+have been visited.
+
+##### 3.2.5.2: Variants
+
+###### 3.2.5.2.2: `Start(pulldown_cmark::Tag<'a>)`
+
+Start of a tagged element. Events that are yielded after this event
+and before its corresponding `End` event are inside this element.
+Start and end events are guaranteed to be balanced.
+
+###### 3.2.5.2.3: `End(pulldown_cmark::TagEnd)`
+
+End of a tagged element.
+
+###### 3.2.5.2.4: `Text(pulldown_cmark::strings::CowStr<'a>)`
+
+A text node.
+
+All text, outside and inside [`Tag`]s.
+
+###### 3.2.5.2.5: `Code(pulldown_cmark::strings::CowStr<'a>)`
+
+An [inline code node](https://spec.commonmark.org/0.31.2/#code-spans).
+
+```markdown
+`code`
+```
+
+###### 3.2.5.2.6: `InlineMath(pulldown_cmark::strings::CowStr<'a>)`
+
+An inline math environment node.
+Requires [`Options::ENABLE_MATH`].
+
+```markdown
+$math$
+```
+
+###### 3.2.5.2.7: `DisplayMath(pulldown_cmark::strings::CowStr<'a>)`
+
+A display math environment node.
+Requires [`Options::ENABLE_MATH`].
+
+```markdown
+$$math$$
+```
+
+###### 3.2.5.2.8: `Html(pulldown_cmark::strings::CowStr<'a>)`
+
+An HTML node.
+
+A line of HTML inside [`Tag::HtmlBlock`] includes the line break.
+
+###### 3.2.5.2.9: `InlineHtml(pulldown_cmark::strings::CowStr<'a>)`
+
+An [inline HTML node](https://spec.commonmark.org/0.31.2/#raw-html).
+
+Contains only the tag itself, e.g. `<open-tag>`, `</close-tag>` or `<!-- comment -->`.
+
+**Note**: Under some conditions HTML can also be parsed as an HTML Block, see [`Tag::HtmlBlock`] for details.
+
+###### 3.2.5.2.10: `FootnoteReference(pulldown_cmark::strings::CowStr<'a>)`
+
+A reference to a footnote with given label, which may or may not be defined
+by an event with a [`Tag::FootnoteDefinition`] tag. Definitions and references to them may
+occur in any order. Only parsed and emitted with [`Options::ENABLE_FOOTNOTES`] or [`Options::ENABLE_OLD_FOOTNOTES`].
+
+```markdown
+[^1]
+```
+
+###### 3.2.5.2.11: `SoftBreak`
+
+A [soft line break](https://spec.commonmark.org/0.31.2/#soft-line-breaks).
+
+Any line break that isn't a [`HardBreak`](Self::HardBreak), or the end of e.g. a paragraph.
+
+###### 3.2.5.2.12: `HardBreak`
+
+A [hard line break](https://spec.commonmark.org/0.31.2/#hard-line-breaks).
+
+A line ending that is either preceded by at least two spaces or `\`.
+
+```markdown
+hard··
+line\
+breaks
+```
+*`·` is a space*
+
+###### 3.2.5.2.13: `Rule`
+
+A horizontal ruler.
+
+```markdown
+***
+···---
+_·_··_····_··
+```
+*`·` is any whitespace*
+
+###### 3.2.5.2.14: `TaskListMarker(bool)`
+
+A task list marker, rendered as a checkbox in HTML. Contains a true when it is checked.
+Only parsed and emitted with [`Options::ENABLE_TASKLISTS`].
+```markdown
+- [ ] unchecked
+- [x] checked
+```
+
+##### 3.2.5.3: `impl<'a> pulldown_cmark::Event<'a>`
+
+###### 3.2.5.3.2: `fn into_static(self: Self) -> pulldown_cmark::Event<'static>`
+
+
+##### 3.2.5.3: Trait Implementations for `Event`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.6: `enum HeadingLevel`
+
+```rust
+pub enum HeadingLevel {
+    H1 = 1,
+    H2,
+    H3,
+    H4,
+    H5,
+    H6,
+}
+```
+
+##### 3.2.6.1: Trait Implementations for `HeadingLevel`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Display`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `convert::TryFrom<usize>`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `ToString` (`where T: Display + ?Sized`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.7: `enum LinkType`
+
+```rust
+pub enum LinkType {
+    Inline,
+    Reference,
+    ReferenceUnknown,
+    Collapsed,
+    CollapsedUnknown,
+    Shortcut,
+    ShortcutUnknown,
+    Autolink,
+    Email,
+    WikiLink { has_pothole: bool },
+}
+```
+
+Type specifier for inline links. See [the Tag::Link](enum.Tag.html#variant.Link) for more information.
+
+##### 3.2.7.2: Variants
+
+###### 3.2.7.2.2: `Inline`
+
+Inline link like `[foo](bar)`
+
+###### 3.2.7.2.3: `Reference`
+
+Reference link like `[foo][bar]`
+
+###### 3.2.7.2.4: `ReferenceUnknown`
+
+Reference without destination in the document, but resolved by the broken_link_callback
+
+###### 3.2.7.2.5: `Collapsed`
+
+Collapsed link like `[foo][]`
+
+###### 3.2.7.2.6: `CollapsedUnknown`
+
+Collapsed link without destination in the document, but resolved by the broken_link_callback
+
+###### 3.2.7.2.7: `Shortcut`
+
+Shortcut link like `[foo]`
+
+###### 3.2.7.2.8: `ShortcutUnknown`
+
+Shortcut without destination in the document, but resolved by the broken_link_callback
+
+###### 3.2.7.2.9: `Autolink`
+
+Autolink like `<http://foo.bar/baz>`
+
+###### 3.2.7.2.10: `Email`
+
+Email address in autolink like `<john@example.org>`
+
+###### 3.2.7.2.11: `WikiLink { has_pothole: bool }`
+
+Wikilink link like `[[foo]]` or `[[foo|bar]]`
+
+####### 3.2.7.2.11.2: Fields
+
+######## 3.2.7.2.11.2.2: `has_pothole`
+
+`true` if the wikilink was piped.
+
+* `true` - `[[foo|bar]]`
+* `false` - `[[foo]]`
+
+##### 3.2.7.2: Trait Implementations for `LinkType`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.8: `enum MetadataBlockKind`
+
+```rust
+pub enum MetadataBlockKind {
+    YamlStyle,
+    PlusesStyle,
+}
+```
+
+Metadata block kind.
+
+##### 3.2.8.1: Trait Implementations for `MetadataBlockKind`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.9: `enum Tag<'a>`
+
+```rust
+pub enum Tag<'a> {
+    Paragraph,
+    Heading { level: pulldown_cmark::HeadingLevel, id: option::Option<pulldown_cmark::strings::CowStr<'a>>, classes: Vec<pulldown_cmark::strings::CowStr<'a>>, attrs: Vec<(pulldown_cmark::strings::CowStr<'a>, option::Option<pulldown_cmark::strings::CowStr<'a>>)> },
+    BlockQuote(option::Option<pulldown_cmark::BlockQuoteKind>),
+    CodeBlock(pulldown_cmark::CodeBlockKind<'a>),
+    HtmlBlock,
+    List(option::Option<u64>),
+    Item,
+    FootnoteDefinition(pulldown_cmark::strings::CowStr<'a>),
+    DefinitionList,
+    DefinitionListTitle,
+    DefinitionListDefinition,
+    Table(Vec<pulldown_cmark::Alignment>),
+    TableHead,
+    TableRow,
+    TableCell,
+    Emphasis,
+    Strong,
+    Strikethrough,
+    Superscript,
+    Subscript,
+    Link { link_type: pulldown_cmark::LinkType, dest_url: pulldown_cmark::strings::CowStr<'a>, title: pulldown_cmark::strings::CowStr<'a>, id: pulldown_cmark::strings::CowStr<'a> },
+    Image { link_type: pulldown_cmark::LinkType, dest_url: pulldown_cmark::strings::CowStr<'a>, title: pulldown_cmark::strings::CowStr<'a>, id: pulldown_cmark::strings::CowStr<'a> },
+    MetadataBlock(pulldown_cmark::MetadataBlockKind),
+}
+```
+
+Tags for elements that can contain other elements.
+
+##### 3.2.9.2: Variants
+
+###### 3.2.9.2.2: `Paragraph`
+
+A paragraph of text and other inline elements.
+
+###### 3.2.9.2.3: `Heading { level: pulldown_cmark::HeadingLevel, id: option::Option<pulldown_cmark::strings::CowStr<'a>>, classes: Vec<pulldown_cmark::strings::CowStr<'a>>, attrs: Vec<(pulldown_cmark::strings::CowStr<'a>, option::Option<pulldown_cmark::strings::CowStr<'a>>)> }`
+
+A heading, with optional identifier, classes and custom attributes.
+The identifier is prefixed with `#` and the last one in the attributes
+list is chosen, classes are prefixed with `.` and custom attributes
+have no prefix and can optionally have a value (`myattr` or `myattr=myvalue`).
+
+`id`, `classes` and `attrs` are only parsed and populated with [`Options::ENABLE_HEADING_ATTRIBUTES`], `None` or empty otherwise.
+
+####### 3.2.9.2.3.2: Fields
+
+######## 3.2.9.2.3.2.2: `attrs`
+
+The first item of the tuple is the attr and second one the value.
+
+###### 3.2.9.2.4: `BlockQuote(option::Option<pulldown_cmark::BlockQuoteKind>)`
+
+A block quote.
+
+The `BlockQuoteKind` is only parsed & populated with [`Options::ENABLE_GFM`], `None` otherwise.
+
+```markdown
+> regular quote
+
+> [!NOTE]
+> note quote
+```
+
+###### 3.2.9.2.5: `CodeBlock(pulldown_cmark::CodeBlockKind<'a>)`
+
+A code block.
+
+###### 3.2.9.2.6: `HtmlBlock`
+
+An HTML block.
+
+A line that begins with some predefined tags (HTML block tags) (see [CommonMark Spec](https://spec.commonmark.org/0.31.2/#html-blocks) for more details) or any tag that is followed only by whitespace.
+
+Most HTML blocks end on an empty line, though some e.g. `<pre>` like `<script>` or `<!-- Comments -->` don't.
+```markdown
+<body> Is HTML block even though here is non-whitespace.
+Block ends on an empty line.
+
+<some-random-tag>
+This is HTML block.
+
+<pre> Doesn't end on empty lines.
+
+This is still the same block.</pre>
+```
+
+###### 3.2.9.2.7: `List(option::Option<u64>)`
+
+A list. If the list is ordered the field indicates the number of the first item.
+Contains only list items.
+
+###### 3.2.9.2.8: `Item`
+
+A list item.
+
+###### 3.2.9.2.9: `FootnoteDefinition(pulldown_cmark::strings::CowStr<'a>)`
+
+A footnote definition. The value contained is the footnote's label by which it can
+be referred to.
+
+Only parsed and emitted with [`Options::ENABLE_FOOTNOTES`] or [`Options::ENABLE_OLD_FOOTNOTES`].
+
+###### 3.2.9.2.10: `DefinitionList`
+
+Only parsed and emitted with [`Options::ENABLE_DEFINITION_LIST`].
+
+###### 3.2.9.2.11: `DefinitionListTitle`
+
+Only parsed and emitted with [`Options::ENABLE_DEFINITION_LIST`].
+
+###### 3.2.9.2.12: `DefinitionListDefinition`
+
+Only parsed and emitted with [`Options::ENABLE_DEFINITION_LIST`].
+
+###### 3.2.9.2.13: `Table(Vec<pulldown_cmark::Alignment>)`
+
+A table. Contains a vector describing the text-alignment for each of its columns.
+Only parsed and emitted with [`Options::ENABLE_TABLES`].
+
+###### 3.2.9.2.14: `TableHead`
+
+A table header. Contains only `TableCell`s. Note that the table body starts immediately
+after the closure of the `TableHead` tag. There is no `TableBody` tag.
+Only parsed and emitted with [`Options::ENABLE_TABLES`].
+
+###### 3.2.9.2.15: `TableRow`
+
+A table row. Is used both for header rows as body rows. Contains only `TableCell`s.
+Only parsed and emitted with [`Options::ENABLE_TABLES`].
+
+###### 3.2.9.2.16: `TableCell`
+
+Only parsed and emitted with [`Options::ENABLE_TABLES`].
+
+###### 3.2.9.2.17: `Emphasis`
+
+[Emphasis](https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis).
+```markdown
+half*emph* _strong_ _multi _level__
+```
+
+###### 3.2.9.2.18: `Strong`
+
+[Strong emphasis](https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis).
+```markdown
+half**strong** __strong__ __multi __level____
+```
+
+###### 3.2.9.2.19: `Strikethrough`
+
+Only parsed and emitted with [`Options::ENABLE_STRIKETHROUGH`].
+
+```markdown
+~strike through~
+```
+
+###### 3.2.9.2.20: `Superscript`
+
+Only parsed and emitted with [`Options::ENABLE_SUPERSCRIPT`].
+
+```markdown
+^superscript^
+```
+
+###### 3.2.9.2.21: `Subscript`
+
+Only parsed and emitted with [`Options::ENABLE_SUBSCRIPT`], if disabled `~something~` is parsed as [`Strikethrough`](Self::Strikethrough).
+```markdown
+~subscript~ ~~if also enabled this is strikethrough~~
+```
+
+###### 3.2.9.2.22: `Link { link_type: pulldown_cmark::LinkType, dest_url: pulldown_cmark::strings::CowStr<'a>, title: pulldown_cmark::strings::CowStr<'a>, id: pulldown_cmark::strings::CowStr<'a> }`
+
+A link.
+
+####### 3.2.9.2.22.2: Fields
+
+######## 3.2.9.2.22.2.2: `id`
+
+Identifier of reference links, e.g. `world` in the link `[hello][world]`.
+
+###### 3.2.9.2.23: `Image { link_type: pulldown_cmark::LinkType, dest_url: pulldown_cmark::strings::CowStr<'a>, title: pulldown_cmark::strings::CowStr<'a>, id: pulldown_cmark::strings::CowStr<'a> }`
+
+An image. The first field is the link type, the second the destination URL and the third is a title,
+the fourth is the link identifier.
+
+####### 3.2.9.2.23.2: Fields
+
+######## 3.2.9.2.23.2.2: `id`
+
+Identifier of reference links, e.g. `world` in the link `[hello][world]`.
+
+###### 3.2.9.2.24: `MetadataBlock(pulldown_cmark::MetadataBlockKind)`
+
+A metadata block.
+Only parsed and emitted with [`Options::ENABLE_YAML_STYLE_METADATA_BLOCKS`]
+or [`Options::ENABLE_PLUSES_DELIMITED_METADATA_BLOCKS`].
+
+##### 3.2.9.3: `impl<'a> pulldown_cmark::Tag<'a>`
+
+###### 3.2.9.3.2: `fn to_end(self: &Self) -> pulldown_cmark::TagEnd`
+
+
+###### 3.2.9.3.3: `fn into_static(self: Self) -> pulldown_cmark::Tag<'static>`
+
+
+##### 3.2.9.3: Trait Implementations for `Tag`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+- `convert::From<pulldown_cmark::Tag<'a>>`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.10: `enum TagEnd`
+
+```rust
+pub enum TagEnd {
+    Paragraph,
+    Heading(pulldown_cmark::HeadingLevel),
+    BlockQuote(option::Option<pulldown_cmark::BlockQuoteKind>),
+    CodeBlock,
+    HtmlBlock,
+    List(bool),
+    Item,
+    FootnoteDefinition,
+    DefinitionList,
+    DefinitionListTitle,
+    DefinitionListDefinition,
+    Table,
+    TableHead,
+    TableRow,
+    TableCell,
+    Emphasis,
+    Strong,
+    Strikethrough,
+    Superscript,
+    Subscript,
+    Link,
+    Image,
+    MetadataBlock(pulldown_cmark::MetadataBlockKind),
+}
+```
+
+The end of a `Tag`.
+
+##### 3.2.10.2: Variants
+
+###### 3.2.10.2.2: `List(bool)`
+
+A list, `true` for ordered lists.
+
+##### 3.2.10.2: Trait Implementations for `TagEnd`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `convert::From<pulldown_cmark::Tag<'a>>`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+### 3.3: Traits
+
+#### 3.3.1: `trait BrokenLinkCallback<'input>`
+
+```rust
+pub trait BrokenLinkCallback<'input> {
+    pub fn handle_broken_link(self: &mut Self, link: pulldown_cmark::parse::BrokenLink<'input>) -> option::Option<(pulldown_cmark::strings::CowStr<'input>, pulldown_cmark::strings::CowStr<'input>)>;;
+}
+```
+
+Trait for broken link callbacks.
+
+See [Parser::new_with_broken_link_callback].
+Automatically implemented for closures with the appropriate signature.
+
+##### 3.3.1.2: Implementors
+
+###### 3.3.1.2.2: `impl<'input, T> pulldown_cmark::parse::BrokenLinkCallback<'input> for T where T: function::FnMut`
+
+###### 3.3.1.2.3: `impl<'input> pulldown_cmark::parse::BrokenLinkCallback<'input> for Box<dyn pulldown_cmark::parse::BrokenLinkCallback<'input>>`
+
+###### 3.3.1.2.4: `impl<'input> pulldown_cmark::parse::BrokenLinkCallback<'input> for pulldown_cmark::parse::DefaultBrokenLinkCallback`
+
+
+## 4: Module: `pulldown_cmark::html`
+
+HTML renderer that takes an iterator of events as input.
+
+
+### 4.1: Functions
+
+#### 4.1.1: `fn push_html<'a, I>(s: &mut String, iter: I)`
+
+```rust
+pub fn push_html<'a, I>
+  where
+    I: iter::traits::iterator::Iterator<Item = pulldown_cmark::Event<'a>>(s: &mut String, iter: I) { ... }
+```
+
+Iterate over an `Iterator` of `Event`s, generate HTML for each `Event`, and
+push it to a `String`.
+
+###### Examples
+
+```
+use pulldown_cmark::{html, Parser};
+
+let markdown_str = r#"
+hello
+=====
+
+* alpha
+* beta
+"#;
+let parser = Parser::new(markdown_str);
+
+let mut html_buf = String::new();
+html::push_html(&mut html_buf, parser);
+
+assert_eq!(html_buf, r#"<h1>hello</h1>
+<ul>
+<li>alpha</li>
+<li>beta</li>
+</ul>
+"#);
+```
+
+
+#### 4.1.2: `fn write_html_fmt<'a, I, W>(writer: W, iter: I) -> Result`
+
+```rust
+pub fn write_html_fmt<'a, I, W>
+  where
+    I: iter::traits::iterator::Iterator<Item = pulldown_cmark::Event<'a>>,
+    W: Write(writer: W, iter: I) -> Result { ... }
+```
+
+Iterate over an `Iterator` of `Event`s, generate HTML for each `Event`, and
+write it into Unicode-accepting buffer or stream.
+
+###### Examples
+
+```
+use pulldown_cmark::{html, Parser};
+
+let markdown_str = r#"
+hello
+=====
+
+* alpha
+* beta
+"#;
+let mut buf = String::new();
+let parser = Parser::new(markdown_str);
+
+html::write_html_fmt(&mut buf, parser);
+
+assert_eq!(buf, r#"<h1>hello</h1>
+<ul>
+<li>alpha</li>
+<li>beta</li>
+</ul>
+"#);
+```
+
+
+#### 4.1.3: `fn write_html_io<'a, I, W>(writer: W, iter: I) -> io::error::Result<()>`
+
+```rust
+pub fn write_html_io<'a, I, W>
+  where
+    I: iter::traits::iterator::Iterator<Item = pulldown_cmark::Event<'a>>,
+    W: io::Write(writer: W, iter: I) -> io::error::Result<()> { ... }
+```
+
+Iterate over an `Iterator` of `Event`s, generate HTML for each `Event`, and
+write it out to an I/O stream.
+
+**Note**: using this function with an unbuffered writer like a file or socket
+will result in poor performance. Wrap these in a
+[`BufWriter`](https://doc.rust-lang.org/std/io/struct.BufWriter.html) to
+prevent unnecessary slowdowns.
+
+###### Examples
+
+```
+use pulldown_cmark::{html, Parser};
+use std::io::Cursor;
+
+let markdown_str = r#"
+hello
+=====
+
+* alpha
+* beta
+"#;
+let mut bytes = Vec::new();
+let parser = Parser::new(markdown_str);
+
+html::write_html_io(Cursor::new(&mut bytes), parser);
+
+assert_eq!(&String::from_utf8_lossy(&bytes)[..], r#"<h1>hello</h1>
+<ul>
+<li>alpha</li>
+<li>beta</li>
+</ul>
+"#);
+```
+
+
+## 5: Module: `pulldown_cmark::utils`
+
+Miscellaneous utilities to increase comfort.
+Special thanks to:
+
+- <https://github.com/BenjaminRi/Redwood-Wiki/blob/master/src/markdown_utils.rs>.
+Its author authorized the use of this GPL code in this project in
+<https://github.com/raphlinus/pulldown-cmark/issues/507>.
+
+- <https://gist.github.com/rambip/a507c312ed61c99c24b2a54f98325721>.
+Its author proposed the solution in
+<https://github.com/raphlinus/pulldown-cmark/issues/708>.
+
+# pulldown_cmark_to_cmark API (21.0.0)
+
+Convert pulldown-cmark Events back to the string they were parsed from
+
+## 1: Manifest
+
+- Homepage: <https://github.com/Byron/pulldown-cmark-to-cmark>
+- Repository: <https://github.com/Byron/pulldown-cmark-to-cmark>
+- License: Apache-2.0
+- rust-version: `1.71.1`
+- edition: `2018`
+
+### 1.1: Features
+
+- None
+
+
+## 2: README
+
+[![Crates.io](https://img.shields.io/crates/v/pulldown-cmark-to-cmark)](https://crates.io/crates/pulldown-cmark-to-cmark)
+![Rust](https://github.com/Byron/pulldown-cmark-to-cmark/workflows/Rust/badge.svg)
+
+A utility library which translates [`Event`][pdcm-event] back to markdown.
+It's the prerequisite for writing markdown filters which can work as
+[mdbook-preprocessors][mdbook-prep].
+
+This library takes great pride in supporting **everything that `pulldown-cmark`** supports,
+including *tables* and *footnotes* and *codeblocks in codeblocks*,
+while assuring *quality* with a powerful test suite.
+
+[pdcm-event]: https://docs.rs/pulldown-cmark/latest/pulldown_cmark/enum.Event.html
+[mdbook-prep]: https://rust-lang.github.io/mdBook/for_developers/preprocessors.html
+
+##### How to use
+
+Please have a look at the [`stupicat`-example][sc-example] for a complete tour
+of the API, or have a look at the [api-docs][api].
+
+It's easiest to get this library into your `Cargo.toml` using `cargo-add`:
+```
+cargo add pulldown-cmark-to-cmark
+```
+
+[sc-example]: https://github.com/Byron/pulldown-cmark-to-cmark/blob/76667725b61be24890fbdfed5e7ecdb4c1ad1dc8/examples/stupicat.rs#L21
+[api]: https://docs.rs/crate/pulldown-cmark-to-cmark
+
+##### Supported Rust Versions
+
+`pulldown-cmark-to-cmark` follows the MSRV (minimum supported rust version) policy of [`pulldown-cmark`]. The current MSRV is 1.71.1.
+
+[`pulldown-cmark`]: https://github.com/pulldown-cmark/pulldown-cmark
+
+##### Friends of this project
+
+ * [**termbook**](https://github.com/Byron/termbook)
+   * A runner for `mdbooks` to keep your documentation tested.  
+ * [**Share Secrets Safely**](https://github.com/Byron/share-secrets-safely)
+   * share secrets within teams to avoid plain-text secrets from day one 
+
+##### Maintenance Guide
+
+###### Making a new release
+
+ * **Assure all documentation is up-to-date and tests are green**
+ * update the `version` in `Cargo.toml` and `git commit`
+ * run `cargo release --no-dev-version`
+
+
+
+## 3: Module: `pulldown_cmark_to_cmark`
+
+
+### 3.1: Structs
+
+#### 3.1.1: `struct Heading<'a>`
+
+```rust
+pub struct Heading<'a> {}
+```
+
+_[Private fields hidden]_
+
+##### 3.1.1.1: Trait Implementations for `Heading`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.2: `struct Options<'a>`
+
+```rust
+pub struct Options<'a> {
+    pub newlines_after_headline: usize,
+    pub newlines_after_paragraph: usize,
+    pub newlines_after_codeblock: usize,
+    pub newlines_after_htmlblock: usize,
+    pub newlines_after_table: usize,
+    pub newlines_after_rule: usize,
+    pub newlines_after_list: usize,
+    pub newlines_after_blockquote: usize,
+    pub newlines_after_rest: usize,
+    pub newlines_after_metadata: usize,
+    pub code_block_token_count: usize,
+    pub code_block_token: char,
+    pub list_token: char,
+    pub ordered_list_token: char,
+    pub increment_ordered_list_bullets: bool,
+    pub emphasis_token: char,
+    pub strong_token: &'a str,
+}
+```
+
+Configuration for the [`cmark_with_options()`] and [`cmark_resume_with_options()`] functions.
+The defaults should provide decent spacing and most importantly, will
+provide a faithful rendering of your markdown document particularly when
+rendering it to HTML.
+
+It's best used with its `Options::default()` implementation.
+
+##### 3.1.2.1: Fields
+
+###### 3.1.2.1.1: `newlines_after_metadata`
+
+The amount of newlines placed after TOML or YAML metadata blocks at the beginning of a document.
+
+###### 3.1.2.1.2: `code_block_token_count`
+
+Token count for fenced code block. An appropriate value of this field can be decided by
+[`calculate_code_block_token_count()`].
+Note that the default value is `4` which allows for one level of nested code-blocks,
+which is typically a safe value for common kinds of markdown documents.
+
+##### 3.1.2.3: `impl pulldown_cmark_to_cmark::Options<'_>`
+
+###### 3.1.2.3.2: `fn special_characters(self: &Self) -> Cow<'static, str>`
+
+
+##### 3.1.2.3: Trait Implementations for `Options`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `default::Default`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.1.3: `struct State<'a>`
+
+```rust
+pub struct State<'a> {
+    pub newlines_before_start: usize,
+    pub list_stack: Vec<option::Option<u64>>,
+    pub padding: Vec<Cow<'a, str>>,
+    pub table_alignments: Vec<pulldown_cmark_to_cmark::Alignment>,
+    pub table_headers: Vec<String>,
+    pub text_for_header: option::Option<String>,
+    pub code_block: option::Option<pulldown_cmark_to_cmark::CodeBlockKind>,
+    pub last_was_text_without_trailing_newline: bool,
+    pub last_was_paragraph_start: bool,
+    pub next_is_link_like: bool,
+    pub link_stack: Vec<pulldown_cmark_to_cmark::LinkCategory<'a>>,
+    pub image_stack: Vec<pulldown_cmark_to_cmark::ImageLink<'a>>,
+    pub current_heading: option::Option<pulldown_cmark_to_cmark::Heading<'a>>,
+    pub in_table_cell: bool,
+    pub current_shortcut_text: option::Option<String>,
+    pub shortcuts: Vec<(String, String, String)>,
+    pub last_event_end_index: usize,
+}
+```
+
+The state of the [`cmark_resume()`] and [`cmark_resume_with_options()`] functions.
+This does not only allow introspection, but enables the user
+to halt the serialization at any time, and resume it later.
+
+##### 3.1.3.1: Fields
+
+###### 3.1.3.1.1: `newlines_before_start`
+
+The amount of newlines to insert after `Event::Start(...)`
+
+###### 3.1.3.1.2: `list_stack`
+
+The lists and their types for which we have seen a `Event::Start(List(...))` tag
+
+###### 3.1.3.1.3: `padding`
+
+The computed padding and prefix to print after each newline.
+This changes with the level of `BlockQuote` and `List` events.
+
+###### 3.1.3.1.4: `table_alignments`
+
+Keeps the current table alignments, if we are currently serializing a table.
+
+###### 3.1.3.1.5: `table_headers`
+
+Keeps the current table headers, if we are currently serializing a table.
+
+###### 3.1.3.1.6: `text_for_header`
+
+The last seen text when serializing a header
+
+###### 3.1.3.1.7: `code_block`
+
+Is set while we are handling text in a code block
+
+###### 3.1.3.1.8: `last_was_text_without_trailing_newline`
+
+True if the last event was text and the text does not have trailing newline. Used to inject additional newlines before code block end fence.
+
+###### 3.1.3.1.9: `last_was_paragraph_start`
+
+True if the last event was a paragraph start. Used to escape spaces at start of line (prevent spurrious indented code).
+
+###### 3.1.3.1.10: `next_is_link_like`
+
+True if the next event is a link, image, or footnote.
+
+###### 3.1.3.1.11: `link_stack`
+
+Currently open links
+
+###### 3.1.3.1.12: `image_stack`
+
+Currently open images
+
+###### 3.1.3.1.13: `current_heading`
+
+Keeps track of the last seen heading's id, classes, and attributes
+
+###### 3.1.3.1.14: `in_table_cell`
+
+True whenever between `Start(TableCell)` and `End(TableCell)`
+
+###### 3.1.3.1.15: `current_shortcut_text`
+
+Keeps track of the last seen shortcut/link
+
+###### 3.1.3.1.16: `shortcuts`
+
+A list of shortcuts seen so far for later emission
+
+###### 3.1.3.1.17: `last_event_end_index`
+
+Index into the `source` bytes of the end of the range corresponding to the last event.
+
+It's used to see if the current event didn't capture some bytes because of a
+skipped-over backslash.
+
+##### 3.1.3.3: `impl pulldown_cmark_to_cmark::State<'_>`
+
+###### 3.1.3.3.2: `fn is_in_code_block(self: &Self) -> bool`
+
+
+##### 3.1.3.4: `impl pulldown_cmark_to_cmark::State<'_>`
+
+###### 3.1.3.4.2: `fn finalize<F>(self: Self, formatter: F) -> result::Result<Self, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn finalize<F> where F: Write(self: Self, formatter: F) -> result::Result<Self, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+##### 3.1.3.4: Trait Implementations for `State`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `default::Default`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+### 3.2: Enums
+
+#### 3.2.1: `enum Alignment`
+
+```rust
+pub enum Alignment {
+    None,
+    Left,
+    Center,
+    Right,
+}
+```
+
+Similar to [Pulldown-Cmark-Alignment][Alignment], but with required
+traits for comparison to allow testing.
+
+##### 3.2.1.1: Trait Implementations for `Alignment`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `convert::From<&'a pulldown_cmark::Alignment>`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.2: `enum CodeBlockKind`
+
+```rust
+pub enum CodeBlockKind {
+    Indented,
+    Fenced,
+}
+```
+
+##### 3.2.2.1: Trait Implementations for `CodeBlockKind`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.3: `enum Error`
+
+```rust
+pub enum Error {
+    FormatFailed(Error),
+    UnexpectedEvent,
+}
+```
+
+The error returned by [`cmark_resume_one_event`] and
+[`cmark_resume_with_source_range_and_options`].
+
+##### 3.2.3.1: Trait Implementations for `Error`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Debug`
+- `Display`
+- `convert::From<Error>`
+- `error::Error`
+
+- `ToString` (`where T: Display + ?Sized`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.4: `enum ImageLink<'a>`
+
+```rust
+pub enum ImageLink<'a> {
+    Reference { uri: Cow<'a, str>, title: Cow<'a, str>, id: Cow<'a, str> },
+    Collapsed { uri: Cow<'a, str>, title: Cow<'a, str> },
+    Shortcut { uri: Cow<'a, str>, title: Cow<'a, str> },
+    Other { uri: Cow<'a, str>, title: Cow<'a, str> },
+}
+```
+
+##### 3.2.4.1: Trait Implementations for `ImageLink`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 3.2.5: `enum LinkCategory<'a>`
+
+```rust
+pub enum LinkCategory<'a> {
+    AngleBracketed,
+    Reference { uri: Cow<'a, str>, title: Cow<'a, str>, id: Cow<'a, str> },
+    Collapsed { uri: Cow<'a, str>, title: Cow<'a, str> },
+    Shortcut { uri: Cow<'a, str>, title: Cow<'a, str> },
+    Other { uri: Cow<'a, str>, title: Cow<'a, str> },
+}
+```
+
+##### 3.2.5.1: Trait Implementations for `LinkCategory`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+### 3.3: Functions
+
+#### 3.3.1: `fn calculate_code_block_token_count<'a, I, E>(events: I) -> option::Option<usize>`
+
+```rust
+pub fn calculate_code_block_token_count<'a, I, E>
+  where
+    I: iter::traits::collect::IntoIterator<Item = E>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>(events: I) -> option::Option<usize> { ... }
+```
+
+Return the `<seen amount of consecutive fenced code-block tokens> + 1` that occur *within* a
+fenced code-block `events`.
+
+Use this function to obtain the correct value for `code_block_token_count` field of [`Options`]
+to assure that the enclosing code-blocks remain functional as such.
+
+Returns `None` if `events` didn't include any code-block, or the code-block didn't contain
+a nested block. In that case, the correct amount of fenced code-block tokens is
+[`DEFAULT_CODE_BLOCK_TOKEN_COUNT`].
+
+```rust
+use pulldown_cmark::Event;
+use pulldown_cmark_to_cmark::*;
+
+let events = &[Event::Text("text".into())];
+let code_block_token_count = calculate_code_block_token_count(events).unwrap_or(DEFAULT_CODE_BLOCK_TOKEN_COUNT);
+let options = Options {
+    code_block_token_count,
+    ..Default::default()
+};
+let mut buf = String::new();
+cmark_with_options(events.iter(), &mut buf, options);
+```
+
+
+#### 3.3.2: `fn cmark<'a, I, E, F>(events: I, formatter: F) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = E>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(events: I, formatter: F) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+As [`cmark_with_options()`], but with default [`Options`].
+
+
+#### 3.3.3: `fn cmark_resume<'a, I, E, F>(events: I, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_resume<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = E>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(events: I, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+As [`cmark_resume_with_options()`], but with default [`Options`].
+
+
+#### 3.3.4: `fn cmark_resume_with_options<'a, I, E, F>(events: I, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_resume_with_options<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = E>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(events: I, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+Serialize a stream of [pulldown-cmark-Events][Event] into a string-backed buffer.
+
+1. **events**
+   * An iterator over [`Events`][Event], for example as returned by the [`Parser`][pulldown_cmark::Parser]
+1. **formatter**
+   * A format writer, can be a `String`.
+1. **state**
+   * The optional initial state of the serialization.
+1. **options**
+   * Customize the appearance of the serialization. All otherwise magic values are contained
+     here.
+
+*Returns* the [`State`] of the serialization on success. You can use it as initial state in the
+next call if you are halting event serialization.
+
+*Errors* if the underlying buffer fails (which is unlikely) or if the [`Event`] stream
+cannot ever be produced by deserializing valid Markdown. Each failure mode corresponds to one
+of [`Error`]'s variants.
+
+
+#### 3.3.5: `fn cmark_resume_with_source_range<'a, I, E, F>(event_and_ranges: I, source: &'a str, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_resume_with_source_range<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = (E, option::Option<range::Range<usize>>)>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(event_and_ranges: I, source: &'a str, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+As [`cmark_resume_with_source_range_and_options`], but with default [`Options`].
+
+
+#### 3.3.6: `fn cmark_resume_with_source_range_and_options<'a, I, E, F>(event_and_ranges: I, source: &'a str, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_resume_with_source_range_and_options<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = (E, option::Option<range::Range<usize>>)>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(event_and_ranges: I, source: &'a str, formatter: F, state: option::Option<pulldown_cmark_to_cmark::State<'a>>, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+Serialize a stream of [pulldown-cmark-Events][Event] while preserving the escape characters in `source`.
+Each input [Event] is accompanied by an optional [Range] that maps it back to the `source` string.
+
+Different from [`cmark_resume_with_options`](super::cmark_resume_with_options), which always escape
+Markdown special characters like `#` or `[`, this function only escapes a special character if
+it is escaped in `source`.
+
+1. **source**
+    * Markdown source from which `event_and_ranges` are created.
+1. **event_and_ranges**
+   * An iterator over [`Event`]-range pairs, for example as returned by [`pulldown_cmark::OffsetIter`].
+     Must match what's provided in `source`.
+1. **formatter**
+   * A format writer, can be a `String`.
+1. **state**
+   * The optional initial state of the serialization, useful when the operation should be resumed.
+1. **options**
+   * Customize the appearance of the serialization. All otherwise magic values are contained
+     here.
+
+*Returns* the [`State`] of the serialization on success. You can use it as initial state in the
+next call if you are halting event serialization.
+
+*Errors* if the underlying buffer fails (which is unlikely) or if the [`Event`] stream
+iterated over by `event_and_ranges` cannot ever be produced by deserializing valid Markdown.
+Each failure mode corresponds to one of [`Error`]'s variants.
+
+
+#### 3.3.7: `fn cmark_with_options<'a, I, E, F>(events: I, formatter: F, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_with_options<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = E>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(events: I, formatter: F, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+As [`cmark_resume_with_options()`], but with the [`State`] finalized.
+
+
+#### 3.3.8: `fn cmark_with_source_range<'a, I, E, F>(event_and_ranges: I, source: &'a str, formatter: F) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_with_source_range<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = (E, option::Option<range::Range<usize>>)>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(event_and_ranges: I, source: &'a str, formatter: F) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+As [`cmark_with_source_range_and_options`], but with default [`Options`].
+
+
+#### 3.3.9: `fn cmark_with_source_range_and_options<'a, I, E, F>(event_and_ranges: I, source: &'a str, formatter: F, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error>`
+
+```rust
+pub fn cmark_with_source_range_and_options<'a, I, E, F>
+  where
+    I: iter::traits::iterator::Iterator<Item = (E, option::Option<range::Range<usize>>)>,
+    E: borrow::Borrow<pulldown_cmark::Event<'a>>,
+    F: Write(event_and_ranges: I, source: &'a str, formatter: F, options: pulldown_cmark_to_cmark::Options<'_>) -> result::Result<pulldown_cmark_to_cmark::State<'a>, pulldown_cmark_to_cmark::Error> { ... }
+```
+
+As [`cmark_resume_with_source_range_and_options`], but with the [`State`] finalized.
+
+
+### 3.4: Constants
+
+#### 3.4.1: `const DEFAULT_CODE_BLOCK_TOKEN_COUNT`
+
+Thea mount of code-block tokens one needs to produce a valid fenced code-block.
 
