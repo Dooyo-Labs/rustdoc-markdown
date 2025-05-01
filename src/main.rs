@@ -18,6 +18,8 @@
 //! rustdoc-json = "*"
 //! rustup-toolchain = "0.1"
 //! cargo-manifest = "0.19"
+//! pulldown-cmark = "0.13" # Added dependency
+//! pulldown-cmark-to-cmark = "21" # Added dependency
 //! ```
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::too_many_lines)]
@@ -30,9 +32,9 @@ use flate2::read::GzDecoder;
 use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
-    GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
-    Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
-};
+    GenericParamDef, Generics, HeadingLevel, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait,
+    Primitive, Struct, StructKind, Tag, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+}; // Import HeadingLevel and Tag
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
@@ -43,6 +45,10 @@ use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
+
+// Import pulldown-cmark related items
+use pulldown_cmark::{Event, Parser as CmarkParser};
+use pulldown_cmark_to_cmark::cmark;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 const AUTO_TRAITS: &[&str] = &[
@@ -1972,44 +1978,32 @@ fn has_docs(item: &Item) -> bool {
     item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
 }
 
-/// Adjusts the markdown header levels in a string.
+/// Adjusts the markdown header levels in a string using pulldown-cmark.
 /// Increases the level of each header (e.g., `#` -> `###`) based on the base level.
 /// Caps the maximum level at 6 (`######`).
 fn adjust_markdown_headers(markdown: &str, base_level: usize) -> String {
-    let mut adjusted_markdown = String::new();
-    for line in markdown.lines() {
-        if line.starts_with('#') {
-            let mut level = 0;
-            for char in line.chars() {
-                if char == '#' {
-                    level += 1;
-                } else {
-                    break;
-                }
-            }
-            // Ensure the first character after # is a space for valid markdown header
-            if line.chars().nth(level) == Some(' ') {
-                let new_level = std::cmp::min(base_level + level, 6); // Cap at level 6
-                let adjusted_line = format!(
-                    "{} {}",
-                    "#".repeat(new_level),
-                    line[level..].trim_start() // Get content after #s
-                );
-                adjusted_markdown.push_str(&adjusted_line);
-            } else {
-                // Not a valid header line, keep it as is
-                adjusted_markdown.push_str(line);
-            }
-        } else {
-            adjusted_markdown.push_str(line);
+    let parser = CmarkParser::new(markdown);
+    let transformed_events = parser.map(|event| match event {
+        Event::Start(Tag::Heading { level, id, classes, attrs }) => {
+            let old_level_usize: usize = level.into();
+            let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
+            let new_level = HeadingLevel::try_from(new_level_usize)
+                .unwrap_or(HeadingLevel::H6); // Default to H6 if conversion fails
+            Event::Start(Tag::Heading { level: new_level, id, classes, attrs })
         }
-        adjusted_markdown.push('\n'); // Add newline back
-    }
-    // Remove trailing newline if the original didn't have one (or if it was empty)
-    if !markdown.ends_with('\n') && !markdown.is_empty() {
-        adjusted_markdown.pop();
-    }
-    adjusted_markdown
+        Event::End(rustdoc_types::TagEnd::Heading(level)) => {
+            let old_level_usize: usize = level.into();
+            let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
+            let new_level = HeadingLevel::try_from(new_level_usize)
+                .unwrap_or(HeadingLevel::H6);
+            Event::End(rustdoc_types::TagEnd::Heading(new_level))
+        }
+        _ => event,
+    });
+
+    let mut out_buf = String::with_capacity(markdown.len() + 128); // Pre-allocate slightly
+    cmark(transformed_events, &mut out_buf).expect("Markdown formatting failed");
+    out_buf
 }
 
 /// Indents each line of a string by the specified amount.
@@ -3229,6 +3223,7 @@ impl<'a> DocPrinter<'a> {
             // Not template mode or no docs: Print original docs if non-empty
             (Some(docs), false) => {
                 if !docs.trim().is_empty() {
+                    // Use the new adjust_markdown_headers function
                     let adjusted_docs = adjust_markdown_headers(docs.trim(), header_level);
                     writeln!(self.output, "{}\n", adjusted_docs).unwrap();
                 }
@@ -4905,7 +4900,8 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             // Adjust headers starting from level 2 (since it's under the H1 crate header)
-            let adjusted_readme = adjust_markdown_headers(readme, 2);
+            // Use the new adjust_markdown_headers function
+            let adjusted_readme = adjust_markdown_headers(readme, section_level);
             writeln!(self.output, "{}\n", adjusted_readme).unwrap();
             self.increment_current_level(); // Increment H2 counter
         }
