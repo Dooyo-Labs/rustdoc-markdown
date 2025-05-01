@@ -1,5 +1,74 @@
-
 # rustdoc_types API (0.39.0)
+
+
+## 1: README
+
+### Rustdoc Types
+
+[Docs](https://docs.rs/rustdoc-types/latest/rustdoc_types/)
+
+This crate contains the type definitions for rustdoc's currently-unstable
+`--output-format=json` flag. They can be deserialized with `serde-json` from
+the output of `cargo +nightly rustdoc -- --output-format json -Z unstable-options`:
+
+```rust
+let json_string = std::fs::read_to_string("./target/doc/rustdoc_types.json")?;
+let krate: rustdoc_types::Crate = serde_json::from_str(&json_string)?;
+
+println!("the index has {} items", krate.index.len());
+```
+
+For performance sensitive crates, consider turning on the `rustc-hash`
+feature. This switches all data structures from `std::collections::HashMap` to
+`rustc-hash::FxHashMap` which improves performance when reading big JSON files
+(like `aws_sdk_rs`'s).
+
+`cargo-semver-checks` benchmarked this change with `aws_sdk_ec2`'s JSON and
+[observed a -3% improvement to the runtime][csc benchmarks]. The performance
+here depends on how much time you spend querying the `HashMap`s, so as always,
+measure first.
+
+[csc benchmarks]: https://rust-lang.zulipchat.com/#narrow/channel/266220-t-rustdoc/topic/rustc-hash.20and.20performance.20of.20rustdoc-types/near/474855731
+
+#### Contributing
+
+This repo is a reexport of
+[`rustdoc-json-types`](https://github.com/rust-lang/rust/blob/master/src/rustdoc-json-types/lib.rs)
+from the rust repo. Any change to the contents of [`src/`](src/), should be sent
+to [`rust-lang/rust`](https://github.com/rust-lang/rust/), via their [normal
+contribution
+procedures](https://rustc-dev-guide.rust-lang.org/contributing.html). Once
+reviewed and merged there, the change will be pulled to this repo and published
+to crates.io.
+
+##### Release Procedure
+
+1. Run `./update.sh` to pull code from upstream
+2. Run `cargo test`
+3. Run `./clgen.sh <old_version> <new_version>`
+4. Follow printed instructions to commit and push.
+
+#### License
+
+Licensed under either of
+
+ * Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+##### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
+
+
+
+
+## 2: Module: `rustdoc_types`
 
 Rustdoc's JSON output interface
 
@@ -19,18 +88,13 @@ increase the number of collisions.
 [2]: https://crates.io/crates/rustc-hash
 
 
-## Modules
+### 2.1: Structs
 
-### `::` (Crate Root)
-
-
-#### Structs
-
-##### `struct AssocItemConstraint`
+#### 2.1.1: `struct AssocItemConstraint`
 
 ```rust
 pub struct AssocItemConstraint {
-    pub name: alloc::string::String,
+    pub name: String,
     pub args: rustdoc_types::GenericArgs,
     pub binding: rustdoc_types::AssocItemConstraintKind,
 }
@@ -44,270 +108,126 @@ IntoIterator<Item = u32, IntoIter: Clone>
              ^^^^^^^^^^  ^^^^^^^^^^^^^^^
 ```
 
-###### Fields
+##### 2.1.1.1: Fields
 
-####### `name`
+###### 2.1.1.1.1: `name`
 
 The name of the associated type/constant.
 
-####### `args`
+###### 2.1.1.1.2: `args`
 
 Arguments provided to the associated type/constant.
 
-####### `binding`
+###### 2.1.1.1.3: `binding`
 
 The kind of bound applied to the associated type/constant.
 
-###### Trait Implementations for `AssocItemConstraint`
+##### 2.1.1.2: Trait Implementations for `AssocItemConstraint`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::AssocItemConstraint where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::AssocItemConstraint where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::AssocItemConstraint where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::AssocItemConstraint where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::AssocItemConstraint {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::AssocItemConstraint where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::AssocItemConstraint where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::AssocItemConstraint where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::AssocItemConstraint where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::AssocItemConstraint where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::AssocItemConstraint {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Constant`
+#### 2.1.2: `struct Constant`
 
 ```rust
 pub struct Constant {
-    pub expr: alloc::string::String,
-    pub value: core::option::Option<alloc::string::String>,
+    pub expr: String,
+    pub value: option::Option<String>,
     pub is_literal: bool,
 }
 ```
 
 A constant.
 
-###### Fields
+##### 2.1.2.1: Fields
 
-####### `expr`
+###### 2.1.2.1.1: `expr`
 
 The stringified expression of this constant. Note that its mapping to the original
 source code is unstable and it's not guaranteed that it'll match the source code.
 
-####### `value`
+###### 2.1.2.1.2: `value`
 
 The value of the evaluated expression for this constant, which is only computed for numeric
 types.
 
-####### `is_literal`
+###### 2.1.2.1.3: `is_literal`
 
 Whether this constant is a bool, numeric, string, or char literal.
 
-###### Trait Implementations for `Constant`
+##### 2.1.2.2: Trait Implementations for `Constant`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Constant where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Constant where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Constant where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Constant where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Constant {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Constant where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Constant where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Constant where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Constant where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Constant where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Constant {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Crate`
+#### 2.1.3: `struct Crate`
 
 ```rust
 pub struct Crate {
     pub root: rustdoc_types::Id,
-    pub crate_version: core::option::Option<alloc::string::String>,
+    pub crate_version: option::Option<String>,
     pub includes_private: bool,
     pub index: rustc_hash::FxHashMap<rustdoc_types::Id, rustdoc_types::Item>,
     pub paths: rustc_hash::FxHashMap<rustdoc_types::Id, rustdoc_types::ItemSummary>,
@@ -322,288 +242,144 @@ It contains all type/documentation information
 about the language items in the local crate, as well as info about external items to allow
 tools to find or link to them.
 
-###### Fields
+##### 2.1.3.1: Fields
 
-####### `root`
+###### 2.1.3.1.1: `root`
 
 The id of the root [`Module`] item of the local crate.
 
-####### `crate_version`
+###### 2.1.3.1.2: `crate_version`
 
 The version string given to `--crate-version`, if any.
 
-####### `includes_private`
+###### 2.1.3.1.3: `includes_private`
 
 Whether or not the output includes private items.
 
-####### `index`
+###### 2.1.3.1.4: `index`
 
 A collection of all items in the local crate as well as some external traits and their
 items that are referenced locally.
 
-####### `paths`
+###### 2.1.3.1.5: `paths`
 
 Maps IDs to fully qualified paths and other info helpful for generating links.
 
-####### `external_crates`
+###### 2.1.3.1.6: `external_crates`
 
 Maps `crate_id` of items to a crate name and html_root_url if it exists.
 
-####### `format_version`
+###### 2.1.3.1.7: `format_version`
 
 A single version number to be used in the future when making backwards incompatible changes
 to the JSON output.
 
-###### Trait Implementations for `Crate`
+##### 2.1.3.2: Trait Implementations for `Crate`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Crate where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Crate where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Crate where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Crate where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Crate {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Crate where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Crate where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Crate where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Crate where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Crate where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Crate {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Deprecation`
+#### 2.1.4: `struct Deprecation`
 
 ```rust
 pub struct Deprecation {
-    pub since: core::option::Option<alloc::string::String>,
-    pub note: core::option::Option<alloc::string::String>,
+    pub since: option::Option<String>,
+    pub note: option::Option<String>,
 }
 ```
 
 Information about the deprecation of an [`Item`].
 
-###### Fields
+##### 2.1.4.1: Fields
 
-####### `since`
+###### 2.1.4.1.1: `since`
 
 Usually a version number when this [`Item`] first became deprecated.
 
-####### `note`
+###### 2.1.4.1.2: `note`
 
 The reason for deprecation and/or what alternatives to use.
 
-###### Trait Implementations for `Deprecation`
+##### 2.1.4.2: Trait Implementations for `Deprecation`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Deprecation where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Deprecation where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Deprecation where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Deprecation where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Deprecation {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Deprecation where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Deprecation where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Deprecation where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Deprecation where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Deprecation where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Deprecation {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Discriminant`
+#### 2.1.5: `struct Discriminant`
 
 ```rust
 pub struct Discriminant {
-    pub expr: alloc::string::String,
-    pub value: alloc::string::String,
+    pub expr: String,
+    pub value: String,
 }
 ```
 
 The value that distinguishes a variant in an [`Enum`] from other variants.
 
-###### Fields
+##### 2.1.5.1: Fields
 
-####### `expr`
+###### 2.1.5.1.1: `expr`
 
 The expression that produced the discriminant.
 
@@ -614,138 +390,66 @@ interpreted.
 In some cases, when the value is too complex, this may be `"{ _ }"`.
 When this occurs is unstable, and may change without notice.
 
-####### `value`
+###### 2.1.5.1.2: `value`
 
 The numerical value of the discriminant. Stored as a string due to
 JSON's poor support for large integers, and the fact that it would need
 to store from [`i128::MIN`] to [`u128::MAX`].
 
-###### Trait Implementations for `Discriminant`
+##### 2.1.5.2: Trait Implementations for `Discriminant`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Discriminant where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Discriminant where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Discriminant where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Discriminant where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Discriminant {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Discriminant where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Discriminant where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Discriminant where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Discriminant where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Discriminant where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Discriminant {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct DynTrait`
+#### 2.1.6: `struct DynTrait`
 
 ```rust
 pub struct DynTrait {
-    pub traits: alloc::vec::Vec<rustdoc_types::PolyTrait>,
-    pub lifetime: core::option::Option<alloc::string::String>,
+    pub traits: Vec<rustdoc_types::PolyTrait>,
+    pub lifetime: option::Option<String>,
 }
 ```
 
 Dynamic trait object type (`dyn Trait`).
 
-###### Fields
+##### 2.1.6.1: Fields
 
-####### `traits`
+###### 2.1.6.1.1: `traits`
 
 All the traits implemented. One of them is the vtable, and the rest must be auto traits.
 
-####### `lifetime`
+###### 2.1.6.1.2: `lifetime`
 
 The lifetime of the whole dyn object
 ```text
@@ -755,269 +459,125 @@ dyn Debug + 'static
             this part
 ```
 
-###### Trait Implementations for `DynTrait`
+##### 2.1.6.2: Trait Implementations for `DynTrait`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::DynTrait where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::DynTrait where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::DynTrait where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::DynTrait where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::DynTrait {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::DynTrait where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::DynTrait where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::DynTrait where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::DynTrait where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::DynTrait where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::DynTrait {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Enum`
+#### 2.1.7: `struct Enum`
 
 ```rust
 pub struct Enum {
     pub generics: rustdoc_types::Generics,
     pub has_stripped_variants: bool,
-    pub variants: alloc::vec::Vec<rustdoc_types::Id>,
-    pub impls: alloc::vec::Vec<rustdoc_types::Id>,
+    pub variants: Vec<rustdoc_types::Id>,
+    pub impls: Vec<rustdoc_types::Id>,
 }
 ```
 
 An `enum`.
 
-###### Fields
+##### 2.1.7.1: Fields
 
-####### `generics`
+###### 2.1.7.1.1: `generics`
 
 Information about the type parameters and `where` clauses of the enum.
 
-####### `has_stripped_variants`
+###### 2.1.7.1.2: `has_stripped_variants`
 
 Whether any variants have been removed from the result, due to being private or hidden.
 
-####### `variants`
+###### 2.1.7.1.3: `variants`
 
 The list of variants in the enum.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Variant`]
 
-####### `impls`
+###### 2.1.7.1.4: `impls`
 
 `impl`s for the enum.
 
-###### Trait Implementations for `Enum`
+##### 2.1.7.2: Trait Implementations for `Enum`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Enum where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Enum where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Enum where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Enum where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Enum {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Enum where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Enum where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Enum where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Enum where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Enum where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Enum {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct ExternalCrate`
+#### 2.1.8: `struct ExternalCrate`
 
 ```rust
 pub struct ExternalCrate {
-    pub name: alloc::string::String,
-    pub html_root_url: core::option::Option<alloc::string::String>,
+    pub name: String,
+    pub html_root_url: option::Option<String>,
 }
 ```
 
 Metadata of a crate, either the same crate on which `rustdoc` was invoked, or its dependency.
 
-###### Fields
+##### 2.1.8.1: Fields
 
-####### `name`
+###### 2.1.8.1.1: `name`
 
 The name of the crate.
 
@@ -1028,119 +588,47 @@ this field will be `regex_syntax` (which uses an `_`, not a `-`).
 [crate-name]: https://doc.rust-lang.org/stable/cargo/reference/cargo-targets.html#the-name-field
 [package-name]: https://doc.rust-lang.org/stable/cargo/reference/manifest.html#the-name-field
 
-####### `html_root_url`
+###### 2.1.8.1.2: `html_root_url`
 
 The root URL at which the crate's documentation lives.
 
-###### Trait Implementations for `ExternalCrate`
+##### 2.1.8.2: Trait Implementations for `ExternalCrate`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::ExternalCrate where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::ExternalCrate where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::ExternalCrate where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::ExternalCrate where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::ExternalCrate {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::ExternalCrate where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::ExternalCrate where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::ExternalCrate where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::ExternalCrate where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::ExternalCrate where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::ExternalCrate {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Function`
+#### 2.1.9: `struct Function`
 
 ```rust
 pub struct Function {
@@ -1153,133 +641,61 @@ pub struct Function {
 
 A function declaration (including methods and other associated functions).
 
-###### Fields
+##### 2.1.9.1: Fields
 
-####### `sig`
+###### 2.1.9.1.1: `sig`
 
 Information about the function signature, or declaration.
 
-####### `generics`
+###### 2.1.9.1.2: `generics`
 
 Information about the function’s type parameters and `where` clauses.
 
-####### `header`
+###### 2.1.9.1.3: `header`
 
 Information about core properties of the function, e.g. whether it's `const`, its ABI, etc.
 
-####### `has_body`
+###### 2.1.9.1.4: `has_body`
 
 Whether the function has a body, i.e. an implementation.
 
-###### Trait Implementations for `Function`
+##### 2.1.9.2: Trait Implementations for `Function`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Function where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Function where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Function where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Function where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Function {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Function where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Function where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Function where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Function where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Function where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Function {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct FunctionHeader`
+#### 2.1.10: `struct FunctionHeader`
 
 ```rust
 pub struct FunctionHeader {
@@ -1292,151 +708,79 @@ pub struct FunctionHeader {
 
 A set of fundamental properties of a function.
 
-###### Fields
+##### 2.1.10.1: Fields
 
-####### `is_const`
+###### 2.1.10.1.1: `is_const`
 
 Is this function marked as `const`?
 
-####### `is_unsafe`
+###### 2.1.10.1.2: `is_unsafe`
 
 Is this function unsafe?
 
-####### `is_async`
+###### 2.1.10.1.3: `is_async`
 
 Is this function async?
 
-####### `abi`
+###### 2.1.10.1.4: `abi`
 
 The ABI used by the function.
 
-###### Trait Implementations for `FunctionHeader`
+##### 2.1.10.2: Trait Implementations for `FunctionHeader`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::FunctionHeader where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::FunctionHeader where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::FunctionHeader where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::FunctionHeader where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::FunctionHeader {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::FunctionHeader where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::FunctionHeader where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::FunctionHeader where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::FunctionHeader where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::FunctionHeader where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::FunctionHeader {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct FunctionPointer`
+#### 2.1.11: `struct FunctionPointer`
 
 ```rust
 pub struct FunctionPointer {
     pub sig: rustdoc_types::FunctionSignature,
-    pub generic_params: alloc::vec::Vec<rustdoc_types::GenericParamDef>,
+    pub generic_params: Vec<rustdoc_types::GenericParamDef>,
     pub header: rustdoc_types::FunctionHeader,
 }
 ```
 
 A type that is a function pointer.
 
-###### Fields
+##### 2.1.11.1: Fields
 
-####### `sig`
+###### 2.1.11.1.1: `sig`
 
 The signature of the function.
 
-####### `generic_params`
+###### 2.1.11.1.2: `generic_params`
 
 Used for Higher-Rank Trait Bounds (HRTBs)
 
@@ -1445,144 +789,72 @@ Used for Higher-Rank Trait Bounds (HRTBs)
 // ^^^^^^^
 ```
 
-####### `header`
+###### 2.1.11.1.3: `header`
 
 The core properties of the function, such as the ABI it conforms to, whether it's unsafe, etc.
 
-###### Trait Implementations for `FunctionPointer`
+##### 2.1.11.2: Trait Implementations for `FunctionPointer`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::FunctionPointer where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::FunctionPointer where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::FunctionPointer where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::FunctionPointer where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::FunctionPointer {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::FunctionPointer where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::FunctionPointer where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::FunctionPointer where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::FunctionPointer where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::FunctionPointer where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::FunctionPointer {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct FunctionSignature`
+#### 2.1.12: `struct FunctionSignature`
 
 ```rust
 pub struct FunctionSignature {
-    pub inputs: alloc::vec::Vec<(alloc::string::String, rustdoc_types::Type)>,
-    pub output: core::option::Option<rustdoc_types::Type>,
+    pub inputs: Vec<(String, rustdoc_types::Type)>,
+    pub output: option::Option<rustdoc_types::Type>,
     pub is_c_variadic: bool,
 }
 ```
 
 The signature of a function.
 
-###### Fields
+##### 2.1.12.1: Fields
 
-####### `inputs`
+###### 2.1.12.1.1: `inputs`
 
 List of argument names and their type.
 
 Note that not all names will be valid identifiers, as some of
 them may be patterns.
 
-####### `output`
+###### 2.1.12.1.2: `output`
 
 The output type, if specified.
 
-####### `is_c_variadic`
+###### 2.1.12.1.3: `is_c_variadic`
 
 Whether the function accepts an arbitrary amount of trailing arguments the C way.
 
@@ -1590,128 +862,56 @@ Whether the function accepts an arbitrary amount of trailing arguments the C way
 fn printf(fmt: &str, ...);
 ```
 
-###### Trait Implementations for `FunctionSignature`
+##### 2.1.12.2: Trait Implementations for `FunctionSignature`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::FunctionSignature where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::FunctionSignature where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::FunctionSignature where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::FunctionSignature where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::FunctionSignature {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::FunctionSignature where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::FunctionSignature where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::FunctionSignature where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::FunctionSignature where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::FunctionSignature where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::FunctionSignature {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct GenericParamDef`
+#### 2.1.13: `struct GenericParamDef`
 
 ```rust
 pub struct GenericParamDef {
-    pub name: alloc::string::String,
+    pub name: String,
     pub kind: rustdoc_types::GenericParamDefKind,
 }
 ```
 
 One generic parameter accepted by an item.
 
-###### Fields
+##### 2.1.13.1: Fields
 
-####### `name`
+###### 2.1.13.1.1: `name`
 
 Name of the parameter.
 ```rust
@@ -1719,249 +919,105 @@ fn f<'resource, Resource>(x: &'resource Resource) {}
 //    ^^^^^^^^  ^^^^^^^^
 ```
 
-####### `kind`
+###### 2.1.13.1.2: `kind`
 
 The kind of the parameter and data specific to a particular parameter kind, e.g. type
 bounds.
 
-###### Trait Implementations for `GenericParamDef`
+##### 2.1.13.2: Trait Implementations for `GenericParamDef`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::GenericParamDef where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::GenericParamDef where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::GenericParamDef where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::GenericParamDef where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::GenericParamDef {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::GenericParamDef where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::GenericParamDef where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::GenericParamDef where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::GenericParamDef where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::GenericParamDef where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::GenericParamDef {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Generics`
+#### 2.1.14: `struct Generics`
 
 ```rust
 pub struct Generics {
-    pub params: alloc::vec::Vec<rustdoc_types::GenericParamDef>,
-    pub where_predicates: alloc::vec::Vec<rustdoc_types::WherePredicate>,
+    pub params: Vec<rustdoc_types::GenericParamDef>,
+    pub where_predicates: Vec<rustdoc_types::WherePredicate>,
 }
 ```
 
 Generic parameters accepted by an item and `where` clauses imposed on it and the parameters.
 
-###### Fields
+##### 2.1.14.1: Fields
 
-####### `params`
+###### 2.1.14.1.1: `params`
 
 A list of generic parameter definitions (e.g. `<T: Clone + Hash, U: Copy>`).
 
-####### `where_predicates`
+###### 2.1.14.1.2: `where_predicates`
 
 A list of where predicates (e.g. `where T: Iterator, T::Item: Copy`).
 
-###### Trait Implementations for `Generics`
+##### 2.1.14.2: Trait Implementations for `Generics`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Generics where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Generics where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Generics where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Generics where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Generics {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Generics where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Generics where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Generics where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Generics where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Generics where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Generics {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Id`
+#### 2.1.15: `struct Id`
 
 ```rust
 pub struct Id(pub u32);
@@ -1979,144 +1035,72 @@ Rustdoc makes no guarantees about the inner value of Id's. Applications
 should treat them as opaque keys to lookup items, and avoid attempting
 to parse them, or otherwise depend on any implementation details.
 
-###### Trait Implementations for `Id`
+##### 2.1.15.1: Trait Implementations for `Id`
 
-- `Copy`
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Id where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Id where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Id where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Id where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Id {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Id where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Id where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Id where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Id where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Id where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Id {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Impl`
+#### 2.1.16: `struct Impl`
 
 ```rust
 pub struct Impl {
     pub is_unsafe: bool,
     pub generics: rustdoc_types::Generics,
-    pub provided_trait_methods: alloc::vec::Vec<alloc::string::String>,
-    pub trait_: core::option::Option<rustdoc_types::Path>,
+    pub provided_trait_methods: Vec<String>,
+    pub trait_: option::Option<rustdoc_types::Path>,
     pub for_: rustdoc_types::Type,
-    pub items: alloc::vec::Vec<rustdoc_types::Id>,
+    pub items: Vec<rustdoc_types::Id>,
     pub is_negative: bool,
     pub is_synthetic: bool,
-    pub blanket_impl: core::option::Option<rustdoc_types::Type>,
+    pub blanket_impl: option::Option<rustdoc_types::Type>,
 }
 ```
 
 An `impl` block.
 
-###### Fields
+##### 2.1.16.1: Fields
 
-####### `is_unsafe`
+###### 2.1.16.1.1: `is_unsafe`
 
 Whether this impl is for an unsafe trait.
 
-####### `generics`
+###### 2.1.16.1.2: `generics`
 
 Information about the impl’s type parameters and `where` clauses.
 
-####### `provided_trait_methods`
+###### 2.1.16.1.3: `provided_trait_methods`
 
 The list of the names of all the trait methods that weren't mentioned in this impl but
 were provided by the trait itself.
@@ -2131,149 +1115,77 @@ impl PartialEq for Foo {
 ```
 This field will be `["ne"]`, as it has a default implementation defined for it.
 
-####### `trait_`
+###### 2.1.16.1.4: `trait_`
 
 The trait being implemented or `None` if the impl is inherent, which means
 `impl Struct {}` as opposed to `impl Trait for Struct {}`.
 
-####### `for_`
+###### 2.1.16.1.5: `for_`
 
 The type that the impl block is for.
 
-####### `items`
+###### 2.1.16.1.6: `items`
 
 The list of associated items contained in this impl block.
 
-####### `is_negative`
+###### 2.1.16.1.7: `is_negative`
 
 Whether this is a negative impl (e.g. `!Sized` or `!Send`).
 
-####### `is_synthetic`
+###### 2.1.16.1.8: `is_synthetic`
 
 Whether this is an impl that’s implied by the compiler
 (for autotraits, e.g. `Send` or `Sync`).
 
-###### Trait Implementations for `Impl`
+##### 2.1.16.2: Trait Implementations for `Impl`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Impl where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Impl where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Impl where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Impl where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Impl {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Impl where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Impl where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Impl where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Impl where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Impl where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Impl {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Item`
+#### 2.1.17: `struct Item`
 
 ```rust
 pub struct Item {
     pub id: rustdoc_types::Id,
     pub crate_id: u32,
-    pub name: core::option::Option<alloc::string::String>,
-    pub span: core::option::Option<rustdoc_types::Span>,
+    pub name: option::Option<String>,
+    pub span: option::Option<rustdoc_types::Span>,
     pub visibility: rustdoc_types::Visibility,
-    pub docs: core::option::Option<alloc::string::String>,
-    pub links: rustc_hash::FxHashMap<alloc::string::String, rustdoc_types::Id>,
-    pub attrs: alloc::vec::Vec<alloc::string::String>,
-    pub deprecation: core::option::Option<rustdoc_types::Deprecation>,
+    pub docs: option::Option<String>,
+    pub links: rustc_hash::FxHashMap<String, rustdoc_types::Id>,
+    pub attrs: Vec<String>,
+    pub deprecation: option::Option<rustdoc_types::Deprecation>,
     pub inner: rustdoc_types::ItemEnum,
 }
 ```
@@ -2283,41 +1195,41 @@ Anything that can hold documentation - modules, structs, enums, functions, trait
 The `Item` data type holds fields that can apply to any of these,
 and leaves kind-specific details (like function args or enum variants) to the `inner` field.
 
-###### Fields
+##### 2.1.17.1: Fields
 
-####### `id`
+###### 2.1.17.1.1: `id`
 
 The unique identifier of this item. Can be used to find this item in various mappings.
 
-####### `crate_id`
+###### 2.1.17.1.2: `crate_id`
 
 This can be used as a key to the `external_crates` map of [`Crate`] to see which crate
 this item came from.
 
-####### `name`
+###### 2.1.17.1.3: `name`
 
 Some items such as impls don't have names.
 
-####### `span`
+###### 2.1.17.1.4: `span`
 
 The source location of this item (absent if it came from a macro expansion or inline
 assembly).
 
-####### `visibility`
+###### 2.1.17.1.5: `visibility`
 
 By default all documented items are public, but you can tell rustdoc to output private items
 so this field is needed to differentiate.
 
-####### `docs`
+###### 2.1.17.1.6: `docs`
 
 The full markdown docstring of this item. Absent if there is no documentation at all,
 Some("") if there is some documentation but it is empty (EG `#[doc = ""]`).
 
-####### `links`
+###### 2.1.17.1.7: `links`
 
 This mapping resolves [intra-doc links](https://github.com/rust-lang/rfcs/blob/master/text/1946-intra-rustdoc-links.md) from the docstring to their IDs
 
-####### `attrs`
+###### 2.1.17.1.8: `attrs`
 
 Attributes on this item.
 
@@ -2337,127 +1249,55 @@ Other attributes may appear debug-printed. For example:
 As an internal implementation detail subject to change, this debug-printing format
 is currently equivalent to the HIR pretty-printing of parsed attributes.
 
-####### `deprecation`
+###### 2.1.17.1.9: `deprecation`
 
 Information about the item’s deprecation, if present.
 
-####### `inner`
+###### 2.1.17.1.10: `inner`
 
 The type-specific fields describing this item.
 
-###### Trait Implementations for `Item`
+##### 2.1.17.2: Trait Implementations for `Item`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Item where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Item where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Item where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Item where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Item {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Item where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Item where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Item where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Item where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Item where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Item {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct ItemSummary`
+#### 2.1.18: `struct ItemSummary`
 
 ```rust
 pub struct ItemSummary {
     pub crate_id: u32,
-    pub path: alloc::vec::Vec<alloc::string::String>,
+    pub path: Vec<String>,
     pub kind: rustdoc_types::ItemKind,
 }
 ```
@@ -2469,14 +1309,14 @@ information. This struct should contain enough to generate a link/reference to t
 question, or can be used by a tool that takes the json output of multiple crates to find
 the actual item definition with all the relevant info.
 
-###### Fields
+##### 2.1.18.1: Fields
 
-####### `crate_id`
+###### 2.1.18.1.1: `crate_id`
 
 Can be used to look up the name and html_root_url of the crate this item came from in the
 `external_crates` map.
 
-####### `path`
+###### 2.1.18.1.2: `path`
 
 The list of path components for the fully qualified path of this item (e.g.
 `["std", "io", "lazy", "Lazy"]` for `std::io::lazy::Lazy`).
@@ -2486,271 +1326,127 @@ defined. Currently, this is the full path to where the item was defined. Eg
 [`String`] is currently `["alloc", "string", "String"]` and [`HashMap`][`std::collections::HashMap`]
 is `["std", "collections", "hash", "map", "HashMap"]`, but this is subject to change.
 
-####### `kind`
+###### 2.1.18.1.3: `kind`
 
 Whether this item is a struct, trait, macro, etc.
 
-###### Trait Implementations for `ItemSummary`
+##### 2.1.18.2: Trait Implementations for `ItemSummary`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::ItemSummary where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::ItemSummary where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::ItemSummary where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::ItemSummary where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::ItemSummary {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::ItemSummary where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::ItemSummary where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::ItemSummary where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::ItemSummary where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::ItemSummary where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::ItemSummary {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Module`
+#### 2.1.19: `struct Module`
 
 ```rust
 pub struct Module {
     pub is_crate: bool,
-    pub items: alloc::vec::Vec<rustdoc_types::Id>,
+    pub items: Vec<rustdoc_types::Id>,
     pub is_stripped: bool,
 }
 ```
 
 A module declaration, e.g. `mod foo;` or `mod foo {}`.
 
-###### Fields
+##### 2.1.19.1: Fields
 
-####### `is_crate`
+###### 2.1.19.1.1: `is_crate`
 
 Whether this is the root item of a crate.
 
 This item doesn't correspond to any construction in the source code and is generated by the
 compiler.
 
-####### `items`
+###### 2.1.19.1.2: `items`
 
 [`Item`]s declared inside this module.
 
-####### `is_stripped`
+###### 2.1.19.1.3: `is_stripped`
 
 If `true`, this module is not part of the public API, but it contains
 items that are re-exported as public API.
 
-###### Trait Implementations for `Module`
+##### 2.1.19.2: Trait Implementations for `Module`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Module where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Module where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Module where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Module where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Module {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Module where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Module where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Module where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Module where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Module where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Module {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Path`
+#### 2.1.20: `struct Path`
 
 ```rust
 pub struct Path {
-    pub path: alloc::string::String,
+    pub path: String,
     pub id: rustdoc_types::Id,
-    pub args: core::option::Option<alloc::boxed::Box<rustdoc_types::GenericArgs>>,
+    pub args: option::Option<Box<rustdoc_types::GenericArgs>>,
 }
 ```
 
 A type that has a simple path to it. This is the kind of type of structs, unions, enums, etc.
 
-###### Fields
+##### 2.1.20.1: Fields
 
-####### `path`
+###### 2.1.20.1.1: `path`
 
 The path of the type.
 
@@ -2764,11 +1460,11 @@ pub type Vec2 = Vec<i32>; // path: "Vec"
 pub type Vec3 = std::prelude::v1::Vec<i32>; // path: "std::prelude::v1::Vec"
 ```
 
-####### `id`
+###### 2.1.20.1.2: `id`
 
 The ID of the type.
 
-####### `args`
+###### 2.1.20.1.3: `args`
 
 Generic arguments to the type.
 
@@ -2777,132 +1473,60 @@ std::borrow::Cow<'static, str>
 //              ^^^^^^^^^^^^^^
 ```
 
-###### Trait Implementations for `Path`
+##### 2.1.20.2: Trait Implementations for `Path`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Path where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Path where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Path where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Path where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Path {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Path where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Path where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Path where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Path where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Path where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Path {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct PolyTrait`
+#### 2.1.21: `struct PolyTrait`
 
 ```rust
 pub struct PolyTrait {
     pub trait_: rustdoc_types::Path,
-    pub generic_params: alloc::vec::Vec<rustdoc_types::GenericParamDef>,
+    pub generic_params: Vec<rustdoc_types::GenericParamDef>,
 }
 ```
 
 A trait and potential HRTBs
 
-###### Fields
+##### 2.1.21.1: Fields
 
-####### `trait_`
+###### 2.1.21.1.1: `trait_`
 
 The path to the trait.
 
-####### `generic_params`
+###### 2.1.21.1.2: `generic_params`
 
 Used for Higher-Rank Trait Bounds (HRTBs)
 ```text
@@ -2910,261 +1534,117 @@ dyn for<'a> Fn() -> &'a i32"
     ^^^^^^^
 ```
 
-###### Trait Implementations for `PolyTrait`
+##### 2.1.21.2: Trait Implementations for `PolyTrait`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::PolyTrait where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::PolyTrait where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::PolyTrait where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::PolyTrait where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::PolyTrait {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::PolyTrait where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::PolyTrait where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::PolyTrait where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::PolyTrait where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::PolyTrait where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::PolyTrait {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Primitive`
+#### 2.1.22: `struct Primitive`
 
 ```rust
 pub struct Primitive {
-    pub name: alloc::string::String,
-    pub impls: alloc::vec::Vec<rustdoc_types::Id>,
+    pub name: String,
+    pub impls: Vec<rustdoc_types::Id>,
 }
 ```
 
 A primitive type declaration. Declarations of this kind can only come from the core library.
 
-###### Fields
+##### 2.1.22.1: Fields
 
-####### `name`
+###### 2.1.22.1.1: `name`
 
 The name of the type.
 
-####### `impls`
+###### 2.1.22.1.2: `impls`
 
 The implementations, inherent and of traits, on the primitive type.
 
-###### Trait Implementations for `Primitive`
+##### 2.1.22.2: Trait Implementations for `Primitive`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Primitive where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Primitive where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Primitive where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Primitive where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Primitive {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Primitive where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Primitive where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Primitive where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Primitive where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Primitive where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Primitive {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct ProcMacro`
+#### 2.1.23: `struct ProcMacro`
 
 ```rust
 pub struct ProcMacro {
     pub kind: rustdoc_types::MacroKind,
-    pub helpers: alloc::vec::Vec<alloc::string::String>,
+    pub helpers: Vec<String>,
 }
 ```
 
 A procedural macro.
 
-###### Fields
+##### 2.1.23.1: Fields
 
-####### `kind`
+###### 2.1.23.1.1: `kind`
 
 How this macro is supposed to be called: `foo!()`, `#[foo]` or `#[derive(foo)]`
 
-####### `helpers`
+###### 2.1.23.1.2: `helpers`
 
 Helper attributes defined by a macro to be used inside it.
 
@@ -3182,119 +1662,47 @@ enum Option<T> {
 }
 ```
 
-###### Trait Implementations for `ProcMacro`
+##### 2.1.23.2: Trait Implementations for `ProcMacro`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::ProcMacro where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::ProcMacro where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::ProcMacro where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::ProcMacro where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::ProcMacro {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::ProcMacro where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::ProcMacro where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::ProcMacro where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::ProcMacro where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::ProcMacro where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::ProcMacro {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Span`
+#### 2.1.24: `struct Span`
 
 ```rust
 pub struct Span {
-    pub filename: std::path::PathBuf,
+    pub filename: path::PathBuf,
     pub begin: (usize, usize),
     pub end: (usize, usize),
 }
@@ -3302,158 +1710,86 @@ pub struct Span {
 
 A range of source code.
 
-###### Fields
+##### 2.1.24.1: Fields
 
-####### `filename`
+###### 2.1.24.1.1: `filename`
 
 The path to the source file for this span relative to the path `rustdoc` was invoked with.
 
-####### `begin`
+###### 2.1.24.1.2: `begin`
 
 Zero indexed Line and Column of the first character of the `Span`
 
-####### `end`
+###### 2.1.24.1.3: `end`
 
 Zero indexed Line and Column of the last character of the `Span`
 
-###### Trait Implementations for `Span`
+##### 2.1.24.2: Trait Implementations for `Span`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Span where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Span where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Span where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Span where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Span {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Span where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Span where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Span where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Span where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Span where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Span {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Static`
+#### 2.1.25: `struct Static`
 
 ```rust
 pub struct Static {
     pub type_: rustdoc_types::Type,
     pub is_mutable: bool,
-    pub expr: alloc::string::String,
+    pub expr: String,
     pub is_unsafe: bool,
 }
 ```
 
 A `static` declaration.
 
-###### Fields
+##### 2.1.25.1: Fields
 
-####### `type_`
+###### 2.1.25.1.1: `type_`
 
 The type of the static.
 
-####### `is_mutable`
+###### 2.1.25.1.2: `is_mutable`
 
 This is `true` for mutable statics, declared as `static mut X: T = f();`
 
-####### `expr`
+###### 2.1.25.1.3: `expr`
 
 The stringified expression for the initial value.
 
 It's not guaranteed that it'll match the actual source code for the initial value.
 
-####### `is_unsafe`
+###### 2.1.25.1.4: `is_unsafe`
 
 Is the static `unsafe`?
 
@@ -3470,413 +1806,197 @@ static C: i32 = 0;     // safe
 static mut D: i32 = 0; // safe
 ```
 
-###### Trait Implementations for `Static`
+##### 2.1.25.2: Trait Implementations for `Static`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Static where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Static where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Static where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Static where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Static {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Static where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Static where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Static where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Static where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Static where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Static {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Struct`
+#### 2.1.26: `struct Struct`
 
 ```rust
 pub struct Struct {
     pub kind: rustdoc_types::StructKind,
     pub generics: rustdoc_types::Generics,
-    pub impls: alloc::vec::Vec<rustdoc_types::Id>,
+    pub impls: Vec<rustdoc_types::Id>,
 }
 ```
 
 A `struct`.
 
-###### Fields
+##### 2.1.26.1: Fields
 
-####### `kind`
+###### 2.1.26.1.1: `kind`
 
 The kind of the struct (e.g. unit, tuple-like or struct-like) and the data specific to it,
 i.e. fields.
 
-####### `generics`
+###### 2.1.26.1.2: `generics`
 
 The generic parameters and where clauses on this struct.
 
-####### `impls`
+###### 2.1.26.1.3: `impls`
 
 All impls (both of traits and inherent) for this struct.
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Impl`].
 
-###### Trait Implementations for `Struct`
+##### 2.1.26.2: Trait Implementations for `Struct`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Struct where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Struct where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Struct where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Struct where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Struct {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Struct where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Struct where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Struct where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Struct where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Struct where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Struct {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Trait`
+#### 2.1.27: `struct Trait`
 
 ```rust
 pub struct Trait {
     pub is_auto: bool,
     pub is_unsafe: bool,
     pub is_dyn_compatible: bool,
-    pub items: alloc::vec::Vec<rustdoc_types::Id>,
+    pub items: Vec<rustdoc_types::Id>,
     pub generics: rustdoc_types::Generics,
-    pub bounds: alloc::vec::Vec<rustdoc_types::GenericBound>,
-    pub implementations: alloc::vec::Vec<rustdoc_types::Id>,
+    pub bounds: Vec<rustdoc_types::GenericBound>,
+    pub implementations: Vec<rustdoc_types::Id>,
 }
 ```
 
 A `trait` declaration.
 
-###### Fields
+##### 2.1.27.1: Fields
 
-####### `is_auto`
+###### 2.1.27.1.1: `is_auto`
 
 Whether the trait is marked `auto` and is thus implemented automatically
 for all applicable types.
 
-####### `is_unsafe`
+###### 2.1.27.1.2: `is_unsafe`
 
 Whether the trait is marked as `unsafe`.
 
-####### `is_dyn_compatible`
+###### 2.1.27.1.3: `is_dyn_compatible`
 
 Whether the trait is [dyn compatible](https://doc.rust-lang.org/reference/items/traits.html#dyn-compatibility)[^1].
 
 [^1]: Formerly known as "object safe".
 
-####### `items`
+###### 2.1.27.1.4: `items`
 
 Associated [`Item`]s that can/must be implemented by the `impl` blocks.
 
-####### `generics`
+###### 2.1.27.1.5: `generics`
 
 Information about the type parameters and `where` clauses of the trait.
 
-####### `bounds`
+###### 2.1.27.1.6: `bounds`
 
 Constraints that must be met by the implementor of the trait.
 
-####### `implementations`
+###### 2.1.27.1.7: `implementations`
 
 The implementations of the trait.
 
-###### Trait Implementations for `Trait`
+##### 2.1.27.2: Trait Implementations for `Trait`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Trait where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Trait where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Trait where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Trait where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Trait {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Trait where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Trait where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Trait where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Trait where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Trait where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Trait {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct TraitAlias`
+#### 2.1.28: `struct TraitAlias`
 
 ```rust
 pub struct TraitAlias {
     pub generics: rustdoc_types::Generics,
-    pub params: alloc::vec::Vec<rustdoc_types::GenericBound>,
+    pub params: Vec<rustdoc_types::GenericBound>,
 }
 ```
 
@@ -3884,125 +2004,53 @@ A trait alias declaration, e.g. `trait Int = Add + Sub + Mul + Div;`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/41517)
 
-###### Fields
+##### 2.1.28.1: Fields
 
-####### `generics`
+###### 2.1.28.1.1: `generics`
 
 Information about the type parameters and `where` clauses of the alias.
 
-####### `params`
+###### 2.1.28.1.2: `params`
 
 The bounds that are associated with the alias.
 
-###### Trait Implementations for `TraitAlias`
+##### 2.1.28.2: Trait Implementations for `TraitAlias`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::TraitAlias where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::TraitAlias where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::TraitAlias where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::TraitAlias where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::TraitAlias {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::TraitAlias where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::TraitAlias where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::TraitAlias where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::TraitAlias where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::TraitAlias where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::TraitAlias {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct TypeAlias`
+#### 2.1.29: `struct TypeAlias`
 
 ```rust
 pub struct TypeAlias {
@@ -4013,542 +2061,254 @@ pub struct TypeAlias {
 
 A type alias declaration, e.g. `type Pig = std::borrow::Cow<'static, str>;`
 
-###### Fields
+##### 2.1.29.1: Fields
 
-####### `type_`
+###### 2.1.29.1.1: `type_`
 
 The type referred to by this alias.
 
-####### `generics`
+###### 2.1.29.1.2: `generics`
 
 Information about the type parameters and `where` clauses of the alias.
 
-###### Trait Implementations for `TypeAlias`
+##### 2.1.29.2: Trait Implementations for `TypeAlias`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::TypeAlias where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::TypeAlias where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::TypeAlias where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::TypeAlias where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::TypeAlias {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::TypeAlias where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::TypeAlias where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::TypeAlias where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::TypeAlias where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::TypeAlias where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::TypeAlias {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Union`
+#### 2.1.30: `struct Union`
 
 ```rust
 pub struct Union {
     pub generics: rustdoc_types::Generics,
     pub has_stripped_fields: bool,
-    pub fields: alloc::vec::Vec<rustdoc_types::Id>,
-    pub impls: alloc::vec::Vec<rustdoc_types::Id>,
+    pub fields: Vec<rustdoc_types::Id>,
+    pub impls: Vec<rustdoc_types::Id>,
 }
 ```
 
 A `union`.
 
-###### Fields
+##### 2.1.30.1: Fields
 
-####### `generics`
+###### 2.1.30.1.1: `generics`
 
 The generic parameters and where clauses on this union.
 
-####### `has_stripped_fields`
+###### 2.1.30.1.2: `has_stripped_fields`
 
 Whether any fields have been removed from the result, due to being private or hidden.
 
-####### `fields`
+###### 2.1.30.1.3: `fields`
 
 The list of fields in the union.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::StructField`].
 
-####### `impls`
+###### 2.1.30.1.4: `impls`
 
 All impls (both of traits and inherent) for this union.
 
 All of the corresponding [`Item`]s are of kind [`ItemEnum::Impl`].
 
-###### Trait Implementations for `Union`
+##### 2.1.30.2: Trait Implementations for `Union`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Union where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Union where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Union where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Union where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Union {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Union where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Union where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Union where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Union where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Union where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Union {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Use`
+#### 2.1.31: `struct Use`
 
 ```rust
 pub struct Use {
-    pub source: alloc::string::String,
-    pub name: alloc::string::String,
-    pub id: core::option::Option<rustdoc_types::Id>,
+    pub source: String,
+    pub name: String,
+    pub id: option::Option<rustdoc_types::Id>,
     pub is_glob: bool,
 }
 ```
 
 A `use` statement.
 
-###### Fields
+##### 2.1.31.1: Fields
 
-####### `source`
+###### 2.1.31.1.1: `source`
 
 The full path being imported.
 
-####### `name`
+###### 2.1.31.1.2: `name`
 
 May be different from the last segment of `source` when renaming imports:
 `use source as name;`
 
-####### `id`
+###### 2.1.31.1.3: `id`
 
 The ID of the item being imported. Will be `None` in case of re-exports of primitives:
 ```rust
 pub use i32 as my_i32;
 ```
 
-####### `is_glob`
+###### 2.1.31.1.4: `is_glob`
 
 Whether this statement is a wildcard `use`, e.g. `use source::*;`
 
-###### Trait Implementations for `Use`
+##### 2.1.31.2: Trait Implementations for `Use`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Use where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Use where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Use where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Use where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Use {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Use where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Use where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Use where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Use where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Use where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Use {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `struct Variant`
+#### 2.1.32: `struct Variant`
 
 ```rust
 pub struct Variant {
     pub kind: rustdoc_types::VariantKind,
-    pub discriminant: core::option::Option<rustdoc_types::Discriminant>,
+    pub discriminant: option::Option<rustdoc_types::Discriminant>,
 }
 ```
 
 A variant of an enum.
 
-###### Fields
+##### 2.1.32.1: Fields
 
-####### `kind`
+###### 2.1.32.1.1: `kind`
 
 Whether the variant is plain, a tuple-like, or struct-like. Contains the fields.
 
-####### `discriminant`
+###### 2.1.32.1.2: `discriminant`
 
 The discriminant, if explicitly specified.
 
-###### Trait Implementations for `Variant`
+##### 2.1.32.2: Trait Implementations for `Variant`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Variant where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Variant where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Variant where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Variant where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Variant {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Variant where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Variant where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Variant where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Variant where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Variant where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Variant {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-#### Enums
+### 2.2: Enums
 
-##### `enum Abi`
+#### 2.2.1: `enum Abi`
 
 ```rust
 pub enum Abi {
@@ -4561,7 +2321,7 @@ pub enum Abi {
     Win64 { unwind: bool },
     SysV64 { unwind: bool },
     System { unwind: bool },
-    Other(alloc::string::String),
+    Other(String),
 }
 ```
 
@@ -4574,170 +2334,98 @@ latter variant.
 See the [Rustonomicon section](https://doc.rust-lang.org/nightly/nomicon/ffi.html#ffi-and-unwinding)
 on unwinding for more info.
 
-###### Variants
+##### 2.2.1.2: Variants
 
-####### `Rust`
+###### 2.2.1.2.2: `Rust`
 
 The default ABI, but that can also be written explicitly with `extern "Rust"`.
 
-####### `C { unwind: bool }`
+###### 2.2.1.2.3: `C { unwind: bool }`
 
 Can be specified as `extern "C"` or, as a shorthand, just `extern`.
 
-####### `Cdecl { unwind: bool }`
+###### 2.2.1.2.4: `Cdecl { unwind: bool }`
 
 Can be specified as `extern "cdecl"`.
 
-####### `Stdcall { unwind: bool }`
+###### 2.2.1.2.5: `Stdcall { unwind: bool }`
 
 Can be specified as `extern "stdcall"`.
 
-####### `Fastcall { unwind: bool }`
+###### 2.2.1.2.6: `Fastcall { unwind: bool }`
 
 Can be specified as `extern "fastcall"`.
 
-####### `Aapcs { unwind: bool }`
+###### 2.2.1.2.7: `Aapcs { unwind: bool }`
 
 Can be specified as `extern "aapcs"`.
 
-####### `Win64 { unwind: bool }`
+###### 2.2.1.2.8: `Win64 { unwind: bool }`
 
 Can be specified as `extern "win64"`.
 
-####### `SysV64 { unwind: bool }`
+###### 2.2.1.2.9: `SysV64 { unwind: bool }`
 
 Can be specified as `extern "sysv64"`.
 
-####### `System { unwind: bool }`
+###### 2.2.1.2.10: `System { unwind: bool }`
 
 Can be specified as `extern "system"`.
 
-####### `Other(alloc::string::String)`
+###### 2.2.1.2.11: `Other(String)`
 
 Any other ABI, including unstable ones.
 
-###### Trait Implementations for `Abi`
+##### 2.2.1.2: Trait Implementations for `Abi`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Abi where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Abi where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Abi where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Abi where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Abi {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Abi where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Abi where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Abi where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Abi where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Abi where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Abi {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum AssocItemConstraintKind`
+#### 2.2.2: `enum AssocItemConstraintKind`
 
 ```rust
 pub enum AssocItemConstraintKind {
     Equality(rustdoc_types::Term),
-    Constraint(alloc::vec::Vec<rustdoc_types::GenericBound>),
+    Constraint(Vec<rustdoc_types::GenericBound>),
 }
 ```
 
 The way in which an associate type/constant is bound.
 
-###### Variants
+##### 2.2.2.2: Variants
 
-####### `Equality(rustdoc_types::Term)`
+###### 2.2.2.2.2: `Equality(rustdoc_types::Term)`
 
 The required value/type is specified exactly. e.g.
 ```text
@@ -4745,7 +2433,7 @@ Iterator<Item = u32, IntoIter: DoubleEndedIterator>
          ^^^^^^^^^^
 ```
 
-####### `Constraint(alloc::vec::Vec<rustdoc_types::GenericBound>)`
+###### 2.2.2.2.3: `Constraint(Vec<rustdoc_types::GenericBound>)`
 
 The type is required to satisfy a set of bounds.
 ```text
@@ -4753,119 +2441,47 @@ Iterator<Item = u32, IntoIter: DoubleEndedIterator>
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-###### Trait Implementations for `AssocItemConstraintKind`
+##### 2.2.2.2: Trait Implementations for `AssocItemConstraintKind`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::AssocItemConstraintKind where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::AssocItemConstraintKind where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::AssocItemConstraintKind where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::AssocItemConstraintKind where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::AssocItemConstraintKind {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::AssocItemConstraintKind where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::AssocItemConstraintKind where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::AssocItemConstraintKind where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::AssocItemConstraintKind where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::AssocItemConstraintKind where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::AssocItemConstraintKind {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum GenericArg`
+#### 2.2.3: `enum GenericArg`
 
 ```rust
 pub enum GenericArg {
-    Lifetime(alloc::string::String),
+    Lifetime(String),
     Type(rustdoc_types::Type),
     Const(rustdoc_types::Constant),
     Infer,
@@ -4876,9 +2492,9 @@ One argument in a list of generic arguments to a path segment.
 
 Part of [`GenericArgs`].
 
-###### Variants
+##### 2.2.3.2: Variants
 
-####### `Lifetime(alloc::string::String)`
+###### 2.2.3.2.2: `Lifetime(String)`
 
 A lifetime argument.
 ```text
@@ -4886,7 +2502,7 @@ std::borrow::Cow<'static, str>
                  ^^^^^^^
 ```
 
-####### `Type(rustdoc_types::Type)`
+###### 2.2.3.2.3: `Type(rustdoc_types::Type)`
 
 A type argument.
 ```text
@@ -4894,7 +2510,7 @@ std::borrow::Cow<'static, str>
                           ^^^
 ```
 
-####### `Const(rustdoc_types::Constant)`
+###### 2.2.3.2.4: `Const(rustdoc_types::Constant)`
 
 A constant as a generic argument.
 ```text
@@ -4902,7 +2518,7 @@ core::array::IntoIter<u32, { 640 * 1024 }>
                            ^^^^^^^^^^^^^^
 ```
 
-####### `Infer`
+###### 2.2.3.2.5: `Infer`
 
 A generic argument that's explicitly set to be inferred.
 ```text
@@ -4910,120 +2526,48 @@ std::vec::Vec::<_>::new()
                 ^
 ```
 
-###### Trait Implementations for `GenericArg`
+##### 2.2.3.2: Trait Implementations for `GenericArg`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::GenericArg where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::GenericArg where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::GenericArg where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::GenericArg where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::GenericArg {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::GenericArg where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::GenericArg where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::GenericArg where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::GenericArg where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::GenericArg where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::GenericArg {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum GenericArgs`
+#### 2.2.4: `enum GenericArgs`
 
 ```rust
 pub enum GenericArgs {
-    AngleBracketed { args: alloc::vec::Vec<rustdoc_types::GenericArg>, constraints: alloc::vec::Vec<rustdoc_types::AssocItemConstraint> },
-    Parenthesized { inputs: alloc::vec::Vec<rustdoc_types::Type>, output: core::option::Option<rustdoc_types::Type> },
+    AngleBracketed { args: Vec<rustdoc_types::GenericArg>, constraints: Vec<rustdoc_types::AssocItemConstraint> },
+    Parenthesized { inputs: Vec<rustdoc_types::Type>, output: option::Option<rustdoc_types::Type> },
     ReturnTypeNotation,
 }
 ```
@@ -5035,147 +2579,119 @@ std::option::Option::<u32>::None
                      ^^^^^
 ```
 
-###### Variants
+##### 2.2.4.2: Variants
 
-####### `AngleBracketed { args: alloc::vec::Vec<rustdoc_types::GenericArg>, constraints: alloc::vec::Vec<rustdoc_types::AssocItemConstraint> }`
+###### 2.2.4.2.2: `AngleBracketed { args: Vec<rustdoc_types::GenericArg>, constraints: Vec<rustdoc_types::AssocItemConstraint> }`
 
 `<'a, 32, B: Copy, C = u32>`
 
-####### `Parenthesized { inputs: alloc::vec::Vec<rustdoc_types::Type>, output: core::option::Option<rustdoc_types::Type> }`
+####### 2.2.4.2.2.2: Fields
+
+######## 2.2.4.2.2.2.2: `args`
+
+The list of each argument on this type.
+```text
+<'a, 32, B: Copy, C = u32>
+ ^^^^^^
+```
+
+######## 2.2.4.2.2.2.3: `constraints`
+
+Associated type or constant bindings (e.g. `Item=i32` or `Item: Clone`) for this type.
+
+###### 2.2.4.2.3: `Parenthesized { inputs: Vec<rustdoc_types::Type>, output: option::Option<rustdoc_types::Type> }`
 
 `Fn(A, B) -> C`
 
-####### `ReturnTypeNotation`
+####### 2.2.4.2.3.2: Fields
+
+######## 2.2.4.2.3.2.2: `inputs`
+
+The input types, enclosed in parentheses.
+
+######## 2.2.4.2.3.2.3: `output`
+
+The output type provided after the `->`, if present.
+
+###### 2.2.4.2.4: `ReturnTypeNotation`
 
 `T::method(..)`
 
-###### Trait Implementations for `GenericArgs`
+##### 2.2.4.2: Trait Implementations for `GenericArgs`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::GenericArgs where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::GenericArgs where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::GenericArgs where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::GenericArgs where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::GenericArgs {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::GenericArgs where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::GenericArgs where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::GenericArgs where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::GenericArgs where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::GenericArgs where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::GenericArgs {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum GenericBound`
+#### 2.2.5: `enum GenericBound`
 
 ```rust
 pub enum GenericBound {
-    TraitBound { trait_: rustdoc_types::Path, generic_params: alloc::vec::Vec<rustdoc_types::GenericParamDef>, modifier: rustdoc_types::TraitBoundModifier },
-    Outlives(alloc::string::String),
-    Use(alloc::vec::Vec<rustdoc_types::PreciseCapturingArg>),
+    TraitBound { trait_: rustdoc_types::Path, generic_params: Vec<rustdoc_types::GenericParamDef>, modifier: rustdoc_types::TraitBoundModifier },
+    Outlives(String),
+    Use(Vec<rustdoc_types::PreciseCapturingArg>),
 }
 ```
 
 Either a trait bound or a lifetime bound.
 
-###### Variants
+##### 2.2.5.2: Variants
 
-####### `TraitBound { trait_: rustdoc_types::Path, generic_params: alloc::vec::Vec<rustdoc_types::GenericParamDef>, modifier: rustdoc_types::TraitBoundModifier }`
+###### 2.2.5.2.2: `TraitBound { trait_: rustdoc_types::Path, generic_params: Vec<rustdoc_types::GenericParamDef>, modifier: rustdoc_types::TraitBoundModifier }`
 
 A trait bound.
 
-####### `Outlives(alloc::string::String)`
+####### 2.2.5.2.2.2: Fields
+
+######## 2.2.5.2.2.2.2: `trait_`
+
+The full path to the trait.
+
+######## 2.2.5.2.2.2.3: `generic_params`
+
+Used for Higher-Rank Trait Bounds (HRTBs)
+```text
+where F: for<'a, 'b> Fn(&'a u8, &'b u8)
+         ^^^^^^^^^^^
+         |
+         this part
+```
+
+######## 2.2.5.2.2.2.4: `modifier`
+
+The context for which a trait is supposed to be used, e.g. `const
+
+###### 2.2.5.2.3: `Outlives(String)`
 
 A lifetime bound, e.g.
 ```rust
@@ -5183,258 +2699,183 @@ fn f<'a, T>(x: &'a str, y: &T) where T: 'a {}
 //                                     ^^^
 ```
 
-####### `Use(alloc::vec::Vec<rustdoc_types::PreciseCapturingArg>)`
+###### 2.2.5.2.4: `Use(Vec<rustdoc_types::PreciseCapturingArg>)`
 
 `use<'a, T>` precise-capturing bound syntax
 
-###### Trait Implementations for `GenericBound`
+##### 2.2.5.2: Trait Implementations for `GenericBound`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::GenericBound where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::GenericBound where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::GenericBound where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::GenericBound where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::GenericBound {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::GenericBound where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::GenericBound where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::GenericBound where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::GenericBound where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::GenericBound where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::GenericBound {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum GenericParamDefKind`
+#### 2.2.6: `enum GenericParamDefKind`
 
 ```rust
 pub enum GenericParamDefKind {
-    Lifetime { outlives: alloc::vec::Vec<alloc::string::String> },
-    Type { bounds: alloc::vec::Vec<rustdoc_types::GenericBound>, default: core::option::Option<rustdoc_types::Type>, is_synthetic: bool },
-    Const { type_: rustdoc_types::Type, default: core::option::Option<alloc::string::String> },
+    Lifetime { outlives: Vec<String> },
+    Type { bounds: Vec<rustdoc_types::GenericBound>, default: option::Option<rustdoc_types::Type>, is_synthetic: bool },
+    Const { type_: rustdoc_types::Type, default: option::Option<String> },
 }
 ```
 
 The kind of a [`GenericParamDef`].
 
-###### Variants
+##### 2.2.6.2: Variants
 
-####### `Lifetime { outlives: alloc::vec::Vec<alloc::string::String> }`
+###### 2.2.6.2.2: `Lifetime { outlives: Vec<String> }`
 
 Denotes a lifetime parameter.
 
-####### `Type { bounds: alloc::vec::Vec<rustdoc_types::GenericBound>, default: core::option::Option<rustdoc_types::Type>, is_synthetic: bool }`
+####### 2.2.6.2.2.2: Fields
+
+######## 2.2.6.2.2.2.2: `outlives`
+
+Lifetimes that this lifetime parameter is required to outlive.
+
+```rust
+fn f<'a, 'b, 'resource: 'a + 'b>(a: &'a str, b: &'b str, res: &'resource str) {}
+//                      ^^^^^^^
+```
+
+###### 2.2.6.2.3: `Type { bounds: Vec<rustdoc_types::GenericBound>, default: option::Option<rustdoc_types::Type>, is_synthetic: bool }`
 
 Denotes a type parameter.
 
-####### `Const { type_: rustdoc_types::Type, default: core::option::Option<alloc::string::String> }`
+####### 2.2.6.2.3.2: Fields
+
+######## 2.2.6.2.3.2.2: `bounds`
+
+Bounds applied directly to the type. Note that the bounds from `where` clauses
+that constrain this parameter won't appear here.
+
+```rust
+fn default2<T: Default>() -> [T; 2] where T: Clone { todo!() }
+//             ^^^^^^^
+```
+
+######## 2.2.6.2.3.2.3: `default`
+
+The default type for this parameter, if provided, e.g.
+
+```rust
+trait PartialEq<Rhs = Self> {}
+//                    ^^^^
+```
+
+######## 2.2.6.2.3.2.4: `is_synthetic`
+
+This is normally `false`, which means that this generic parameter is
+declared in the Rust source text.
+
+If it is `true`, this generic parameter has been introduced by the
+compiler behind the scenes.
+
+###### Example
+
+Consider
+
+```ignore (pseudo-rust)
+pub fn f(_: impl Trait) {}
+```
+
+The compiler will transform this behind the scenes to
+
+```ignore (pseudo-rust)
+pub fn f<impl Trait: Trait>(_: impl Trait) {}
+```
+
+In this example, the generic parameter named `impl Trait` (and which
+is bound by `Trait`) is synthetic, because it was not originally in
+the Rust source text.
+
+###### 2.2.6.2.4: `Const { type_: rustdoc_types::Type, default: option::Option<String> }`
 
 Denotes a constant parameter.
 
-###### Trait Implementations for `GenericParamDefKind`
+####### 2.2.6.2.4.2: Fields
+
+######## 2.2.6.2.4.2.2: `type_`
+
+The type of the constant as declared.
+
+######## 2.2.6.2.4.2.3: `default`
+
+The stringified expression for the default value, if provided. It's not guaranteed that
+it'll match the actual source code for the default value.
+
+##### 2.2.6.2: Trait Implementations for `GenericParamDefKind`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::GenericParamDefKind where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::GenericParamDefKind where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::GenericParamDefKind where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::GenericParamDefKind where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::GenericParamDefKind {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::GenericParamDefKind where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::GenericParamDefKind where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::GenericParamDefKind where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::GenericParamDefKind where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::GenericParamDefKind where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::GenericParamDefKind {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum ItemEnum`
+#### 2.2.7: `enum ItemEnum`
 
 ```rust
 pub enum ItemEnum {
     Module(rustdoc_types::Module),
-    ExternCrate { name: alloc::string::String, rename: core::option::Option<alloc::string::String> },
+    ExternCrate { name: String, rename: option::Option<String> },
     Use(rustdoc_types::Use),
     Union(rustdoc_types::Union),
     Struct(rustdoc_types::Struct),
@@ -5449,11 +2890,11 @@ pub enum ItemEnum {
     Constant { type_: rustdoc_types::Type, const_: rustdoc_types::Constant },
     Static(rustdoc_types::Static),
     ExternType,
-    Macro(alloc::string::String),
+    Macro(String),
     ProcMacro(rustdoc_types::ProcMacro),
     Primitive(rustdoc_types::Primitive),
-    AssocConst { type_: rustdoc_types::Type, value: core::option::Option<alloc::string::String> },
-    AssocType { generics: rustdoc_types::Generics, bounds: alloc::vec::Vec<rustdoc_types::GenericBound>, type_: core::option::Option<rustdoc_types::Type> },
+    AssocConst { type_: rustdoc_types::Type, value: option::Option<String> },
+    AssocType { generics: rustdoc_types::Generics, bounds: Vec<rustdoc_types::GenericBound>, type_: option::Option<rustdoc_types::Type> },
 }
 ```
 
@@ -5461,208 +2902,205 @@ Specific fields of an item.
 
 Part of [`Item`].
 
-###### Variants
+##### 2.2.7.2: Variants
 
-####### `Module(rustdoc_types::Module)`
+###### 2.2.7.2.2: `Module(rustdoc_types::Module)`
 
 A module declaration, e.g. `mod foo;` or `mod foo {}`
 
-####### `ExternCrate { name: alloc::string::String, rename: core::option::Option<alloc::string::String> }`
+###### 2.2.7.2.3: `ExternCrate { name: String, rename: option::Option<String> }`
 
 A crate imported via the `extern crate` syntax.
 
-####### `Use(rustdoc_types::Use)`
+####### 2.2.7.2.3.2: Fields
+
+######## 2.2.7.2.3.2.2: `name`
+
+The name of the imported crate.
+
+######## 2.2.7.2.3.2.3: `rename`
+
+If the crate is renamed, this is its name in the crate.
+
+###### 2.2.7.2.4: `Use(rustdoc_types::Use)`
 
 An import of 1 or more items into scope, using the `use` keyword.
 
-####### `Union(rustdoc_types::Union)`
+###### 2.2.7.2.5: `Union(rustdoc_types::Union)`
 
 A `union` declaration.
 
-####### `Struct(rustdoc_types::Struct)`
+###### 2.2.7.2.6: `Struct(rustdoc_types::Struct)`
 
 A `struct` declaration.
 
-####### `StructField(rustdoc_types::Type)`
+###### 2.2.7.2.7: `StructField(rustdoc_types::Type)`
 
 A field of a struct.
 
-####### `Enum(rustdoc_types::Enum)`
+###### 2.2.7.2.8: `Enum(rustdoc_types::Enum)`
 
 An `enum` declaration.
 
-####### `Variant(rustdoc_types::Variant)`
+###### 2.2.7.2.9: `Variant(rustdoc_types::Variant)`
 
 A variant of a enum.
 
-####### `Function(rustdoc_types::Function)`
+###### 2.2.7.2.10: `Function(rustdoc_types::Function)`
 
 A function declaration (including methods and other associated functions)
 
-####### `Trait(rustdoc_types::Trait)`
+###### 2.2.7.2.11: `Trait(rustdoc_types::Trait)`
 
 A `trait` declaration.
 
-####### `TraitAlias(rustdoc_types::TraitAlias)`
+###### 2.2.7.2.12: `TraitAlias(rustdoc_types::TraitAlias)`
 
 A trait alias declaration, e.g. `trait Int = Add + Sub + Mul + Div;`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/41517)
 
-####### `Impl(rustdoc_types::Impl)`
+###### 2.2.7.2.13: `Impl(rustdoc_types::Impl)`
 
 An `impl` block.
 
-####### `TypeAlias(rustdoc_types::TypeAlias)`
+###### 2.2.7.2.14: `TypeAlias(rustdoc_types::TypeAlias)`
 
 A type alias declaration, e.g. `type Pig = std::borrow::Cow<'static, str>;`
 
-####### `Constant { type_: rustdoc_types::Type, const_: rustdoc_types::Constant }`
+###### 2.2.7.2.15: `Constant { type_: rustdoc_types::Type, const_: rustdoc_types::Constant }`
 
 The declaration of a constant, e.g. `const GREETING: &str = "Hi :3";`
 
-####### `Static(rustdoc_types::Static)`
+####### 2.2.7.2.15.2: Fields
+
+######## 2.2.7.2.15.2.2: `type_`
+
+The type of the constant.
+
+######## 2.2.7.2.15.2.3: `const_`
+
+The declared constant itself.
+
+###### 2.2.7.2.16: `Static(rustdoc_types::Static)`
 
 A declaration of a `static`.
 
-####### `ExternType`
+###### 2.2.7.2.17: `ExternType`
 
 `type`s from an `extern` block.
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/43467)
 
-####### `Macro(alloc::string::String)`
+###### 2.2.7.2.18: `Macro(String)`
 
 A macro_rules! declarative macro. Contains a single string with the source
 representation of the macro with the patterns stripped.
 
-####### `ProcMacro(rustdoc_types::ProcMacro)`
+###### 2.2.7.2.19: `ProcMacro(rustdoc_types::ProcMacro)`
 
 A procedural macro.
 
-####### `Primitive(rustdoc_types::Primitive)`
+###### 2.2.7.2.20: `Primitive(rustdoc_types::Primitive)`
 
 A primitive type, e.g. `u32`.
 
 [`Item`]s of this kind only come from the core library.
 
-####### `AssocConst { type_: rustdoc_types::Type, value: core::option::Option<alloc::string::String> }`
+###### 2.2.7.2.21: `AssocConst { type_: rustdoc_types::Type, value: option::Option<String> }`
 
 An associated constant of a trait or a type.
 
-####### `AssocType { generics: rustdoc_types::Generics, bounds: alloc::vec::Vec<rustdoc_types::GenericBound>, type_: core::option::Option<rustdoc_types::Type> }`
+####### 2.2.7.2.21.2: Fields
+
+######## 2.2.7.2.21.2.2: `type_`
+
+The type of the constant.
+
+######## 2.2.7.2.21.2.3: `value`
+
+Inside a trait declaration, this is the default value for the associated constant,
+if provided.
+Inside an `impl` block, this is the value assigned to the associated constant,
+and will always be present.
+
+The representation is implementation-defined and not guaranteed to be representative of
+either the resulting value or of the source code.
+
+```rust
+const X: usize = 640 * 1024;
+//               ^^^^^^^^^^
+```
+
+###### 2.2.7.2.22: `AssocType { generics: rustdoc_types::Generics, bounds: Vec<rustdoc_types::GenericBound>, type_: option::Option<rustdoc_types::Type> }`
 
 An associated type of a trait or a type.
 
-###### Trait Implementations for `ItemEnum`
+####### 2.2.7.2.22.2: Fields
+
+######## 2.2.7.2.22.2.2: `generics`
+
+The generic parameters and where clauses on ahis associated type.
+
+######## 2.2.7.2.22.2.3: `bounds`
+
+The bounds for this associated type. e.g.
+```rust
+trait IntoIterator {
+    type Item;
+    type IntoIter: Iterator<Item = Self::Item>;
+//                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+```
+
+######## 2.2.7.2.22.2.4: `type_`
+
+Inside a trait declaration, this is the default for the associated type, if provided.
+Inside an impl block, this is the type assigned to the associated type, and will always
+be present.
+
+```rust
+type X = usize;
+//       ^^^^^
+```
+
+##### 2.2.7.2: Trait Implementations for `ItemEnum`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::ItemEnum where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::ItemEnum where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::ItemEnum where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::ItemEnum where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::ItemEnum {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::ItemEnum where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::ItemEnum where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::ItemEnum where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::ItemEnum where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::ItemEnum where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::ItemEnum {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum ItemKind`
+#### 2.2.8: `enum ItemKind`
 
 ```rust
 pub enum ItemKind {
@@ -5696,226 +3134,154 @@ The fundamental kind of an item. Unlike [`ItemEnum`], this does not carry any ad
 
 Part of [`ItemSummary`].
 
-###### Variants
+##### 2.2.8.2: Variants
 
-####### `Module`
+###### 2.2.8.2.2: `Module`
 
 A module declaration, e.g. `mod foo;` or `mod foo {}`
 
-####### `ExternCrate`
+###### 2.2.8.2.3: `ExternCrate`
 
 A crate imported via the `extern crate` syntax.
 
-####### `Use`
+###### 2.2.8.2.4: `Use`
 
 An import of 1 or more items into scope, using the `use` keyword.
 
-####### `Struct`
+###### 2.2.8.2.5: `Struct`
 
 A `struct` declaration.
 
-####### `StructField`
+###### 2.2.8.2.6: `StructField`
 
 A field of a struct.
 
-####### `Union`
+###### 2.2.8.2.7: `Union`
 
 A `union` declaration.
 
-####### `Enum`
+###### 2.2.8.2.8: `Enum`
 
 An `enum` declaration.
 
-####### `Variant`
+###### 2.2.8.2.9: `Variant`
 
 A variant of a enum.
 
-####### `Function`
+###### 2.2.8.2.10: `Function`
 
 A function declaration, e.g. `fn f() {}`
 
-####### `TypeAlias`
+###### 2.2.8.2.11: `TypeAlias`
 
 A type alias declaration, e.g. `type Pig = std::borrow::Cow<'static, str>;`
 
-####### `Constant`
+###### 2.2.8.2.12: `Constant`
 
 The declaration of a constant, e.g. `const GREETING: &str = "Hi :3";`
 
-####### `Trait`
+###### 2.2.8.2.13: `Trait`
 
 A `trait` declaration.
 
-####### `TraitAlias`
+###### 2.2.8.2.14: `TraitAlias`
 
 A trait alias declaration, e.g. `trait Int = Add + Sub + Mul + Div;`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/41517)
 
-####### `Impl`
+###### 2.2.8.2.15: `Impl`
 
 An `impl` block.
 
-####### `Static`
+###### 2.2.8.2.16: `Static`
 
 A `static` declaration.
 
-####### `ExternType`
+###### 2.2.8.2.17: `ExternType`
 
 `type`s from an `extern` block.
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/43467)
 
-####### `Macro`
+###### 2.2.8.2.18: `Macro`
 
 A macro declaration.
 
 Corresponds to either `ItemEnum::Macro(_)`
 or `ItemEnum::ProcMacro(ProcMacro { kind: MacroKind::Bang })`
 
-####### `ProcAttribute`
+###### 2.2.8.2.19: `ProcAttribute`
 
 A procedural macro attribute.
 
 Corresponds to `ItemEnum::ProcMacro(ProcMacro { kind: MacroKind::Attr })`
 
-####### `ProcDerive`
+###### 2.2.8.2.20: `ProcDerive`
 
 A procedural macro usable in the `#[derive()]` attribute.
 
 Corresponds to `ItemEnum::ProcMacro(ProcMacro { kind: MacroKind::Derive })`
 
-####### `AssocConst`
+###### 2.2.8.2.21: `AssocConst`
 
 An associated constant of a trait or a type.
 
-####### `AssocType`
+###### 2.2.8.2.22: `AssocType`
 
 An associated type of a trait or a type.
 
-####### `Primitive`
+###### 2.2.8.2.23: `Primitive`
 
 A primitive type, e.g. `u32`.
 
 [`Item`]s of this kind only come from the core library.
 
-####### `Keyword`
+###### 2.2.8.2.24: `Keyword`
 
 A keyword declaration.
 
 [`Item`]s of this kind only come from the come library and exist solely
 to carry documentation for the respective keywords.
 
-###### Trait Implementations for `ItemKind`
+##### 2.2.8.2: Trait Implementations for `ItemKind`
 
-- `Copy`
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::ItemKind where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::ItemKind where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::ItemKind where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::ItemKind where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::ItemKind {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::ItemKind where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::ItemKind where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::ItemKind where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::ItemKind where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::ItemKind where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::ItemKind {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum MacroKind`
+#### 2.2.9: `enum MacroKind`
 
 ```rust
 pub enum MacroKind {
@@ -5927,279 +3293,135 @@ pub enum MacroKind {
 
 The way a [`ProcMacro`] is declared to be used.
 
-###### Variants
+##### 2.2.9.2: Variants
 
-####### `Bang`
+###### 2.2.9.2.2: `Bang`
 
 A bang macro `foo!()`.
 
-####### `Attr`
+###### 2.2.9.2.3: `Attr`
 
 An attribute macro `#[foo]`.
 
-####### `Derive`
+###### 2.2.9.2.4: `Derive`
 
 A derive macro `#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]`
 
-###### Trait Implementations for `MacroKind`
+##### 2.2.9.2: Trait Implementations for `MacroKind`
 
-- `Copy`
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::MacroKind where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::MacroKind where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::MacroKind where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::MacroKind where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::MacroKind {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::MacroKind where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::MacroKind where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::MacroKind where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::MacroKind where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::MacroKind where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::MacroKind {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum PreciseCapturingArg`
+#### 2.2.10: `enum PreciseCapturingArg`
 
 ```rust
 pub enum PreciseCapturingArg {
-    Lifetime(alloc::string::String),
-    Param(alloc::string::String),
+    Lifetime(String),
+    Param(String),
 }
 ```
 
 One precise capturing argument. See [the rust reference](https://doc.rust-lang.org/reference/types/impl-trait.html#precise-capturing).
 
-###### Variants
+##### 2.2.10.2: Variants
 
-####### `Lifetime(alloc::string::String)`
+###### 2.2.10.2.2: `Lifetime(String)`
 
 A lifetime.
 ```rust
 pub fn hello<'a, T, const N: usize>() -> impl Sized + use<'a, T, N> {}
 //                                                        ^^
 
-####### `Param(alloc::string::String)`
+###### 2.2.10.2.3: `Param(String)`
 
 A type or constant parameter.
 ```rust
 pub fn hello<'a, T, const N: usize>() -> impl Sized + use<'a, T, N> {}
 //                                                            ^  ^
 
-###### Trait Implementations for `PreciseCapturingArg`
+##### 2.2.10.2: Trait Implementations for `PreciseCapturingArg`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::PreciseCapturingArg where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::PreciseCapturingArg where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::PreciseCapturingArg where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::PreciseCapturingArg where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::PreciseCapturingArg {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::PreciseCapturingArg where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::PreciseCapturingArg where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::PreciseCapturingArg where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::PreciseCapturingArg where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::PreciseCapturingArg where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::PreciseCapturingArg {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum StructKind`
+#### 2.2.11: `enum StructKind`
 
 ```rust
 pub enum StructKind {
     Unit,
-    Tuple(alloc::vec::Vec<core::option::Option<rustdoc_types::Id>>),
-    Plain { fields: alloc::vec::Vec<rustdoc_types::Id>, has_stripped_fields: bool },
+    Tuple(Vec<option::Option<rustdoc_types::Id>>),
+    Plain { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool },
 }
 ```
 
 The kind of a [`Struct`] and the data specific to it, i.e. fields.
 
-###### Variants
+##### 2.2.11.2: Variants
 
-####### `Unit`
+###### 2.2.11.2.2: `Unit`
 
 A struct with no fields and no parentheses.
 
@@ -6207,7 +3429,7 @@ A struct with no fields and no parentheses.
 pub struct Unit;
 ```
 
-####### `Tuple(alloc::vec::Vec<core::option::Option<rustdoc_types::Id>>)`
+###### 2.2.11.2.3: `Tuple(Vec<option::Option<rustdoc_types::Id>>)`
 
 A struct with unnamed fields.
 
@@ -6220,7 +3442,7 @@ pub struct TupleStruct(i32);
 pub struct EmptyTupleStruct();
 ```
 
-####### `Plain { fields: alloc::vec::Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
+###### 2.2.11.2.4: `Plain { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
 
 A struct with named fields.
 
@@ -6229,115 +3451,55 @@ pub struct PlainStruct { x: i32 }
 pub struct EmptyPlainStruct {}
 ```
 
-###### Trait Implementations for `StructKind`
+####### 2.2.11.2.4.2: Fields
+
+######## 2.2.11.2.4.2.2: `fields`
+
+The list of fields in the struct.
+
+All of the corresponding [`Item`]s are of kind [`ItemEnum::StructField`].
+
+######## 2.2.11.2.4.2.3: `has_stripped_fields`
+
+Whether any fields have been removed from the result, due to being private or hidden.
+
+##### 2.2.11.2: Trait Implementations for `StructKind`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::StructKind where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::StructKind where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::StructKind where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::StructKind where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::StructKind {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::StructKind where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::StructKind where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::StructKind where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::StructKind where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::StructKind where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::StructKind {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum Term`
+#### 2.2.12: `enum Term`
 
 ```rust
 pub enum Term {
@@ -6349,9 +3511,9 @@ pub enum Term {
 Either a type or a constant, usually stored as the right-hand side of an equation in places like
 [`AssocItemConstraint`]
 
-###### Variants
+##### 2.2.12.2: Variants
 
-####### `Type(rustdoc_types::Type)`
+###### 2.2.12.2.2: `Type(rustdoc_types::Type)`
 
 A type.
 
@@ -6360,7 +3522,7 @@ fn f(x: impl IntoIterator<Item = u32>) {}
 //                               ^^^
 ```
 
-####### `Constant(rustdoc_types::Constant)`
+###### 2.2.12.2.3: `Constant(rustdoc_types::Constant)`
 
 A constant.
 
@@ -6373,115 +3535,43 @@ fn f(x: impl Foo<BAR = 42>) {}
 //                     ^^
 ```
 
-###### Trait Implementations for `Term`
+##### 2.2.12.2: Trait Implementations for `Term`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Term where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Term where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Term where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Term where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Term {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Term where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Term where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Term where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Term where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Term where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Term {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum TraitBoundModifier`
+#### 2.2.13: `enum TraitBoundModifier`
 
 ```rust
 pub enum TraitBoundModifier {
@@ -6493,339 +3583,272 @@ pub enum TraitBoundModifier {
 
 A set of modifiers applied to a trait.
 
-###### Variants
+##### 2.2.13.2: Variants
 
-####### `None`
+###### 2.2.13.2.2: `None`
 
 Marks the absence of a modifier.
 
-####### `Maybe`
+###### 2.2.13.2.3: `Maybe`
 
 Indicates that the trait bound relaxes a trait bound applied to a parameter by default,
 e.g. `T: Sized?`, the `Sized` trait is required for all generic type parameters by default
 unless specified otherwise with this modifier.
 
-####### `MaybeConst`
+###### 2.2.13.2.4: `MaybeConst`
 
 Indicates that the trait bound must be applicable in both a run-time and a compile-time
 context.
 
-###### Trait Implementations for `TraitBoundModifier`
+##### 2.2.13.2: Trait Implementations for `TraitBoundModifier`
 
-- `Copy`
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::TraitBoundModifier where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::TraitBoundModifier where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::TraitBoundModifier where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::TraitBoundModifier where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::TraitBoundModifier {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::TraitBoundModifier where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::TraitBoundModifier where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::TraitBoundModifier where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::TraitBoundModifier where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::TraitBoundModifier where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::TraitBoundModifier {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum Type`
+#### 2.2.14: `enum Type`
 
 ```rust
 pub enum Type {
     ResolvedPath(rustdoc_types::Path),
     DynTrait(rustdoc_types::DynTrait),
-    Generic(alloc::string::String),
-    Primitive(alloc::string::String),
-    FunctionPointer(alloc::boxed::Box<rustdoc_types::FunctionPointer>),
-    Tuple(alloc::vec::Vec<rustdoc_types::Type>),
-    Slice(alloc::boxed::Box<rustdoc_types::Type>),
-    Array { type_: alloc::boxed::Box<rustdoc_types::Type>, len: alloc::string::String },
-    Pat { type_: alloc::boxed::Box<rustdoc_types::Type> },
-    ImplTrait(alloc::vec::Vec<rustdoc_types::GenericBound>),
+    Generic(String),
+    Primitive(String),
+    FunctionPointer(Box<rustdoc_types::FunctionPointer>),
+    Tuple(Vec<rustdoc_types::Type>),
+    Slice(Box<rustdoc_types::Type>),
+    Array { type_: Box<rustdoc_types::Type>, len: String },
+    Pat { type_: Box<rustdoc_types::Type> },
+    ImplTrait(Vec<rustdoc_types::GenericBound>),
     Infer,
-    RawPointer { is_mutable: bool, type_: alloc::boxed::Box<rustdoc_types::Type> },
-    BorrowedRef { lifetime: core::option::Option<alloc::string::String>, is_mutable: bool, type_: alloc::boxed::Box<rustdoc_types::Type> },
-    QualifiedPath { name: alloc::string::String, args: alloc::boxed::Box<rustdoc_types::GenericArgs>, self_type: alloc::boxed::Box<rustdoc_types::Type>, trait_: core::option::Option<rustdoc_types::Path> },
+    RawPointer { is_mutable: bool, type_: Box<rustdoc_types::Type> },
+    BorrowedRef { lifetime: option::Option<String>, is_mutable: bool, type_: Box<rustdoc_types::Type> },
+    QualifiedPath { name: String, args: Box<rustdoc_types::GenericArgs>, self_type: Box<rustdoc_types::Type>, trait_: option::Option<rustdoc_types::Path> },
 }
 ```
 
 A type.
 
-###### Variants
+##### 2.2.14.2: Variants
 
-####### `ResolvedPath(rustdoc_types::Path)`
+###### 2.2.14.2.2: `ResolvedPath(rustdoc_types::Path)`
 
 Structs, enums, unions and type aliases, e.g. `std::option::Option<u32>`
 
-####### `DynTrait(rustdoc_types::DynTrait)`
+###### 2.2.14.2.3: `DynTrait(rustdoc_types::DynTrait)`
 
 Dynamic trait object type (`dyn Trait`).
 
-####### `Generic(alloc::string::String)`
+###### 2.2.14.2.4: `Generic(String)`
 
 Parameterized types. The contained string is the name of the parameter.
 
-####### `Primitive(alloc::string::String)`
+###### 2.2.14.2.5: `Primitive(String)`
 
 Built-in numeric types (e.g. `u32`, `f32`), `bool`, `char`.
 
-####### `FunctionPointer(alloc::boxed::Box<rustdoc_types::FunctionPointer>)`
+###### 2.2.14.2.6: `FunctionPointer(Box<rustdoc_types::FunctionPointer>)`
 
 A function pointer type, e.g. `fn(u32) -> u32`, `extern "C" fn() -> *const u8`
 
-####### `Tuple(alloc::vec::Vec<rustdoc_types::Type>)`
+###### 2.2.14.2.7: `Tuple(Vec<rustdoc_types::Type>)`
 
 A tuple type, e.g. `(String, u32, Box<usize>)`
 
-####### `Slice(alloc::boxed::Box<rustdoc_types::Type>)`
+###### 2.2.14.2.8: `Slice(Box<rustdoc_types::Type>)`
 
 An unsized slice type, e.g. `[u32]`.
 
-####### `Array { type_: alloc::boxed::Box<rustdoc_types::Type>, len: alloc::string::String }`
+###### 2.2.14.2.9: `Array { type_: Box<rustdoc_types::Type>, len: String }`
 
 An array type, e.g. `[u32; 15]`
 
-####### `Pat { type_: alloc::boxed::Box<rustdoc_types::Type> }`
+####### 2.2.14.2.9.2: Fields
+
+######## 2.2.14.2.9.2.2: `type_`
+
+The type of the contained element.
+
+######## 2.2.14.2.9.2.3: `len`
+
+The stringified expression that is the length of the array.
+
+Keep in mind that it's not guaranteed to match the actual source code of the expression.
+
+###### 2.2.14.2.10: `Pat { type_: Box<rustdoc_types::Type> }`
 
 A pattern type, e.g. `u32 is 1..`
 
 See [the tracking issue](https://github.com/rust-lang/rust/issues/123646)
 
-####### `ImplTrait(alloc::vec::Vec<rustdoc_types::GenericBound>)`
+####### 2.2.14.2.10.2: Fields
+
+######## 2.2.14.2.10.2.2: `type_`
+
+The base type, e.g. the `u32` in `u32 is 1..`
+
+
+_[Private fields hidden]_
+###### 2.2.14.2.11: `ImplTrait(Vec<rustdoc_types::GenericBound>)`
 
 An opaque type that satisfies a set of bounds, `impl TraitA + TraitB + ...`
 
-####### `Infer`
+###### 2.2.14.2.12: `Infer`
 
 A type that's left to be inferred, `_`
 
-####### `RawPointer { is_mutable: bool, type_: alloc::boxed::Box<rustdoc_types::Type> }`
+###### 2.2.14.2.13: `RawPointer { is_mutable: bool, type_: Box<rustdoc_types::Type> }`
 
 A raw pointer type, e.g. `*mut u32`, `*const u8`, etc.
 
-####### `BorrowedRef { lifetime: core::option::Option<alloc::string::String>, is_mutable: bool, type_: alloc::boxed::Box<rustdoc_types::Type> }`
+####### 2.2.14.2.13.2: Fields
+
+######## 2.2.14.2.13.2.2: `is_mutable`
+
+This is `true` for `*mut _` and `false` for `*const _`.
+
+######## 2.2.14.2.13.2.3: `type_`
+
+The type of the pointee.
+
+###### 2.2.14.2.14: `BorrowedRef { lifetime: option::Option<String>, is_mutable: bool, type_: Box<rustdoc_types::Type> }`
 
 `&'a mut String`, `&str`, etc.
 
-####### `QualifiedPath { name: alloc::string::String, args: alloc::boxed::Box<rustdoc_types::GenericArgs>, self_type: alloc::boxed::Box<rustdoc_types::Type>, trait_: core::option::Option<rustdoc_types::Path> }`
+####### 2.2.14.2.14.2: Fields
+
+######## 2.2.14.2.14.2.2: `lifetime`
+
+The name of the lifetime of the reference, if provided.
+
+######## 2.2.14.2.14.2.3: `is_mutable`
+
+This is `true` for `&mut i32` and `false` for `&i32`
+
+######## 2.2.14.2.14.2.4: `type_`
+
+The type of the pointee, e.g. the `i32` in `&'a mut i32`
+
+###### 2.2.14.2.15: `QualifiedPath { name: String, args: Box<rustdoc_types::GenericArgs>, self_type: Box<rustdoc_types::Type>, trait_: option::Option<rustdoc_types::Path> }`
 
 Associated types like `<Type as Trait>::Name` and `T::Item` where
 `T: Iterator` or inherent associated types like `Struct::Name`.
 
-###### Trait Implementations for `Type`
+####### 2.2.14.2.15.2: Fields
+
+######## 2.2.14.2.15.2.2: `name`
+
+The name of the associated type in the parent type.
+
+```ignore (incomplete expression)
+<core::array::IntoIter<u32, 42> as Iterator>::Item
+//                                            ^^^^
+```
+
+######## 2.2.14.2.15.2.3: `args`
+
+The generic arguments provided to the associated type.
+
+```ignore (incomplete expression)
+<core::slice::IterMut<'static, u32> as BetterIterator>::Item<'static>
+//                                                          ^^^^^^^^^
+```
+
+######## 2.2.14.2.15.2.4: `self_type`
+
+The type with which this type is associated.
+
+```ignore (incomplete expression)
+<core::array::IntoIter<u32, 42> as Iterator>::Item
+// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+######## 2.2.14.2.15.2.5: `trait_`
+
+`None` iff this is an *inherent* associated type.
+
+##### 2.2.14.2: Trait Implementations for `Type`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Type where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Type where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Type where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Type where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Type {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Type where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Type where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Type where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Type where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Type where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Type {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum VariantKind`
+#### 2.2.15: `enum VariantKind`
 
 ```rust
 pub enum VariantKind {
     Plain,
-    Tuple(alloc::vec::Vec<core::option::Option<rustdoc_types::Id>>),
-    Struct { fields: alloc::vec::Vec<rustdoc_types::Id>, has_stripped_fields: bool },
+    Tuple(Vec<option::Option<rustdoc_types::Id>>),
+    Struct { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool },
 }
 ```
 
 The kind of an [`Enum`] [`Variant`] and the data specific to it, i.e. fields.
 
-###### Variants
+##### 2.2.15.2: Variants
 
-####### `Plain`
+###### 2.2.15.2.2: `Plain`
 
 A variant with no parentheses
 
@@ -6836,7 +3859,7 @@ enum Demo {
 }
 ```
 
-####### `Tuple(alloc::vec::Vec<core::option::Option<rustdoc_types::Id>>)`
+###### 2.2.15.2.3: `Tuple(Vec<option::Option<rustdoc_types::Id>>)`
 
 A variant with unnamed fields.
 
@@ -6851,7 +3874,7 @@ enum Demo {
 }
 ```
 
-####### `Struct { fields: alloc::vec::Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
+###### 2.2.15.2.4: `Struct { fields: Vec<rustdoc_types::Id>, has_stripped_fields: bool }`
 
 A variant with named fields.
 
@@ -6862,260 +3885,140 @@ enum Demo {
 }
 ```
 
-###### Trait Implementations for `VariantKind`
+####### 2.2.15.2.4.2: Fields
+
+######## 2.2.15.2.4.2.2: `fields`
+
+The list of variants in the enum.
+All of the corresponding [`Item`]s are of kind [`ItemEnum::Variant`].
+
+######## 2.2.15.2.4.2.3: `has_stripped_fields`
+
+Whether any variants have been removed from the result, due to being private or hidden.
+
+##### 2.2.15.2: Trait Implementations for `VariantKind`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::VariantKind where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::VariantKind where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::VariantKind where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::VariantKind where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::VariantKind {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::VariantKind where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::VariantKind where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::VariantKind where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::VariantKind where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::VariantKind where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::VariantKind {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum Visibility`
+#### 2.2.16: `enum Visibility`
 
 ```rust
 pub enum Visibility {
     Public,
     Default,
     Crate,
-    Restricted { parent: rustdoc_types::Id, path: alloc::string::String },
+    Restricted { parent: rustdoc_types::Id, path: String },
 }
 ```
 
 Visibility of an [`Item`].
 
-###### Variants
+##### 2.2.16.2: Variants
 
-####### `Public`
+###### 2.2.16.2.2: `Public`
 
 Explicitly public visibility set with `pub`.
 
-####### `Default`
+###### 2.2.16.2.3: `Default`
 
 For the most part items are private by default. The exceptions are associated items of
 public traits and variants of public enums.
 
-####### `Crate`
+###### 2.2.16.2.4: `Crate`
 
 Explicitly crate-wide visibility set with `pub(crate)`
 
-####### `Restricted { parent: rustdoc_types::Id, path: alloc::string::String }`
+###### 2.2.16.2.5: `Restricted { parent: rustdoc_types::Id, path: String }`
 
 For `pub(in path)` visibility.
 
-###### Trait Implementations for `Visibility`
+####### 2.2.16.2.5.2: Fields
+
+######## 2.2.16.2.5.2.2: `parent`
+
+ID of the module to which this visibility restricts items.
+
+######## 2.2.16.2.5.2.3: `path`
+
+The path with which [`parent`] was referenced
+(like `super::super` or `crate::foo::bar`).
+
+[`parent`]: Visibility::Restricted::parent
+
+##### 2.2.16.2: Trait Implementations for `Visibility`
 
 - `Freeze`
+- `RefUnwindSafe`
 - `Send`
-- `StructuralPartialEq`
 - `Sync`
 - `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
 - `serde::ser::Serialize`
 
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::Visibility where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::Visibility where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::Visibility where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::Visibility where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
 - `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::Visibility {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::Visibility where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::Visibility where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::Visibility where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::Visibility where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::Visibility where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
 - `serde::de::Deserialize<'de>`
 
     ```rust
     impl<'de> serde::de::Deserialize<'de> for rustdoc_types::Visibility {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
     }
     ```
 
 
-##### `enum WherePredicate`
+#### 2.2.17: `enum WherePredicate`
 
 ```rust
 pub enum WherePredicate {
-    BoundPredicate { type_: rustdoc_types::Type, bounds: alloc::vec::Vec<rustdoc_types::GenericBound>, generic_params: alloc::vec::Vec<rustdoc_types::GenericParamDef> },
-    LifetimePredicate { lifetime: alloc::string::String, outlives: alloc::vec::Vec<alloc::string::String> },
+    BoundPredicate { type_: rustdoc_types::Type, bounds: Vec<rustdoc_types::GenericBound>, generic_params: Vec<rustdoc_types::GenericParamDef> },
+    LifetimePredicate { lifetime: String, outlives: Vec<String> },
     EqPredicate { lhs: rustdoc_types::Type, rhs: rustdoc_types::Term },
 }
 ```
@@ -7126,818 +4029,15 @@ fn default<T>() -> T where T: Default { T::default() }
 //                         ^^^^^^^^^^
 ```
 
-###### Variants
+##### 2.2.17.2: Variants
 
-####### `BoundPredicate { type_: rustdoc_types::Type, bounds: alloc::vec::Vec<rustdoc_types::GenericBound>, generic_params: alloc::vec::Vec<rustdoc_types::GenericParamDef> }`
+###### 2.2.17.2.2: `BoundPredicate { type_: rustdoc_types::Type, bounds: Vec<rustdoc_types::GenericBound>, generic_params: Vec<rustdoc_types::GenericParamDef> }`
 
 A type is expected to comply with a set of bounds
 
-####### `LifetimePredicate { lifetime: alloc::string::String, outlives: alloc::vec::Vec<alloc::string::String> }`
+####### 2.2.17.2.2.2: Fields
 
-A lifetime is expected to outlive other lifetimes.
-
-####### `EqPredicate { lhs: rustdoc_types::Type, rhs: rustdoc_types::Term }`
-
-A type must exactly equal another type.
-
-###### Trait Implementations for `WherePredicate`
-
-- `Freeze`
-- `Send`
-- `StructuralPartialEq`
-- `Sync`
-- `Unpin`
-- `clone::Clone`
-- `cmp::Eq`
-- `cmp::PartialEq`
-- `fmt::Debug`
-- `hash::Hash`
-- `panic::unwind_safe::RefUnwindSafe`
-- `panic::unwind_safe::UnwindSafe`
-- `serde::ser::Serialize`
-
-- `borrow::Borrow<T>`
-
-    ```rust
-    impl<T> core::borrow::Borrow<T> for rustdoc_types::WherePredicate where T: ?core::marker::Sized {
-        pub fn borrow(self: &Self) -> &T { ... }
-    }
-    ```
-
-- `borrow::BorrowMut<T>`
-
-    ```rust
-    impl<T> core::borrow::BorrowMut<T> for rustdoc_types::WherePredicate where T: ?core::marker::Sized {
-        pub fn borrow_mut(self: &mut Self) -> &mut T { ... }
-    }
-    ```
-
-- `clone::CloneToUninit`
-
-    ```rust
-    impl<T> core::clone::CloneToUninit for rustdoc_types::WherePredicate where T: core::clone::Clone {
-        pub unsafe fn clone_to_uninit(self: &Self, dest: *mut u8) { ... }
-    }
-    ```
-
-- `convert::Into<U>`
-
-    ```rust
-    impl<T, U> core::convert::Into<U> for rustdoc_types::WherePredicate where U: core::convert::From<T> {
-        pub fn into(self: Self) -> U { ... }
-    }
-    ```
-
-- `convert::From<T>`
-
-    ```rust
-    impl<T> core::convert::From<T> for rustdoc_types::WherePredicate {
-        pub fn from(t: T) -> T { ... }
-    }
-    ```
-
-- `convert::TryInto<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryInto<U> for rustdoc_types::WherePredicate where U: core::convert::TryFrom<T> {
-        type Error = <U as core::convert::TryFrom<T>>::Error;
-        pub fn try_into(self: Self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error> { ... }
-    }
-    ```
-
-- `convert::TryFrom<U>`
-
-    ```rust
-    impl<T, U> core::convert::TryFrom<U> for rustdoc_types::WherePredicate where U: core::convert::Into<T> {
-        type Error = core::convert::Infallible;
-        pub fn try_from(value: U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error> { ... }
-    }
-    ```
-
-- `any::Any`
-
-    ```rust
-    impl<T> core::any::Any for rustdoc_types::WherePredicate where T: 'static + ?core::marker::Sized {
-        pub fn type_id(self: &Self) -> core::any::TypeId { ... }
-    }
-    ```
-
-- `alloc::borrow::ToOwned`
-
-    ```rust
-    impl<T> alloc::borrow::ToOwned for rustdoc_types::WherePredicate where T: core::clone::Clone {
-        type Owned = T;
-        pub fn to_owned(self: &Self) -> T { ... }
-        pub fn clone_into(self: &Self, target: &mut T) { ... }
-    }
-    ```
-
-- `serde::de::DeserializeOwned`
-
-    ```rust
-    impl<T> serde::de::DeserializeOwned for rustdoc_types::WherePredicate where T: for<'de> serde::de::Deserialize<'de> {
-    }
-    ```
-
-- `serde::de::Deserialize<'de>`
-
-    ```rust
-    impl<'de> serde::de::Deserialize<'de> for rustdoc_types::WherePredicate {
-        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> core::result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
-    }
-    ```
-
-
-#### Constants
-
-##### `const FORMAT_VERSION`
-
-The version of JSON output that this crate represents.
-
-This integer is incremented with every breaking change to the API,
-and is returned along with the JSON blob as [`Crate::format_version`].
-Consuming code should assert that this value matches the format version(s) that it supports.
-
-
-## Other
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::FunctionPointer` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Primitive` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::Primitive` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Variant` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::TypeAlias` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::Tuple` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Use` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::ImplTrait` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::DynTrait` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::GenericBound::Outlives` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Union` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::StructKind::Tuple` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::Generic` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::PreciseCapturingArg::Lifetime` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::ProcMacro` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Module` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::AssocItemConstraintKind::Constraint` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Struct` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::GenericBound::Use` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::GenericArg::Const` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::GenericArg::Lifetime` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::ResolvedPath` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Term::Constant` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::TraitAlias` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Term::Type` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Macro` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Enum` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::AssocItemConstraintKind::Equality` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::GenericArg::Type` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Static` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Trait` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::PreciseCapturingArg::Param` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::StructField` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Type::Slice` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Function` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::Abi::Other` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Impl` (VariantField)
-
-
-### `0`
-
-_Referenced by:_
-- `rustdoc_types::VariantKind::Tuple` (VariantField)
-
-
-### `args`
-
-The list of each argument on this type.
-```text
-<'a, 32, B: Copy, C = u32>
- ^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::GenericArgs::AngleBracketed` (VariantField)
-
-
-### `args`
-
-The generic arguments provided to the associated type.
-
-```ignore (incomplete expression)
-<core::slice::IterMut<'static, u32> as BetterIterator>::Item<'static>
-//                                                          ^^^^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::Type::QualifiedPath` (VariantField)
-
-
-### `bounds`
-
-The set of bounds that constrain the type.
-
-```rust
-fn f<T>(x: T) where for<'a> &'a T: Iterator {}
-//                                 ^^^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::WherePredicate::BoundPredicate` (VariantField)
-
-
-### `bounds`
-
-Bounds applied directly to the type. Note that the bounds from `where` clauses
-that constrain this parameter won't appear here.
-
-```rust
-fn default2<T: Default>() -> [T; 2] where T: Clone { todo!() }
-//             ^^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::GenericParamDefKind::Type` (VariantField)
-
-
-### `bounds`
-
-The bounds for this associated type. e.g.
-```rust
-trait IntoIterator {
-    type Item;
-    type IntoIter: Iterator<Item = Self::Item>;
-//                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-}
-```
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::AssocType` (VariantField)
-
-
-### `const_`
-
-The declared constant itself.
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Constant` (VariantField)
-
-
-### `constraints`
-
-Associated type or constant bindings (e.g. `Item=i32` or `Item: Clone`) for this type.
-
-_Referenced by:_
-- `rustdoc_types::GenericArgs::AngleBracketed` (VariantField)
-
-
-### `default`
-
-The stringified expression for the default value, if provided. It's not guaranteed that
-it'll match the actual source code for the default value.
-
-_Referenced by:_
-- `rustdoc_types::GenericParamDefKind::Const` (VariantField)
-
-
-### `default`
-
-The default type for this parameter, if provided, e.g.
-
-```rust
-trait PartialEq<Rhs = Self> {}
-//                    ^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::GenericParamDefKind::Type` (VariantField)
-
-
-### `fields`
-
-The list of fields in the struct.
-
-All of the corresponding [`Item`]s are of kind [`ItemEnum::StructField`].
-
-_Referenced by:_
-- `rustdoc_types::StructKind::Plain` (VariantField)
-
-
-### `fields`
-
-The list of variants in the enum.
-All of the corresponding [`Item`]s are of kind [`ItemEnum::Variant`].
-
-_Referenced by:_
-- `rustdoc_types::VariantKind::Struct` (VariantField)
-
-
-### `generic_params`
-
-Used for Higher-Rank Trait Bounds (HRTBs)
-```text
-where F: for<'a, 'b> Fn(&'a u8, &'b u8)
-         ^^^^^^^^^^^
-         |
-         this part
-```
-
-_Referenced by:_
-- `rustdoc_types::GenericBound::TraitBound` (VariantField)
-
-
-### `generic_params`
-
-Used for Higher-Rank Trait Bounds (HRTBs)
-```rust
-fn f<T>(x: T) where for<'a> &'a T: Iterator {}
-//                  ^^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::WherePredicate::BoundPredicate` (VariantField)
-
-
-### `generics`
-
-The generic parameters and where clauses on ahis associated type.
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::AssocType` (VariantField)
-
-
-### `has_stripped_fields`
-
-Whether any variants have been removed from the result, due to being private or hidden.
-
-_Referenced by:_
-- `rustdoc_types::VariantKind::Struct` (VariantField)
-
-
-### `has_stripped_fields`
-
-Whether any fields have been removed from the result, due to being private or hidden.
-
-_Referenced by:_
-- `rustdoc_types::StructKind::Plain` (VariantField)
-
-
-### `inputs`
-
-The input types, enclosed in parentheses.
-
-_Referenced by:_
-- `rustdoc_types::GenericArgs::Parenthesized` (VariantField)
-
-
-### `is_mutable`
-
-This is `true` for `*mut _` and `false` for `*const _`.
-
-_Referenced by:_
-- `rustdoc_types::Type::RawPointer` (VariantField)
-
-
-### `is_mutable`
-
-This is `true` for `&mut i32` and `false` for `&i32`
-
-_Referenced by:_
-- `rustdoc_types::Type::BorrowedRef` (VariantField)
-
-
-### `is_synthetic`
-
-This is normally `false`, which means that this generic parameter is
-declared in the Rust source text.
-
-If it is `true`, this generic parameter has been introduced by the
-compiler behind the scenes.
-
-#### Example
-
-Consider
-
-```ignore (pseudo-rust)
-pub fn f(_: impl Trait) {}
-```
-
-The compiler will transform this behind the scenes to
-
-```ignore (pseudo-rust)
-pub fn f<impl Trait: Trait>(_: impl Trait) {}
-```
-
-In this example, the generic parameter named `impl Trait` (and which
-is bound by `Trait`) is synthetic, because it was not originally in
-the Rust source text.
-
-_Referenced by:_
-- `rustdoc_types::GenericParamDefKind::Type` (VariantField)
-
-
-### `len`
-
-The stringified expression that is the length of the array.
-
-Keep in mind that it's not guaranteed to match the actual source code of the expression.
-
-_Referenced by:_
-- `rustdoc_types::Type::Array` (VariantField)
-
-
-### `lhs`
-
-The left side of the equation.
-
-_Referenced by:_
-- `rustdoc_types::WherePredicate::EqPredicate` (VariantField)
-
-
-### `lifetime`
-
-The name of the lifetime of the reference, if provided.
-
-_Referenced by:_
-- `rustdoc_types::Type::BorrowedRef` (VariantField)
-
-
-### `lifetime`
-
-The name of the lifetime.
-
-_Referenced by:_
-- `rustdoc_types::WherePredicate::LifetimePredicate` (VariantField)
-
-
-### `modifier`
-
-The context for which a trait is supposed to be used, e.g. `const
-
-_Referenced by:_
-- `rustdoc_types::GenericBound::TraitBound` (VariantField)
-
-
-### `name`
-
-The name of the imported crate.
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::ExternCrate` (VariantField)
-
-
-### `name`
-
-The name of the associated type in the parent type.
-
-```ignore (incomplete expression)
-<core::array::IntoIter<u32, 42> as Iterator>::Item
-//                                            ^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::Type::QualifiedPath` (VariantField)
-
-
-### `outlives`
-
-Lifetimes that this lifetime parameter is required to outlive.
-
-```rust
-fn f<'a, 'b, 'resource: 'a + 'b>(a: &'a str, b: &'b str, res: &'resource str) {}
-//                      ^^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::GenericParamDefKind::Lifetime` (VariantField)
-
-
-### `outlives`
-
-The lifetimes that must be encompassed by the lifetime.
-
-_Referenced by:_
-- `rustdoc_types::WherePredicate::LifetimePredicate` (VariantField)
-
-
-### `output`
-
-The output type provided after the `->`, if present.
-
-_Referenced by:_
-- `rustdoc_types::GenericArgs::Parenthesized` (VariantField)
-
-
-### `parent`
-
-ID of the module to which this visibility restricts items.
-
-_Referenced by:_
-- `rustdoc_types::Visibility::Restricted` (VariantField)
-- `{id:271}` (IntraDocLink)
-
-
-### `path`
-
-The path with which [`parent`] was referenced
-(like `super::super` or `crate::foo::bar`).
-
-[`parent`]: Visibility::Restricted::parent
-
-_Referenced by:_
-- `rustdoc_types::Visibility::Restricted` (VariantField)
-
-
-### `rename`
-
-If the crate is renamed, this is its name in the crate.
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::ExternCrate` (VariantField)
-
-
-### `rhs`
-
-The right side of the equation.
-
-_Referenced by:_
-- `rustdoc_types::WherePredicate::EqPredicate` (VariantField)
-
-
-### `self_type`
-
-The type with which this type is associated.
-
-```ignore (incomplete expression)
-<core::array::IntoIter<u32, 42> as Iterator>::Item
-// ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::Type::QualifiedPath` (VariantField)
-
-
-### `trait_`
-
-`None` iff this is an *inherent* associated type.
-
-_Referenced by:_
-- `rustdoc_types::Type::QualifiedPath` (VariantField)
-
-
-### `trait_`
-
-The full path to the trait.
-
-_Referenced by:_
-- `rustdoc_types::GenericBound::TraitBound` (VariantField)
-
-
-### `type_`
-
-The type of the constant as declared.
-
-_Referenced by:_
-- `rustdoc_types::GenericParamDefKind::Const` (VariantField)
-
-
-### `type_`
-
-The type of the constant.
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::Constant` (VariantField)
-
-
-### `type_`
-
-The type of the contained element.
-
-_Referenced by:_
-- `rustdoc_types::Type::Array` (VariantField)
-
-
-### `type_`
-
-The base type, e.g. the `u32` in `u32 is 1..`
-
-_Referenced by:_
-- `rustdoc_types::Type::Pat` (VariantField)
-
-
-### `type_`
-
-The type of the constant.
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::AssocConst` (VariantField)
-
-
-### `type_`
-
-The type of the pointee, e.g. the `i32` in `&'a mut i32`
-
-_Referenced by:_
-- `rustdoc_types::Type::BorrowedRef` (VariantField)
-
-
-### `type_`
-
-Inside a trait declaration, this is the default for the associated type, if provided.
-Inside an impl block, this is the type assigned to the associated type, and will always
-be present.
-
-```rust
-type X = usize;
-//       ^^^^^
-```
-
-_Referenced by:_
-- `rustdoc_types::ItemEnum::AssocType` (VariantField)
-
-
-### `type_`
+######## 2.2.17.2.2.2.2: `type_`
 
 The type that's being constrained.
 
@@ -7946,81 +4046,2074 @@ fn f<T>(x: T) where for<'a> &'a T: Iterator {}
 //                              ^
 ```
 
-_Referenced by:_
-- `rustdoc_types::WherePredicate::BoundPredicate` (VariantField)
+######## 2.2.17.2.2.2.3: `bounds`
 
-
-### `type_`
-
-The type of the pointee.
-
-_Referenced by:_
-- `rustdoc_types::Type::RawPointer` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::Cdecl` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::SysV64` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::C` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::System` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::Win64` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::Aapcs` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::Stdcall` (VariantField)
-
-
-### `unwind`
-
-_Referenced by:_
-- `rustdoc_types::Abi::Fastcall` (VariantField)
-
-
-### `value`
-
-Inside a trait declaration, this is the default value for the associated constant,
-if provided.
-Inside an `impl` block, this is the value assigned to the associated constant,
-and will always be present.
-
-The representation is implementation-defined and not guaranteed to be representative of
-either the resulting value or of the source code.
+The set of bounds that constrain the type.
 
 ```rust
-const X: usize = 640 * 1024;
-//               ^^^^^^^^^^
+fn f<T>(x: T) where for<'a> &'a T: Iterator {}
+//                                 ^^^^^^^^
 ```
 
-_Referenced by:_
-- `rustdoc_types::ItemEnum::AssocConst` (VariantField)
+######## 2.2.17.2.2.2.4: `generic_params`
+
+Used for Higher-Rank Trait Bounds (HRTBs)
+```rust
+fn f<T>(x: T) where for<'a> &'a T: Iterator {}
+//                  ^^^^^^^
+```
+
+###### 2.2.17.2.3: `LifetimePredicate { lifetime: String, outlives: Vec<String> }`
+
+A lifetime is expected to outlive other lifetimes.
+
+####### 2.2.17.2.3.2: Fields
+
+######## 2.2.17.2.3.2.2: `lifetime`
+
+The name of the lifetime.
+
+######## 2.2.17.2.3.2.3: `outlives`
+
+The lifetimes that must be encompassed by the lifetime.
+
+###### 2.2.17.2.4: `EqPredicate { lhs: rustdoc_types::Type, rhs: rustdoc_types::Term }`
+
+A type must exactly equal another type.
+
+####### 2.2.17.2.4.2: Fields
+
+######## 2.2.17.2.4.2.2: `lhs`
+
+The left side of the equation.
+
+######## 2.2.17.2.4.2.3: `rhs`
+
+The right side of the equation.
+
+##### 2.2.17.2: Trait Implementations for `WherePredicate`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for rustdoc_types::WherePredicate {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+### 2.3: Constants
+
+#### 2.3.1: `const FORMAT_VERSION`
+
+The version of JSON output that this crate represents.
+
+This integer is incremented with every breaking change to the API,
+and is returned along with the JSON blob as [`Crate::format_version`].
+Consuming code should assert that this value matches the format version(s) that it supports.
+
+# cargo_manifest API (0.19.1)
+
+
+## 1: Module: `cargo_manifest`
+
+cargo-manifest
+==============================================================================
+
+[`serde`](https://serde.rs) definitions to read and write
+[`Cargo.toml`](https://doc.rust-lang.org/cargo/reference/manifest.html) files.
+
+
+Description
+------------------------------------------------------------------------------
+
+This Rust crate contains various structs and enums to represent the contents of
+a `Cargo.toml` file. These definitions can be used with [`serde`](https://serde.rs)
+and the [`toml`](https://crates.io/crates/toml) crate to read and write
+`Cargo.toml` manifest files.
+
+This crate also to some degree supports post-processing of the data to emulate
+Cargo's workspace inheritance and `autobins` features. This is used for example
+by crates.io to extract whether a crate contains a library or executable
+binaries.
+
+> [!NOTE]
+> The cargo team regularly adds new features to the `Cargo.toml` file
+> definition. This crate aims to keep up-to-date with these changes. You should
+> keep this crate up-to-date to correctly parse all fields in modern
+> `Cargo.toml` files.
+
+
+Installation
+------------------------------------------------------------------------------
+
+```sh
+cargo add cargo-manifest
+```
+
+
+Usage
+------------------------------------------------------------------------------
+
+```rust
+use cargo_manifest::Manifest;
+
+let manifest = Manifest::from_path("Cargo.toml").unwrap();
+```
+
+see [docs.rs](https://docs.rs/cargo-manifest) for more information.
+
+
+Users
+------------------------------------------------------------------------------
+
+- [cargo-chef](https://crates.io/crates/cargo-chef)
+- [crates.io](https://github.com/rust-lang/crates.io) is using this crate for
+  server-side validation of `Cargo.toml` files.
+
+
+Alternatives
+------------------------------------------------------------------------------
+
+This crate is a fork of the [`cargo_toml`](https://crates.io/crates/cargo_toml)
+project. There are only some minor differences between these projects at this
+point, you will need to evaluate which one fits your needs better.
+
+There is also [`cargo-util-schemas`](https://crates.io/crates/cargo-util-schemas)
+now, which is maintained by the cargo team themselves. This crate was extracted
+from the cargo codebase and is used inside the `cargo` binary itself. It is
+kept up-to-date with the latest changes to the `Cargo.toml` file format, but is
+currently lacking some of the post-processing features that `cargo-manifest`
+provides.
+
+
+License
+------------------------------------------------------------------------------
+
+This project is licensed under either of
+
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+  <http://www.apache.org/licenses/LICENSE-2.0>)
+
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or
+  <http://opensource.org/licenses/MIT>)
+
+at your option.
+
+
+### 1.1: Structs
+
+#### 1.1.1: `struct Badge`
+
+```rust
+pub struct Badge {
+    pub repository: String,
+    pub branch: String,
+    pub service: option::Option<String>,
+    pub id: option::Option<String>,
+    pub project_name: option::Option<String>,
+}
+```
+
+##### 1.1.1.1: Trait Implementations for `Badge`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Badge {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.2: `struct Badges`
+
+```rust
+pub struct Badges {
+    pub appveyor: option::Option<cargo_manifest::Badge>,
+    pub circle_ci: option::Option<cargo_manifest::Badge>,
+    pub gitlab: option::Option<cargo_manifest::Badge>,
+    pub travis_ci: option::Option<cargo_manifest::Badge>,
+    pub codecov: option::Option<cargo_manifest::Badge>,
+    pub coveralls: option::Option<cargo_manifest::Badge>,
+    pub is_it_maintained_issue_resolution: option::Option<cargo_manifest::Badge>,
+    pub is_it_maintained_open_issues: option::Option<cargo_manifest::Badge>,
+    pub maintenance: cargo_manifest::Maintenance,
+}
+```
+
+##### 1.1.2.1: Fields
+
+###### 1.1.2.1.1: `appveyor`
+
+Appveyor: `repository` is required. `branch` is optional; default is `master`
+`service` is optional; valid values are `github` (default), `bitbucket`, and
+`gitlab`; `id` is optional; you can specify the appveyor project id if you
+want to use that instead. `project_name` is optional; use when the repository
+name differs from the appveyor project name.
+
+###### 1.1.2.1.2: `circle_ci`
+
+Circle CI: `repository` is required. `branch` is optional; default is `master`
+
+###### 1.1.2.1.3: `gitlab`
+
+GitLab: `repository` is required. `branch` is optional; default is `master`
+
+###### 1.1.2.1.4: `travis_ci`
+
+Travis CI: `repository` in format "\<user>/\<project>" is required.
+`branch` is optional; default is `master`
+
+###### 1.1.2.1.5: `codecov`
+
+Codecov: `repository` is required. `branch` is optional; default is `master`
+`service` is optional; valid values are `github` (default), `bitbucket`, and
+`gitlab`.
+
+###### 1.1.2.1.6: `coveralls`
+
+Coveralls: `repository` is required. `branch` is optional; default is `master`
+`service` is optional; valid values are `github` (default) and `bitbucket`.
+
+###### 1.1.2.1.7: `is_it_maintained_issue_resolution`
+
+Is it maintained resolution time: `repository` is required.
+
+###### 1.1.2.1.8: `is_it_maintained_open_issues`
+
+Is it maintained percentage of open issues: `repository` is required.
+
+###### 1.1.2.1.9: `maintenance`
+
+Maintenance: `status` is required. Available options are `actively-developed`,
+`passively-maintained`, `as-is`, `experimental`, `looking-for-maintainer`,
+`deprecated`, and the default `none`, which displays no badge on crates.io.
+
+##### 1.1.2.2: Trait Implementations for `Badges`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Badges {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.3: `struct DependencyDetail`
+
+```rust
+pub struct DependencyDetail {
+    pub version: option::Option<String>,
+    pub registry: option::Option<String>,
+    pub registry_index: option::Option<String>,
+    pub path: option::Option<String>,
+    pub git: option::Option<String>,
+    pub branch: option::Option<String>,
+    pub tag: option::Option<String>,
+    pub rev: option::Option<String>,
+    pub features: option::Option<Vec<String>>,
+    pub optional: option::Option<bool>,
+    pub default_features: option::Option<bool>,
+    pub package: option::Option<String>,
+}
+```
+
+##### 1.1.3.1: Trait Implementations for `DependencyDetail`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::DependencyDetail {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.4: `struct Filesystem<'a>`
+
+```rust
+pub struct Filesystem<'a> {}
+```
+
+_[Private fields hidden]_
+
+A [AbstractFilesystem] implementation that reads from the actual filesystem
+within the given root path.
+
+##### 1.1.4.2: `impl<'a> cargo_manifest::afs::Filesystem<'a>`
+
+###### 1.1.4.2.2: `fn new(path: &'a path::Path) -> Self`
+
+
+##### 1.1.4.2: Trait Implementations for `Filesystem`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `cargo_manifest::afs::AbstractFilesystem`
+
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 1.1.5: `struct InheritedDependencyDetail`
+
+```rust
+pub struct InheritedDependencyDetail {
+    pub workspace: {id:589},
+    pub features: option::Option<Vec<String>>,
+    pub optional: option::Option<bool>,
+}
+```
+
+When a dependency is defined as `{ workspace = true }`,
+and workspace data hasn't been applied yet.
+
+##### 1.1.5.1: Trait Implementations for `InheritedDependencyDetail`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::InheritedDependencyDetail {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.6: `struct Maintenance`
+
+```rust
+pub struct Maintenance {
+    pub status: cargo_manifest::MaintenanceStatus,
+}
+```
+
+##### 1.1.6.1: Trait Implementations for `Maintenance`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Maintenance {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.7: `struct Manifest<PackageMetadata = toml::value::Value, WorkspaceMetadata = toml::value::Value>`
+
+```rust
+pub struct Manifest<PackageMetadata = toml::value::Value, WorkspaceMetadata = toml::value::Value> {
+    pub package: option::Option<cargo_manifest::Package<PackageMetadata>>,
+    pub cargo_features: option::Option<Vec<String>>,
+    pub workspace: option::Option<cargo_manifest::Workspace<WorkspaceMetadata>>,
+    pub dependencies: option::Option<cargo_manifest::DepsSet>,
+    pub dev_dependencies: option::Option<cargo_manifest::DepsSet>,
+    pub build_dependencies: option::Option<cargo_manifest::DepsSet>,
+    pub target: option::Option<cargo_manifest::TargetDepsSet>,
+    pub features: option::Option<cargo_manifest::FeatureSet>,
+    pub bin: Vec<cargo_manifest::Product>,
+    pub bench: Vec<cargo_manifest::Product>,
+    pub test: Vec<cargo_manifest::Product>,
+    pub example: Vec<cargo_manifest::Product>,
+    pub patch: option::Option<cargo_manifest::PatchSet>,
+    pub lib: option::Option<cargo_manifest::Product>,
+    pub profile: option::Option<cargo_manifest::Profiles>,
+    pub badges: option::Option<cargo_manifest::Badges>,
+}
+```
+
+The top-level `Cargo.toml` structure
+
+The `Metadata` is a type for `[package.metadata]` table. You can replace it with
+your own struct type if you use the metadata and don't want to use the catch-all `Value` type.
+
+##### 1.1.7.1: Fields
+
+###### 1.1.7.1.1: `bin`
+
+Note that due to autobins feature this is not the complete list
+unless you run `complete_from_path`
+
+###### 1.1.7.1.2: `lib`
+
+Note that due to autolibs feature this is not the complete list
+unless you run `complete_from_path`
+
+##### 1.1.7.3: `impl cargo_manifest::Manifest<toml::value::Value>`
+
+###### 1.1.7.3.2: `fn from_slice(cargo_toml_content: &[u8]) -> result::Result<Self, cargo_manifest::error::Error>`
+
+Parse contents of a `Cargo.toml` file already loaded as a byte slice.
+
+It does not call `complete_from_path`, so may be missing implicit data.
+
+###### 1.1.7.3.3: `fn from_path<impl impl AsRef<Path>: convert::AsRef<path::Path>>(cargo_toml_path: impl convert::AsRef<path::Path>) -> result::Result<Self, cargo_manifest::error::Error>`
+
+Parse contents from a `Cargo.toml` file on disk.
+
+Calls `complete_from_path`.
+
+##### 1.1.7.4: `impl<Metadata: for<'a> serde::de::Deserialize<'a>> cargo_manifest::Manifest<Metadata>`
+
+###### 1.1.7.4.2: `fn from_slice_with_metadata(cargo_toml_content: &[u8]) -> result::Result<Self, cargo_manifest::error::Error>`
+
+Parse `Cargo.toml`, and parse its `[package.metadata]` into a custom Serde-compatible type.
+
+It does not call `complete_from_path`, so may be missing implicit data.
+
+###### 1.1.7.4.3: `fn from_path_with_metadata<impl impl AsRef<Path>: convert::AsRef<path::Path>>(cargo_toml_path: impl convert::AsRef<path::Path>) -> result::Result<Self, cargo_manifest::error::Error>`
+
+Parse contents from `Cargo.toml` file on disk, with custom Serde-compatible metadata type.
+
+Calls `complete_from_path`
+
+###### 1.1.7.4.4: `fn complete_from_path(self: &mut Self, path: &path::Path) -> result::Result<(), cargo_manifest::error::Error>`
+
+`Cargo.toml` may not contain explicit information about `[lib]`, `[[bin]]` and
+`[package].build`, which are inferred based on files on disk.
+
+This scans the disk to make the data in the manifest as complete as possible.
+
+###### 1.1.7.4.5: `fn complete_from_abstract_filesystem<FS: cargo_manifest::afs::AbstractFilesystem>(self: &mut Self, fs: &FS) -> result::Result<(), cargo_manifest::error::Error>`
+
+`Cargo.toml` may not contain explicit information about `[lib]`, `[[bin]]` and
+`[package].build`, which are inferred based on files on disk.
+
+You can provide any implementation of directory scan, which doesn't have to
+be reading straight from disk (might scan a tarball or a git repo, for example).
+
+###### 1.1.7.4.6: `fn autobins(self: &Self) -> bool`
+
+
+###### 1.1.7.4.7: `fn autoexamples(self: &Self) -> bool`
+
+
+###### 1.1.7.4.8: `fn autotests(self: &Self) -> bool`
+
+
+###### 1.1.7.4.9: `fn autobenches(self: &Self) -> bool`
+
+
+##### 1.1.7.4: Trait Implementations for `Manifest`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `str::traits::FromStr`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de, PackageMetadata, WorkspaceMetadata> serde::de::Deserialize<'de> for cargo_manifest::Manifest<PackageMetadata, WorkspaceMetadata>
+      where
+        PackageMetadata: serde::de::Deserialize<'de>,
+        WorkspaceMetadata: serde::de::Deserialize<'de> {
+    
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+- `serde::ser::Serialize`
+
+    ```rust
+    impl<PackageMetadata, WorkspaceMetadata> serde::ser::Serialize for cargo_manifest::Manifest<PackageMetadata, WorkspaceMetadata>
+      where
+        PackageMetadata: serde::ser::Serialize,
+        WorkspaceMetadata: serde::ser::Serialize {
+    
+        pub fn serialize<__S> where __S: serde::ser::Serializer(self: &Self, __serializer: __S) -> result::Result<<__S as serde::ser::Serializer>::Ok, <__S as serde::ser::Serializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.8: `struct Package<Metadata = toml::value::Value>`
+
+```rust
+pub struct Package<Metadata = toml::value::Value> {
+    pub name: String,
+    pub edition: option::Option<cargo_manifest::MaybeInherited<cargo_manifest::Edition>>,
+    pub version: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub build: option::Option<cargo_manifest::StringOrBool>,
+    pub workspace: option::Option<String>,
+    pub authors: option::Option<cargo_manifest::MaybeInherited<Vec<String>>>,
+    pub links: option::Option<String>,
+    pub description: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub homepage: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub documentation: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub readme: option::Option<cargo_manifest::MaybeInherited<cargo_manifest::StringOrBool>>,
+    pub keywords: option::Option<cargo_manifest::MaybeInherited<Vec<String>>>,
+    pub categories: option::Option<cargo_manifest::MaybeInherited<Vec<String>>>,
+    pub license: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub license_file: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub repository: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub metadata: option::Option<Metadata>,
+    pub rust_version: option::Option<cargo_manifest::MaybeInherited<String>>,
+    pub exclude: option::Option<cargo_manifest::MaybeInherited<Vec<String>>>,
+    pub include: option::Option<cargo_manifest::MaybeInherited<Vec<String>>>,
+    pub default_run: option::Option<String>,
+    pub autolib: option::Option<bool>,
+    pub autobins: option::Option<bool>,
+    pub autoexamples: option::Option<bool>,
+    pub autotests: option::Option<bool>,
+    pub autobenches: option::Option<bool>,
+    pub publish: option::Option<cargo_manifest::MaybeInherited<cargo_manifest::Publish>>,
+    pub resolver: option::Option<cargo_manifest::Resolver>,
+}
+```
+
+You can replace `Metadata` type with your own
+to parse into something more useful than a generic toml `Value`
+
+##### 1.1.8.1: Fields
+
+###### 1.1.8.1.1: `name`
+
+Careful: some names are uppercase
+
+###### 1.1.8.1.2: `version`
+
+The version of the package (e.g. "1.9.0").
+
+Use [Package::version()] to get the effective value, with the default
+value of "0.0.0" applied.
+
+###### 1.1.8.1.3: `authors`
+
+e.g. ["Author <e@mail>", "etc"]
+
+###### 1.1.8.1.4: `description`
+
+A short blurb about the package. This is not rendered in any format when
+uploaded to crates.io (aka this is not markdown).
+
+###### 1.1.8.1.5: `readme`
+
+This points to a file under the package root (relative to this `Cargo.toml`).
+
+###### 1.1.8.1.6: `categories`
+
+This is a list of up to five categories where this crate would fit.
+e.g. ["command-line-utilities", "development-tools::cargo-plugins"]
+
+###### 1.1.8.1.7: `license`
+
+e.g. "MIT"
+
+###### 1.1.8.1.8: `rust_version`
+
+e.g. "1.63.0"
+
+###### 1.1.8.1.9: `default_run`
+
+The default binary to run by cargo run.
+
+###### 1.1.8.1.10: `autolib`
+
+Disables library auto discovery.
+
+###### 1.1.8.1.11: `autobins`
+
+Disables binary auto discovery.
+
+Use [Manifest::autobins()] to get the effective value.
+
+###### 1.1.8.1.12: `autoexamples`
+
+Disables example auto discovery.
+
+Use [Manifest::autoexamples()] to get the effective value.
+
+###### 1.1.8.1.13: `autotests`
+
+Disables test auto discovery.
+
+Use [Manifest::autotests()] to get the effective value.
+
+###### 1.1.8.1.14: `autobenches`
+
+Disables bench auto discovery.
+
+Use [Manifest::autobenches()] to get the effective value.
+
+##### 1.1.8.3: `impl<Metadata> cargo_manifest::Package<Metadata>`
+
+###### 1.1.8.3.2: `fn new(name: String, version: String) -> Self`
+
+
+###### 1.1.8.3.3: `fn version(self: &Self) -> cargo_manifest::MaybeInherited<&str>`
+
+Returns the effective version of the package.
+
+If the version is not set, it defaults to "0.0.0"
+(see <https://doc.rust-lang.org/cargo/reference/manifest.html#the-version-field>).
+
+##### 1.1.8.3: Trait Implementations for `Package`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de, Metadata> serde::de::Deserialize<'de> for cargo_manifest::Package<Metadata> where Metadata: serde::de::Deserialize<'de> {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+- `serde::ser::Serialize`
+
+    ```rust
+    impl<Metadata> serde::ser::Serialize for cargo_manifest::Package<Metadata> where Metadata: serde::ser::Serialize {
+        pub fn serialize<__S> where __S: serde::ser::Serializer(self: &Self, __serializer: __S) -> result::Result<<__S as serde::ser::Serializer>::Ok, <__S as serde::ser::Serializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.9: `struct Product`
+
+```rust
+pub struct Product {
+    pub path: option::Option<String>,
+    pub name: option::Option<String>,
+    pub test: bool,
+    pub doctest: bool,
+    pub bench: bool,
+    pub doc: bool,
+    pub plugin: bool,
+    pub proc_macro: bool,
+    pub harness: bool,
+    pub edition: option::Option<cargo_manifest::Edition>,
+    pub required_features: Vec<String>,
+    pub crate_type: option::Option<Vec<String>>,
+}
+```
+
+Cargo uses the term "target" for both "target platform" and "build target" (the thing to build),
+which makes it ambigous.
+Here Cargo's bin/lib **target** is renamed to **product**.
+
+##### 1.1.9.1: Fields
+
+###### 1.1.9.1.1: `path`
+
+This field points at where the crate is located, relative to the `Cargo.toml`.
+
+###### 1.1.9.1.2: `name`
+
+The name of a product is the name of the library or binary that will be generated.
+This is defaulted to the name of the package, with any dashes replaced
+with underscores. (Rust `extern crate` declarations reference this name;
+therefore the value must be a valid Rust identifier to be usable.)
+
+###### 1.1.9.1.3: `test`
+
+A flag for enabling unit tests for this product. This is used by `cargo test`.
+
+###### 1.1.9.1.4: `doctest`
+
+A flag for enabling documentation tests for this product. This is only relevant
+for libraries, it has no effect on other sections. This is used by
+`cargo test`.
+
+###### 1.1.9.1.5: `bench`
+
+A flag for enabling benchmarks for this product. This is used by `cargo bench`.
+
+###### 1.1.9.1.6: `doc`
+
+A flag for enabling documentation of this product. This is used by `cargo doc`.
+
+###### 1.1.9.1.7: `plugin`
+
+If the product is meant to be a compiler plugin, this field must be set to true
+for Cargo to correctly compile it and make it available for all dependencies.
+
+###### 1.1.9.1.8: `proc_macro`
+
+If the product is meant to be a "macros 1.1" procedural macro, this field must
+be set to true.
+
+###### 1.1.9.1.9: `harness`
+
+If set to false, `cargo test` will omit the `--test` flag to rustc, which
+stops it from generating a test harness. This is useful when the binary being
+built manages the test runner itself.
+
+###### 1.1.9.1.10: `edition`
+
+If set then a product can be configured to use a different edition than the
+`[package]` is configured to use, perhaps only compiling a library with the
+2018 edition or only compiling one unit test with the 2015 edition. By default
+all products are compiled with the edition specified in `[package]`.
+
+###### 1.1.9.1.11: `required_features`
+
+The required-features field specifies which features the product needs in order to be built.
+If any of the required features are not selected, the product will be skipped.
+This is only relevant for the `[[bin]]`, `[[bench]]`, `[[test]]`, and `[[example]]` sections,
+it has no effect on `[lib]`.
+
+###### 1.1.9.1.12: `crate_type`
+
+The available options are "dylib", "rlib", "staticlib", "cdylib", and "proc-macro".
+
+##### 1.1.9.2: Trait Implementations for `Product`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Product {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.10: `struct Profile`
+
+```rust
+pub struct Profile {
+    pub opt_level: option::Option<toml::value::Value>,
+    pub debug: option::Option<toml::value::Value>,
+    pub rpath: option::Option<bool>,
+    pub inherits: option::Option<String>,
+    pub lto: option::Option<toml::value::Value>,
+    pub debug_assertions: option::Option<bool>,
+    pub codegen_units: option::Option<u16>,
+    pub panic: option::Option<String>,
+    pub incremental: option::Option<bool>,
+    pub overflow_checks: option::Option<bool>,
+    pub strip: option::Option<cargo_manifest::StripSetting>,
+    pub package: collections::btree::map::BTreeMap<String, toml::value::Value>,
+    pub split_debuginfo: option::Option<String>,
+    pub build_override: option::Option<toml::value::Value>,
+}
+```
+
+##### 1.1.10.1: Fields
+
+###### 1.1.10.1.1: `build_override`
+
+profile overrides
+
+##### 1.1.10.2: Trait Implementations for `Profile`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Profile {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.11: `struct Profiles`
+
+```rust
+pub struct Profiles {
+    pub release: option::Option<cargo_manifest::Profile>,
+    pub dev: option::Option<cargo_manifest::Profile>,
+    pub test: option::Option<cargo_manifest::Profile>,
+    pub bench: option::Option<cargo_manifest::Profile>,
+    pub doc: option::Option<cargo_manifest::Profile>,
+    pub custom: collections::btree::map::BTreeMap<String, cargo_manifest::Profile>,
+}
+```
+
+##### 1.1.11.1: Trait Implementations for `Profiles`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Profiles {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.12: `struct Target`
+
+```rust
+pub struct Target {
+    pub dependencies: cargo_manifest::DepsSet,
+    pub dev_dependencies: cargo_manifest::DepsSet,
+    pub build_dependencies: cargo_manifest::DepsSet,
+}
+```
+
+##### 1.1.12.1: Trait Implementations for `Target`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Target {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.13: `struct Workspace<Metadata = toml::value::Value>`
+
+```rust
+pub struct Workspace<Metadata = toml::value::Value> {
+    pub members: Vec<String>,
+    pub default_members: option::Option<Vec<String>>,
+    pub exclude: option::Option<Vec<String>>,
+    pub resolver: option::Option<cargo_manifest::Resolver>,
+    pub dependencies: option::Option<cargo_manifest::DepsSet>,
+    pub package: option::Option<cargo_manifest::WorkspacePackage>,
+    pub metadata: option::Option<Metadata>,
+}
+```
+
+##### 1.1.13.1: Trait Implementations for `Workspace`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de, Metadata> serde::de::Deserialize<'de> for cargo_manifest::Workspace<Metadata> where Metadata: serde::de::Deserialize<'de> {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+- `serde::ser::Serialize`
+
+    ```rust
+    impl<Metadata> serde::ser::Serialize for cargo_manifest::Workspace<Metadata> where Metadata: serde::ser::Serialize {
+        pub fn serialize<__S> where __S: serde::ser::Serializer(self: &Self, __serializer: __S) -> result::Result<<__S as serde::ser::Serializer>::Ok, <__S as serde::ser::Serializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.1.14: `struct WorkspacePackage`
+
+```rust
+pub struct WorkspacePackage {
+    pub edition: option::Option<cargo_manifest::Edition>,
+    pub version: option::Option<String>,
+    pub authors: option::Option<Vec<String>>,
+    pub description: option::Option<String>,
+    pub homepage: option::Option<String>,
+    pub documentation: option::Option<String>,
+    pub readme: option::Option<cargo_manifest::StringOrBool>,
+    pub keywords: option::Option<Vec<String>>,
+    pub categories: option::Option<Vec<String>>,
+    pub license: option::Option<String>,
+    pub license_file: option::Option<String>,
+    pub publish: option::Option<cargo_manifest::Publish>,
+    pub exclude: option::Option<Vec<String>>,
+    pub include: option::Option<Vec<String>>,
+    pub repository: option::Option<String>,
+    pub rust_version: option::Option<String>,
+}
+```
+
+The workspace.package table is where you define keys that can be inherited by members of a
+workspace. These keys can be inherited by defining them in the member package with
+`{key}.workspace = true`.
+
+See <https://doc.rust-lang.org/nightly/cargo/reference/workspaces.html#the-package-table>
+for more details.
+
+##### 1.1.14.1: Fields
+
+###### 1.1.14.1.1: `version`
+
+e.g. "1.9.0"
+
+###### 1.1.14.1.2: `authors`
+
+e.g. ["Author <e@mail>", "etc"]
+
+###### 1.1.14.1.3: `description`
+
+A short blurb about the package. This is not rendered in any format when
+uploaded to crates.io (aka this is not markdown).
+
+###### 1.1.14.1.4: `readme`
+
+This points to a file under the package root (relative to this `Cargo.toml`).
+
+###### 1.1.14.1.5: `categories`
+
+This is a list of up to five categories where this crate would fit.
+e.g. ["command-line-utilities", "development-tools::cargo-plugins"]
+
+###### 1.1.14.1.6: `license`
+
+e.g. "MIT"
+
+###### 1.1.14.1.7: `rust_version`
+
+e.g. "1.63.0"
+
+##### 1.1.14.2: Trait Implementations for `WorkspacePackage`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::WorkspacePackage {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+### 1.2: Enums
+
+#### 1.2.1: `enum Dependency`
+
+```rust
+pub enum Dependency {
+    Simple(String),
+    Inherited(cargo_manifest::InheritedDependencyDetail),
+    Detailed(cargo_manifest::DependencyDetail),
+}
+```
+
+##### 1.2.1.2: `impl cargo_manifest::Dependency`
+
+###### 1.2.1.2.2: `fn detail(self: &Self) -> option::Option<&cargo_manifest::DependencyDetail>`
+
+
+###### 1.2.1.2.3: `fn simplify(self: Self) -> Self`
+
+Simplifies `Dependency::Detailed` to `Dependency::Simple` if only the
+`version` field inside the `DependencyDetail` struct is set.
+
+###### 1.2.1.2.4: `fn req(self: &Self) -> &str`
+
+
+###### 1.2.1.2.5: `fn req_features(self: &Self) -> &[String]`
+
+
+###### 1.2.1.2.6: `fn optional(self: &Self) -> bool`
+
+
+###### 1.2.1.2.7: `fn package(self: &Self) -> option::Option<&str>`
+
+
+###### 1.2.1.2.8: `fn git(self: &Self) -> option::Option<&str>`
+
+
+###### 1.2.1.2.9: `fn is_crates_io(self: &Self) -> bool`
+
+
+##### 1.2.1.2: Trait Implementations for `Dependency`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Dependency {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.2: `enum Edition`
+
+```rust
+pub enum Edition {
+    E2015,
+    E2018,
+    E2021,
+    E2024,
+}
+```
+
+##### 1.2.2.2: `impl cargo_manifest::Edition`
+
+###### 1.2.2.2.2: `fn as_str(self: &Self) -> &'static str`
+
+
+##### 1.2.2.2: Trait Implementations for `Edition`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Edition {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.3: `enum Error`
+
+```rust
+pub enum Error {
+    Parse(toml::de::Error),
+    Io(io::error::Error),
+    Utf8(str::error::Utf8Error),
+    Other(String),
+}
+```
+
+##### 1.2.3.1: Trait Implementations for `Error`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Display`
+- `convert::From<io::error::Error>`
+- `convert::From<str::error::Utf8Error>`
+- `convert::From<toml::de::Error>`
+- `error::Error`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `ToString` (`where T: Display + ?Sized`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+
+#### 1.2.4: `enum MaintenanceStatus`
+
+```rust
+pub enum MaintenanceStatus {
+    None,
+    ActivelyDeveloped,
+    PassivelyMaintained,
+    AsIs,
+    Experimental,
+    LookingForMaintainer,
+    Deprecated,
+}
+```
+
+##### 1.2.4.1: Trait Implementations for `MaintenanceStatus`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::MaintenanceStatus {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.5: `enum MaybeInherited<T>`
+
+```rust
+pub enum MaybeInherited<T> {
+    Inherited { workspace: {id:589} },
+    Local(T),
+}
+```
+
+Used as a wrapper for properties that may be inherited by workspace-level settings.
+It currently does not support more complex interactions (e.g. specifying part of the property
+in the local manifest while inheriting another part of it from the workspace manifest, as it
+happens for dependency features).
+
+See [`cargo`'s documentation](https://doc.rust-lang.org/nightly/cargo/reference/workspaces.html#workspaces)
+for more details.
+
+##### 1.2.5.2: `impl<T> cargo_manifest::MaybeInherited<T>`
+
+###### 1.2.5.2.2: `fn inherited() -> Self`
+
+
+###### 1.2.5.2.3: `fn as_local(self: Self) -> option::Option<T>`
+
+
+###### 1.2.5.2.4: `fn as_ref(self: &Self) -> cargo_manifest::MaybeInherited<&T>`
+
+```rust
+pub const fn as_ref(self: &Self) -> cargo_manifest::MaybeInherited<&T> { ... }
+```
+
+##### 1.2.5.2: Trait Implementations for `MaybeInherited`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de, T> serde::de::Deserialize<'de> for cargo_manifest::MaybeInherited<T> where T: serde::de::Deserialize<'de> {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+- `serde::ser::Serialize`
+
+    ```rust
+    impl<T> serde::ser::Serialize for cargo_manifest::MaybeInherited<T> where T: serde::ser::Serialize {
+        pub fn serialize<__S> where __S: serde::ser::Serializer(self: &Self, __serializer: __S) -> result::Result<<__S as serde::ser::Serializer>::Ok, <__S as serde::ser::Serializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.6: `enum Publish`
+
+```rust
+pub enum Publish {
+    Flag(bool),
+    Registry(Vec<String>),
+}
+```
+
+##### 1.2.6.1: Trait Implementations for `Publish`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `PartialEq<bool>`
+- `PartialEq<cargo_manifest::Publish>`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Publish {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.7: `enum Resolver`
+
+```rust
+pub enum Resolver {
+    V1,
+    V2,
+    V3,
+}
+```
+
+##### 1.2.7.1: Trait Implementations for `Resolver`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Copy`
+- `Debug`
+- `Eq`
+- `Hash`
+- `PartialEq`
+- `StructuralPartialEq`
+- `default::Default`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::Resolver {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.8: `enum StringOrBool`
+
+```rust
+pub enum StringOrBool {
+    String(String),
+    Bool(bool),
+}
+```
+
+##### 1.2.8.1: Trait Implementations for `StringOrBool`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `PartialEq`
+- `StructuralPartialEq`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::StringOrBool {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+#### 1.2.9: `enum StripSetting`
+
+```rust
+pub enum StripSetting {
+    None,
+    Debuginfo,
+    Symbols,
+}
+```
+
+##### 1.2.9.2: Variants
+
+###### 1.2.9.2.2: `None`
+
+false
+
+###### 1.2.9.2.3: `Symbols`
+
+true
+
+##### 1.2.9.2: Trait Implementations for `StripSetting`
+
+- `Freeze`
+- `RefUnwindSafe`
+- `Send`
+- `Sync`
+- `Unpin`
+- `UnwindSafe`
+
+- `Clone`
+- `Debug`
+- `Eq`
+- `Ord`
+- `PartialEq`
+- `PartialOrd`
+- `StructuralPartialEq`
+- `convert::TryFrom<toml::value::Value>`
+- `serde::ser::Serialize`
+
+- `CloneToUninit` (`where T: Clone`)
+- `ToOwned` (`where T: Clone`)
+- `any::Any` (`where T: 'static + ?Sized`)
+- `borrow::Borrow<T>` (`where T: ?Sized`)
+- `borrow::BorrowMut<T>` (`where T: ?Sized`)
+- `convert::From<T>`
+- `convert::Into<U>` (`where U: convert::From<T>`)
+- `convert::TryFrom<U>` (`where U: convert::Into<T>`)
+- `convert::TryInto<U>` (`where U: convert::TryFrom<T>`)
+- `equivalent::Comparable<K>`
+
+    ```rust
+    where
+        Q: Ord + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `equivalent::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `hashbrown::Equivalent<K>`
+
+    ```rust
+    where
+        Q: Eq + ?Sized,
+        K: borrow::Borrow<Q> + ?Sized
+    ```
+
+- `serde::de::DeserializeOwned` (`where T: for<'de> serde::de::Deserialize<'de>`)
+- `serde::de::Deserialize<'de>`
+
+    ```rust
+    impl<'de> serde::de::Deserialize<'de> for cargo_manifest::StripSetting {
+        pub fn deserialize<__D> where __D: serde::de::Deserializer<'de>(__deserializer: __D) -> result::Result<Self, <__D as serde::de::Deserializer>::Error> { ... }
+    }
+    ```
+
+
+### 1.3: Traits
+
+#### 1.3.1: `trait AbstractFilesystem`
+
+```rust
+pub trait AbstractFilesystem {
+    pub fn file_names_in<T: convert::AsRef<path::Path>>(self: &Self, rel_path: T) -> io::error::Result<collections::btree::set::BTreeSet<Box<str>>>;;
+}
+```
+
+A trait for abstracting over filesystem operations.
+
+This trait is primarily used for target auto-discovery in the
+[`complete_from_abstract_filesystem()`](crate::Manifest::complete_from_abstract_filesystem) method.
+
+##### 1.3.1.2: Associated Items
+
+###### 1.3.1.2.2: Associated Functions
+
+####### 1.3.1.2.2.2: `fn file_names_in<T: convert::AsRef<path::Path>>(self: &Self, rel_path: T) -> io::error::Result<collections::btree::set::BTreeSet<Box<str>>>`
+
+Returns a set of file and folder names in the given directory.
+
+This method should return a [std::io::ErrorKind::NotFound] error if the
+directory does not exist.
+
+##### 1.3.1.3: Implementors
+
+###### 1.3.1.3.2: `impl cargo_manifest::afs::AbstractFilesystem for cargo_manifest::afs::Filesystem<'_>`
+
+
+### 1.4: Type Aliases
+
+#### 1.4.1: `type DepsSet`
+
+
+#### 1.4.2: `type FeatureSet`
+
+
+#### 1.4.3: `type PatchSet`
+
+
+#### 1.4.4: `type TargetDepsSet`
+
+
+## 2: Module: `{id:54}`
 
