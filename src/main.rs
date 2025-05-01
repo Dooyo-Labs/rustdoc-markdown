@@ -4804,9 +4804,6 @@ impl<'a> DocPrinter<'a> {
         )
         .unwrap();
 
-        // Print Crate Documentation (using helper)
-        self.print_docs(root_item);
-
         // Push H2 level before starting sections/modules
         self.push_level();
 
