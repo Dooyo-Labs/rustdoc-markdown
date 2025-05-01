@@ -5195,33 +5195,33 @@ async fn main() -> Result<()> {
         description: package_data
             .description
             .as_ref()
-            .and_then(|d| d.as_local().cloned()), // Use .as_local() to handle MaybeInherited
+            .and_then(|d| d.as_local().cloned()), // Use .cloned() on Option<&T>
         homepage: package_data
             .homepage
             .as_ref()
-            .and_then(|h| h.as_local().cloned()),
+            .and_then(|h| h.as_local().cloned()), // Use .cloned() on Option<&T>
         repository: package_data
             .repository
             .as_ref()
-            .and_then(|r| r.as_local().cloned()),
+            .and_then(|r| r.as_local().cloned()), // Use .cloned() on Option<&T>
         categories: package_data
             .categories
             .as_ref()
-            .and_then(|c| c.as_local().cloned())
+            .and_then(|c| c.as_local().cloned()) // Use .cloned() on Option<&T>
             .unwrap_or_default(), // Handle Option<Vec<String>> after as_local()
         license: package_data
             .license
             .as_ref()
-            .and_then(|l| l.as_local().cloned()),
+            .and_then(|l| l.as_local().cloned()), // Use .cloned() on Option<&T>
         rust_version: package_data
             .rust_version
             .as_ref()
-            .and_then(|rv| rv.as_local().cloned()),
+            .and_then(|rv| rv.as_local().cloned()), // Use .cloned() on Option<&T>
         edition: package_data
             .edition
             .as_ref()
             .and_then(|e| e.as_local()) // Get Option<&Edition>
-            .map(|e| e.to_string()), // Convert &Edition to String using Display
+            .map(|e| e.as_str().to_string()), // Use as_str() then to_string()
         features: manifest.features.clone().unwrap_or_default(), // Use manifest.features field
     };
 
