@@ -5192,22 +5192,36 @@ async fn main() -> Result<()> {
     // Use .package field (Option<Package>) then access fields on the Package struct
     let package_data = manifest.package.as_ref().unwrap(); // Assume package exists
     let manifest_data = CrateManifestData {
-        description: package_data.description.as_deref().map(str::to_string),
-        homepage: package_data.homepage.as_deref().map(str::to_string),
-        repository: package_data.repository.as_deref().map(str::to_string),
+        description: package_data
+            .description
+            .as_ref()
+            .and_then(|d| d.as_local().cloned()), // Use .as_local() to handle MaybeInherited
+        homepage: package_data
+            .homepage
+            .as_ref()
+            .and_then(|h| h.as_local().cloned()),
+        repository: package_data
+            .repository
+            .as_ref()
+            .and_then(|r| r.as_local().cloned()),
         categories: package_data
             .categories
             .as_ref()
-            .map(|v| v.clone())
-            .unwrap_or_default(), // Handle Option<MaybeInherited<Vec<String>>>
-        license: package_data.license.as_deref().map(str::to_string),
-        rust_version: package_data.rust_version.as_deref().map(str::to_string),
+            .and_then(|c| c.as_local().cloned())
+            .unwrap_or_default(), // Handle Option<Vec<String>> after as_local()
+        license: package_data
+            .license
+            .as_ref()
+            .and_then(|l| l.as_local().cloned()),
+        rust_version: package_data
+            .rust_version
+            .as_ref()
+            .and_then(|rv| rv.as_local().cloned()),
         edition: package_data
             .edition
             .as_ref()
-            .map(|e| e.to_string())
-            .unwrap_or_default()
-            .into(), // Handle Option<MaybeInherited<Edition>>
+            .and_then(|e| e.as_local()) // Get Option<&Edition>
+            .map(|e| e.to_string()), // Convert &Edition to String using Display
         features: manifest.features.clone().unwrap_or_default(), // Use manifest.features field
     };
 
