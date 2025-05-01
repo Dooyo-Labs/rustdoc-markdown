@@ -910,17 +910,10 @@ fn run_rustdoc(
             builder = builder.features(feature_list);
         }
     }
+
     if no_default_features {
         info!("Disabling default features.");
         builder = builder.no_default_features(true);
-    } else {
-        // Default behavior of Builder is all_features(false) and no_default_features(false).
-        // We want all features *unless* specific features are requested or default is disabled.
-        // If no specific features requested AND default features are enabled (default case), enable all features.
-        if features.is_none() {
-            info!("No specific features requested and default features enabled; enabling all features.");
-            builder = builder.all_features(true);
-        }
     }
 
     // Apply target
