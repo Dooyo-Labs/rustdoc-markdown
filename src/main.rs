@@ -175,37 +175,37 @@ struct CrateManifestData {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum EdgeLabel {
-    Contains,          // Module contains Item (original structure)
-    ReferencesType,    // Item references Type ID (e.g., field type, return type)
-    GenericArgument,   // Path uses Type ID as generic arg
-    AssociatedType,    // Item references Associated Type ID
-    AssociatedConstant, // Item references Associated Constant ID
-    TraitBound,        // Generic Param/Where Clause has Trait Bound ID
-    Implements,        // Impl block implements Trait ID
-    ImplFor,           // Impl block is for Type ID
-    ImplItem,          // Impl block contains Item ID
-    TraitItem,         // Trait contains Item ID
-    EnumVariant,       // Enum contains Variant ID
-    VariantField,      // Variant contains Field ID
-    StructField,       // Struct contains Field ID
-    UnionField,        // Union contains Field ID
-    FieldType,         // Field ID has Type ID
-    AliasTo,           // TypeAlias/TraitAlias points to Type/Trait ID
-    SignatureInput,    // Function signature references input Type ID
-    SignatureOutput,   // Function signature references output Type ID
-    SuperTrait,        // Trait has supertrait Trait ID
-    Dependency,        // Generic catch-all for less specific type dependencies
-    IntraDocLink,      // Doc comment links to Item ID
+    Contains,             // Module contains Item (original structure)
+    ReferencesType,       // Item references Type ID (e.g., field type, return type)
+    GenericArgument,      // Path uses Type ID as generic arg
+    AssociatedType,       // Item references Associated Type ID
+    AssociatedConstant,   // Item references Associated Constant ID
+    TraitBound,           // Generic Param/Where Clause has Trait Bound ID
+    Implements,           // Impl block implements Trait ID
+    ImplFor,              // Impl block is for Type ID
+    ImplItem,             // Impl block contains Item ID
+    TraitItem,            // Trait contains Item ID
+    EnumVariant,          // Enum contains Variant ID
+    VariantField,         // Variant contains Field ID
+    StructField,          // Struct contains Field ID
+    UnionField,           // Union contains Field ID
+    FieldType,            // Field ID has Type ID
+    AliasTo,              // TypeAlias/TraitAlias points to Type/Trait ID
+    SignatureInput,       // Function signature references input Type ID
+    SignatureOutput,      // Function signature references output Type ID
+    SuperTrait,           // Trait has supertrait Trait ID
+    Dependency,           // Generic catch-all for less specific type dependencies
+    IntraDocLink,         // Doc comment links to Item ID
     AssociatedConstraint, // Generic Arg Constraint references Item ID
-    ParamType,         // Generic Param Def references Type ID
-    ParamBound,        // Generic Param Def references Bound/Trait ID
-    PredicateType,     // Where Predicate references Type ID
-    PredicateBound,    // Where Predicate references Bound/Trait ID
-    PredicateEqLhs,    // Where Predicate Eq references LHS Type ID
-    PredicateEqRhs,    // Where Predicate Eq references RHS Term ID
-    DynTraitBound,     // DynTrait references Trait ID
-    ImplTraitBound,    // ImplTrait references Bound/Trait ID
-    UseTarget,         // Use item references target item/module ID
+    ParamType,            // Generic Param Def references Type ID
+    ParamBound,           // Generic Param Def references Bound/Trait ID
+    PredicateType,        // Where Predicate references Type ID
+    PredicateBound,       // Where Predicate references Bound/Trait ID
+    PredicateEqLhs,       // Where Predicate Eq references LHS Type ID
+    PredicateEqRhs,       // Where Predicate Eq references RHS Term ID
+    DynTraitBound,        // DynTrait references Trait ID
+    ImplTraitBound,       // ImplTrait references Bound/Trait ID
+    UseTarget,            // Use item references target item/module ID
 }
 
 impl Display for EdgeLabel {
@@ -364,11 +364,7 @@ struct ResolvedModule {
 }
 
 /// Recursively resolves items for a module, handling `use` statements and cycles.
-fn resolve_module_items(
-    module_id: Id,
-    krate: &Crate,
-    cache: &mut ResolutionCache,
-) -> HashSet<Id> {
+fn resolve_module_items(module_id: Id, krate: &Crate, cache: &mut ResolutionCache) -> HashSet<Id> {
     // Check cache for cycle or previous result
     match cache.get(&module_id) {
         Some(ResolutionState::Resolving) => {
@@ -446,10 +442,7 @@ fn resolve_module_items(
         module_id,
         resolved_items.len()
     );
-    cache.insert(
-        module_id,
-        ResolutionState::Resolved(resolved_items.clone()),
-    );
+    cache.insert(module_id, ResolutionState::Resolved(resolved_items.clone()));
     resolved_items
 }
 
@@ -517,17 +510,17 @@ fn get_item_info_string(id: &Id, krate: &Crate) -> String {
 /// Recursive function to dump the graph structure.
 fn dump_node(
     node_id: Id,
-    graph: &IdGraph,           // Use the potentially filtered graph
+    graph: &IdGraph, // Use the potentially filtered graph
     krate: &Crate,
     writer: &mut BufWriter<File>,
     visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
     path_to_target: &mut HashSet<Id>, // Tracks current path to target leaf
     indent: usize,
-    depth: usize,             // Current recursion depth
-    max_depth: Option<usize>, // Maximum allowed depth
-    prefix: &str,             // Prefix like "├── " or "└── "
+    depth: usize,                     // Current recursion depth
+    max_depth: Option<usize>,         // Maximum allowed depth
+    prefix: &str,                     // Prefix like "├── " or "└── "
     parent_label: Option<&EdgeLabel>, // Label connecting this node to its parent
-    is_root_call: bool, // Flag to know if this is the initial call for a root
+    is_root_call: bool,               // Flag to know if this is the initial call for a root
 ) -> Result<()> {
     // Track current node in the path being explored towards the target
     let inserted_in_path = path_to_target.insert(node_id);
@@ -545,16 +538,19 @@ fn dump_node(
     if should_print {
         // Format the current node information
         let node_info = get_item_info_string(&node_id, krate);
-        let label_info = parent_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
+        let label_info = parent_label
+            .map(|l| format!(" [{}]", l))
+            .unwrap_or_default();
         // Add cycle marker only if globally visited before AND relevant to current path
-        let cycle_marker = if !is_newly_visited && path_to_target.contains(&node_id) && !is_root_call {
-            " [... cycle or previously visited on current path ...]"
-        } else if !is_newly_visited && !is_root_call {
-            // This case should ideally not be reached often if filtering works, but indicates a visited node NOT on the current path
-            " [... previously visited (not on current path) ...]" // This might still be printed if filter is off
-        } else {
-            ""
-        };
+        let cycle_marker =
+            if !is_newly_visited && path_to_target.contains(&node_id) && !is_root_call {
+                " [... cycle or previously visited on current path ...]"
+            } else if !is_newly_visited && !is_root_call {
+                // This case should ideally not be reached often if filtering works, but indicates a visited node NOT on the current path
+                " [... previously visited (not on current path) ...]" // This might still be printed if filter is off
+            } else {
+                ""
+            };
 
         writeln!(
             writer,
@@ -571,12 +567,20 @@ fn dump_node(
     if let Some(max) = max_depth {
         if depth >= max {
             // If we've reached max depth and there are children, indicate truncation
-            if is_newly_visited && graph.get_children(&node_id).map_or(false, |c| !c.is_empty()) {
+            if is_newly_visited
+                && graph
+                    .get_children(&node_id)
+                    .map_or(false, |c| !c.is_empty())
+            {
                 writeln!(
                     writer,
                     "{}{} [... children truncated due to max depth ...]",
                     " ".repeat(indent + 4), // Indent the truncation message
-                    if graph.get_children(&node_id).unwrap().len() == 1 { "└──" } else { "├──" } // Use appropriate prefix for one or more truncated children
+                    if graph.get_children(&node_id).unwrap().len() == 1 {
+                        "└──"
+                    } else {
+                        "├──"
+                    }  // Use appropriate prefix for one or more truncated children
                 )?;
             }
             // Backtrack and return early if max depth is reached
@@ -612,7 +616,7 @@ fn dump_node(
                     graph, // Pass the same graph down
                     krate,
                     writer,
-                    visited,         // Pass mutable reference down
+                    visited,        // Pass mutable reference down
                     path_to_target, // Pass mutable reference down
                     child_indent,
                     depth + 1, // Increment depth for child
@@ -647,8 +651,12 @@ fn dump_graph_subset(
         dump_description,
         output_path.display()
     );
-    let file = File::create(output_path)
-        .with_context(|| format!("Failed to create graph dump file: {}", output_path.display()))?;
+    let file = File::create(output_path).with_context(|| {
+        format!(
+            "Failed to create graph dump file: {}",
+            output_path.display()
+        )
+    })?;
     let mut writer = BufWriter::new(file);
 
     // Use a single visited set for the entire dump process across all roots
@@ -673,7 +681,7 @@ fn dump_graph_subset(
                     graph,
                     krate,
                     &mut writer,
-                    &mut visited,     // Pass shared mutable visited set
+                    &mut visited,        // Pass shared mutable visited set
                     &mut path_to_target, // Pass new mutable path set
                     0,
                     0,         // Initial depth is 0
@@ -696,7 +704,7 @@ fn dump_graph_subset(
                     graph,
                     krate,
                     &mut writer,
-                    &mut visited,     // Pass shared mutable visited set
+                    &mut visited,        // Pass shared mutable visited set
                     &mut path_to_target, // Pass new mutable path set for this root
                     0,
                     0,         // Initial depth is 0
@@ -909,8 +917,7 @@ fn run_rustdoc(
 
     // Apply feature flags
     if let Some(features_str) = features {
-        let feature_list: Vec<String> =
-            features_str.split_whitespace().map(String::from).collect();
+        let feature_list: Vec<String> = features_str.split_whitespace().map(String::from).collect();
         if !feature_list.is_empty() {
             info!("Enabling features: {:?}", feature_list);
             builder = builder.features(feature_list);
@@ -1228,7 +1235,7 @@ fn find_generic_args_dependencies(
                 match constraint {
                     // Use tuple variant matching
                     rustdoc_types::AssocItemConstraint {
-                        name: _, // TODO: Could the name be an ID sometimes? Unlikely.
+                        name: _,          // TODO: Could the name be an ID sometimes? Unlikely.
                         args: assoc_args, // args for the associated type constraint itself
                         binding: rustdoc_types::AssocItemConstraintKind::Equality(term),
                     } => {
@@ -1334,7 +1341,13 @@ fn find_generic_bound_dependencies(
             }
             // Check HRTBs (generic_params)
             for param_def in generic_params {
-                find_generic_param_def_dependencies(param_def, source_id, krate, dependencies, graph);
+                find_generic_param_def_dependencies(
+                    param_def,
+                    source_id,
+                    krate,
+                    dependencies,
+                    graph,
+                );
             }
         }
         GenericBound::Outlives(_) | GenericBound::Use(_) => {}
@@ -1625,23 +1638,23 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                 for impl_id in &s.impls {
                     if krate.index.contains_key(impl_id) {
                         if item_deps.insert(*impl_id) {
-                            graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate); // Struct -> Impl relation
+                            graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
+                            // Struct -> Impl relation
                         }
                     }
                 }
-                find_generics_dependencies(
-                    &s.generics,
-                    source_id,
-                    krate,
-                    &mut item_deps,
-                    graph,
-                );
+                find_generics_dependencies(&s.generics, source_id, krate, &mut item_deps, graph);
                 match &s.kind {
                     rustdoc_types::StructKind::Plain { fields, .. } => {
                         for field_id in fields {
                             if krate.index.contains_key(field_id) {
                                 if item_deps.insert(*field_id) {
-                                    graph.add_edge(source_id, *field_id, EdgeLabel::StructField, krate);
+                                    graph.add_edge(
+                                        source_id,
+                                        *field_id,
+                                        EdgeLabel::StructField,
+                                        krate,
+                                    );
                                 }
                                 // Also get dependencies of the field's type
                                 if let Some(field_item) = krate.index.get(field_id) {
@@ -1664,11 +1677,15 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                             if let Some(field_id) = field_id_opt {
                                 if krate.index.contains_key(field_id) {
                                     if item_deps.insert(*field_id) {
-                                        graph.add_edge(source_id, *field_id, EdgeLabel::StructField, krate);
+                                        graph.add_edge(
+                                            source_id,
+                                            *field_id,
+                                            EdgeLabel::StructField,
+                                            krate,
+                                        );
                                     }
                                     if let Some(field_item) = krate.index.get(field_id) {
-                                        if let ItemEnum::StructField(field_type) =
-                                            &field_item.inner
+                                        if let ItemEnum::StructField(field_type) = &field_item.inner
                                         {
                                             find_type_dependencies(
                                                 field_type,
@@ -1713,11 +1730,15 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                             if let Some(field_id) = field_id_opt {
                                 if krate.index.contains_key(field_id) {
                                     if item_deps.insert(*field_id) {
-                                        graph.add_edge(source_id, *field_id, EdgeLabel::VariantField, krate);
+                                        graph.add_edge(
+                                            source_id,
+                                            *field_id,
+                                            EdgeLabel::VariantField,
+                                            krate,
+                                        );
                                     }
                                     if let Some(field_item) = krate.index.get(field_id) {
-                                        if let ItemEnum::StructField(field_type) =
-                                            &field_item.inner
+                                        if let ItemEnum::StructField(field_type) = &field_item.inner
                                         {
                                             find_type_dependencies(
                                                 field_type,
@@ -1737,7 +1758,12 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                         for field_id in fields {
                             if krate.index.contains_key(field_id) {
                                 if item_deps.insert(*field_id) {
-                                    graph.add_edge(source_id, *field_id, EdgeLabel::VariantField, krate);
+                                    graph.add_edge(
+                                        source_id,
+                                        *field_id,
+                                        EdgeLabel::VariantField,
+                                        krate,
+                                    );
                                 }
                                 if let Some(field_item) = krate.index.get(field_id) {
                                     if let ItemEnum::StructField(field_type) = &field_item.inner {
@@ -1883,7 +1909,10 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                 );
             }
             ItemEnum::AssocType {
-                generics, bounds, type_, ..
+                generics,
+                bounds,
+                type_,
+                ..
             } => {
                 find_generics_dependencies(generics, source_id, krate, &mut item_deps, graph);
                 for bound in bounds {
@@ -1984,7 +2013,12 @@ fn has_docs(item: &Item) -> bool {
 fn adjust_markdown_headers(markdown: &str, base_level: usize) -> String {
     let parser = CmarkParser::new(markdown);
     let transformed_events = parser.map(|event| match event {
-        Event::Start(Tag::Heading { level, id, classes, attrs }) => {
+        Event::Start(Tag::Heading {
+            level,
+            id,
+            classes,
+            attrs,
+        }) => {
             // Explicitly match on HeadingLevel variants to get usize
             let old_level_usize = match level {
                 pulldown_cmark::HeadingLevel::H1 => 1,
@@ -1997,7 +2031,12 @@ fn adjust_markdown_headers(markdown: &str, base_level: usize) -> String {
             let new_level_usize = std::cmp::min(old_level_usize + base_level, 6);
             let new_level = pulldown_cmark::HeadingLevel::try_from(new_level_usize)
                 .unwrap_or(pulldown_cmark::HeadingLevel::H6);
-            Event::Start(pulldown_cmark::Tag::Heading { level: new_level, id, classes, attrs })
+            Event::Start(pulldown_cmark::Tag::Heading {
+                level: new_level,
+                id,
+                classes,
+                attrs,
+            })
         }
         Event::End(TagEnd::Heading(level)) => {
             // Explicitly match on HeadingLevel variants to get usize
@@ -2649,7 +2688,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
         ItemEnum::Use(_) => format!("use {}", name), // Basic format for Use items
         ItemEnum::ExternType => format!("extern type {}", name),
         ItemEnum::Variant(v) => format_variant_signature(item, v, krate), // Use helper
-        ItemEnum::StructField(_) => name.to_string(),                     // Field name only for header
+        ItemEnum::StructField(_) => name.to_string(), // Field name only for header
         ItemEnum::AssocConst { .. } => format!("const {}", name),
         ItemEnum::AssocType { .. } => format!("type {}", name),
         ItemEnum::Impl(_) => "impl".to_string(), // Impls handled specially
@@ -3033,7 +3072,7 @@ struct ModuleTree {
 struct DocPrinter<'a> {
     krate: &'a Crate,
     manifest: &'a CrateManifestData, // Add field for manifest data
-    readme_content: Option<String>,   // Add field for README content
+    readme_content: Option<String>,  // Add field for README content
     selected_ids: &'a HashSet<Id>,
     resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
     graph: &'a IdGraph,                                // Add graph reference
@@ -3050,7 +3089,7 @@ impl<'a> DocPrinter<'a> {
     fn new(
         krate: &'a Crate,
         manifest: &'a CrateManifestData, // Accept manifest data
-        readme_content: Option<String>,   // Accept README content
+        readme_content: Option<String>,  // Accept README content
         selected_ids: &'a HashSet<Id>,
         resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
         graph: &'a IdGraph,                                // Add graph parameter
@@ -3060,8 +3099,8 @@ impl<'a> DocPrinter<'a> {
         let module_tree = Self::build_module_tree(krate);
         DocPrinter {
             krate,
-            manifest,         // Store manifest data
-            readme_content,   // Store README content
+            manifest,       // Store manifest data
+            readme_content, // Store README content
             selected_ids,
             resolved_modules, // Store resolved modules
             graph,            // Store graph reference
@@ -3069,7 +3108,7 @@ impl<'a> DocPrinter<'a> {
             template_mode, // Store template mode flag
             printed_ids: HashSet::new(),
             output: String::new(),
-            module_tree,                // Initialize module tree
+            module_tree,          // Initialize module tree
             doc_path: Vec::new(), // Initialize empty document path
         }
     }
@@ -3313,7 +3352,10 @@ impl<'a> DocPrinter<'a> {
         let has_stripped = matches!(
             &item.inner,
             ItemEnum::Struct(Struct {
-                kind: StructKind::Plain { has_stripped_fields: true, .. },
+                kind: StructKind::Plain {
+                    has_stripped_fields: true,
+                    ..
+                },
                 ..
             })
         );
@@ -3561,8 +3603,7 @@ impl<'a> DocPrinter<'a> {
                     for field_id in field_ids {
                         if self.selected_ids.contains(&field_id) {
                             if let Some(f_item) = self.krate.index.get(&field_id) {
-                                if (self.template_mode && f_item.docs.is_some())
-                                    || has_docs(f_item)
+                                if (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
                                 {
                                     return true;
                                 }
@@ -3604,11 +3645,8 @@ impl<'a> DocPrinter<'a> {
 
                     for field_id in field_ids {
                         if self.selected_ids.contains(&field_id) {
-                            let field_has_printable_docs = self
-                                .krate
-                                .index
-                                .get(&field_id)
-                                .map_or(false, |f_item| {
+                            let field_has_printable_docs =
+                                self.krate.index.get(&field_id).map_or(false, |f_item| {
                                     (self.template_mode && f_item.docs.is_some())
                                         || has_docs(f_item)
                                 });
@@ -3705,11 +3743,8 @@ impl<'a> DocPrinter<'a> {
 
                 for field_id in &field_ids {
                     if self.selected_ids.contains(field_id) {
-                        let field_has_printable_docs = self
-                            .krate
-                            .index
-                            .get(field_id)
-                            .map_or(false, |f_item| {
+                        let field_has_printable_docs =
+                            self.krate.index.get(field_id).map_or(false, |f_item| {
                                 (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
                             });
                         if field_has_printable_docs && !self.printed_ids.contains(field_id) {
@@ -3799,13 +3834,9 @@ impl<'a> DocPrinter<'a> {
     fn has_printable_associated_items(&self, t: &Trait) -> bool {
         t.items.iter().any(|item_id| {
             self.selected_ids.contains(item_id)
-                && self
-                    .krate
-                    .index
-                    .get(item_id)
-                    .map_or(false, |assoc_item| {
-                        (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item)
-                    })
+                && self.krate.index.get(item_id).map_or(false, |assoc_item| {
+                    (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item)
+                })
         })
     }
 
@@ -4197,10 +4228,8 @@ impl<'a> DocPrinter<'a> {
                         "".to_string()
                     };
                     if !imp.generics.where_predicates.is_empty() {
-                        let where_clause = format_generics_where_only(
-                            &imp.generics.where_predicates,
-                            self.krate,
-                        );
+                        let where_clause =
+                            format_generics_where_only(&imp.generics.where_predicates, self.krate);
 
                         if where_clause.lines().count() == 1 {
                             writeln!(
@@ -4210,8 +4239,7 @@ impl<'a> DocPrinter<'a> {
                             )
                             .unwrap();
                         } else {
-                            writeln!(self.output, "- `{cleaned_path}`{}", template_marker)
-                                .unwrap();
+                            writeln!(self.output, "- `{cleaned_path}`{}", template_marker).unwrap();
                             // Format and indent the where clause
                             let code_block = format!("```rust\n{}\n```", where_clause);
                             let indented_block = indent_string(&code_block, 4);
@@ -4245,7 +4273,7 @@ impl<'a> DocPrinter<'a> {
                             .as_ref()
                             .map(|tp| clean_trait_path(&format_path(tp, self.krate)))
                             .unwrap_or_else(|| "{InherentImpl}".to_string()); // Should not happen here
-                        // Increment level counter for this list item *before* getting template marker
+                                                                              // Increment level counter for this list item *before* getting template marker
                         self.increment_current_level();
                         let template_marker = if self.template_mode && impl_item.docs.is_some() {
                             format!("\n\n{}", self.get_template_marker())
@@ -4452,16 +4480,11 @@ impl<'a> DocPrinter<'a> {
                         // Generate the full function block if selected
                         let func_block = generate_function_code_block(assoc_item, f, self.krate);
                         // Indent the function block
-                        writeln!(assoc_items_content, "{}", indent_string(&func_block, 4))
-                            .unwrap();
+                        writeln!(assoc_items_content, "{}", indent_string(&func_block, 4)).unwrap();
                         // Add template marker after the function block if applicable
                         if self.template_mode && assoc_item.docs.is_some() {
-                            writeln!(
-                                assoc_items_content,
-                                "    // {}",
-                                self.get_template_marker()
-                            )
-                            .unwrap();
+                            writeln!(assoc_items_content, "    // {}", self.get_template_marker())
+                                .unwrap();
                         }
                     }
                     _ => {} // Ignore others
@@ -4640,9 +4663,7 @@ impl<'a> DocPrinter<'a> {
 
             // Sort items by name within each kind
             for ids in items_by_kind.values_mut() {
-                ids.sort_by_key(|id| {
-                    self.krate.index.get(id).and_then(|item| item.name.clone())
-                });
+                ids.sort_by_key(|id| self.krate.index.get(id).and_then(|item| item.name.clone()));
             }
 
             // Defined printing order for sections WITHIN a module
@@ -4732,8 +4753,11 @@ impl<'a> DocPrinter<'a> {
             self.pop_level(); // Pop list level
             writeln!(self.output).unwrap(); // Add trailing newline
         } else {
-            writeln!(self.output, "_Item has no known incoming references in the graph._\n")
-                .unwrap();
+            writeln!(
+                self.output,
+                "_Item has no known incoming references in the graph._\n"
+            )
+            .unwrap();
         }
     }
 
@@ -4953,9 +4977,8 @@ impl<'a> DocPrinter<'a> {
 
                 self.push_level(); // Push H3 level for macro items
                 let mut sorted_macros = macro_ids;
-                sorted_macros.sort_by_key(|id| {
-                    self.krate.index.get(id).and_then(|item| item.name.clone())
-                });
+                sorted_macros
+                    .sort_by_key(|id| self.krate.index.get(id).and_then(|item| item.name.clone()));
                 for id in sorted_macros {
                     self.print_item_details(&id); // Macro details at level 3
                 }
@@ -5071,11 +5094,8 @@ impl<'a> DocPrinter<'a> {
                             path_str // Use path string as header
                         )
                         .unwrap();
-                        writeln!(
-                            self.output,
-                            "_Error: Item details not found in index._\n"
-                        )
-                        .unwrap();
+                        writeln!(self.output, "_Error: Item details not found in index._\n")
+                            .unwrap();
                         self.print_graph_context(id); // Still print graph context
                     }
                 }
@@ -5088,9 +5108,8 @@ impl<'a> DocPrinter<'a> {
                         *counts_by_kind.entry(kind).or_insert(0) += 1;
                     } else {
                         // Count items where kind couldn't be determined (e.g., ID not in index)
-                        *counts_by_kind
-                            .entry(ItemKind::StructField)
-                            .or_insert(0) += 1; // Use a placeholder kind like StructField
+                        *counts_by_kind.entry(ItemKind::StructField).or_insert(0) += 1;
+                        // Use a placeholder kind like StructField
                     }
                 }
                 warn!(
@@ -5113,11 +5132,11 @@ impl<'a> DocPrinter<'a> {
 
 fn generate_documentation(
     krate: &Crate,
-    manifest: &CrateManifestData, // Accept manifest data
+    manifest: &CrateManifestData,   // Accept manifest data
     readme_content: Option<String>, // Accept README content
     selected_ids: &HashSet<Id>,
     resolved_modules: &HashMap<Id, ResolvedModule>, // Accept resolved modules
-    graph: &IdGraph,                                 // Accept graph
+    graph: &IdGraph,                                // Accept graph
     include_other: bool,
     template_mode: bool, // Add template mode flag
 ) -> Result<String> {
@@ -5131,8 +5150,8 @@ fn generate_documentation(
 
     let printer = DocPrinter::new(
         krate,
-        manifest,         // Pass manifest data
-        readme_content,   // Pass README content
+        manifest,       // Pass manifest data
+        readme_content, // Pass README content
         selected_ids,
         resolved_modules,
         graph,
@@ -5383,14 +5402,22 @@ async fn main() -> Result<()> {
 
     // --- Output Documentation ---
     if let Some(output_file_path) = args.output {
-        info!("Writing documentation to file: {}", output_file_path.display());
+        info!(
+            "Writing documentation to file: {}",
+            output_file_path.display()
+        );
         let mut file = File::create(&output_file_path).with_context(|| {
-            format!("Failed to create output file: {}", output_file_path.display())
+            format!(
+                "Failed to create output file: {}",
+                output_file_path.display()
+            )
         })?;
-        file.write_all(documentation.as_bytes())
-            .with_context(|| {
-                format!("Failed to write to output file: {}", output_file_path.display())
-            })?;
+        file.write_all(documentation.as_bytes()).with_context(|| {
+            format!(
+                "Failed to write to output file: {}",
+                output_file_path.display()
+            )
+        })?;
         info!(
             "Successfully wrote documentation to {}",
             output_file_path.display()
