@@ -3090,8 +3090,8 @@ impl<'a> DocPrinter<'a> {
             template_mode, // Store template mode flag
             printed_ids: HashSet::new(),
             output: String::new(),
-            module_tree,                  // Initialize module tree
-            doc_path: Vec::new(),         // Initialize empty document path
+            module_tree,                 // Initialize module tree
+            doc_path: Vec::new(),        // Initialize empty document path
             current_module_path: vec![], // Initialize empty module path
         }
     }
@@ -3864,9 +3864,10 @@ impl<'a> DocPrinter<'a> {
 
         // Sort items within each category
         required_types.sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
-        required_methods.sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
-        provided_methods.sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
-
+        required_methods
+            .sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
+        provided_methods
+            .sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
 
         // Increment level counter for this "Associated Items" parent section
         self.increment_current_level();
@@ -3886,10 +3887,18 @@ impl<'a> DocPrinter<'a> {
             self.increment_current_level();
             let sub_level = self.get_current_header_level();
             let sub_prefix = self.get_header_prefix();
-            writeln!(self.output, "{} {} Required Associated Types\n", "#".repeat(sub_level), sub_prefix).unwrap();
+            writeln!(
+                self.output,
+                "{} {} Required Associated Types\n",
+                "#".repeat(sub_level),
+                sub_prefix
+            )
+            .unwrap();
             self.push_level();
             for (id, has_docs) in required_types {
-                if has_docs { self.print_associated_item_summary(&id); }
+                if has_docs {
+                    self.print_associated_item_summary(&id);
+                }
             }
             self.pop_level();
         }
@@ -3898,10 +3907,18 @@ impl<'a> DocPrinter<'a> {
             self.increment_current_level();
             let sub_level = self.get_current_header_level();
             let sub_prefix = self.get_header_prefix();
-            writeln!(self.output, "{} {} Required Methods\n", "#".repeat(sub_level), sub_prefix).unwrap();
+            writeln!(
+                self.output,
+                "{} {} Required Methods\n",
+                "#".repeat(sub_level),
+                sub_prefix
+            )
+            .unwrap();
             self.push_level();
             for (id, has_docs) in required_methods {
-                 if has_docs { self.print_associated_item_summary(&id); }
+                if has_docs {
+                    self.print_associated_item_summary(&id);
+                }
             }
             self.pop_level();
         }
@@ -3910,16 +3927,23 @@ impl<'a> DocPrinter<'a> {
             self.increment_current_level();
             let sub_level = self.get_current_header_level();
             let sub_prefix = self.get_header_prefix();
-            writeln!(self.output, "{} {} Provided Methods\n", "#".repeat(sub_level), sub_prefix).unwrap();
+            writeln!(
+                self.output,
+                "{} {} Provided Methods\n",
+                "#".repeat(sub_level),
+                sub_prefix
+            )
+            .unwrap();
             self.push_level();
             for (id, has_docs) in provided_methods {
-                if has_docs { self.print_associated_item_summary(&id); }
+                if has_docs {
+                    self.print_associated_item_summary(&id);
+                }
             }
             self.pop_level();
         }
         self.pop_level(); // Pop subsection level
     }
-
 
     /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
     /// Does NOT include the markdown header. Includes docs with adjusted headers, respecting template mode.
@@ -4311,12 +4335,19 @@ impl<'a> DocPrinter<'a> {
                     temp_printer.doc_path = self.doc_path.clone();
                     temp_printer.print_docs(impl_item);
                     write!(self.output, "{}", temp_printer.output).unwrap();
+
+                    // Mark the impl_item ID and its associated items as printed
+                    self.printed_ids.insert(impl_item.id);
+                    for assoc_item_id in &imp.items {
+                        if self.selected_ids.contains(assoc_item_id) {
+                            self.printed_ids.insert(*assoc_item_id);
+                        }
+                    }
                 }
             }
             self.pop_level();
         }
     }
-
 
     /// Helper to format only the header part of an impl declaration (e.g., `impl MyTrait for MyStruct<T>`)
     fn format_impl_decl_header_only(&self, imp: &Impl) -> String {
@@ -4344,7 +4375,6 @@ impl<'a> DocPrinter<'a> {
         // DO NOT add where clause here
         decl
     }
-
 
     /// Helper to format an impl block or trait impl declaration line.
     fn format_impl_decl(&self, imp: &Impl) -> String {
@@ -4829,7 +4859,6 @@ impl<'a> DocPrinter<'a> {
             }
         }
     }
-
 
     /// Finalizes the documentation string, printing the crate header and contents.
     fn finalize(mut self) -> String {
