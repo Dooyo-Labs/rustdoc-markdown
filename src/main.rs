@@ -3190,7 +3190,7 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Increments the counter for the current document level.
-    fn increment_current_level(&mut self) {
+    fn post_increment_current_level(&mut self) {
         if let Some(last) = self.doc_path.last_mut() {
             *last += 1;
         } else {
@@ -3450,12 +3450,12 @@ impl<'a> DocPrinter<'a> {
         self.push_level();
         for field_id in &all_field_ids {
             if self.print_field_details(field_id) {
-                self.increment_current_level();
+                self.post_increment_current_level();
             }
         }
         self.pop_level(); // Pop the field item level
 
-        self.increment_current_level();
+        self.post_increment_current_level();
     }
 
     /// Prints the details for a single struct field, only if it has printable documentation.
@@ -3527,7 +3527,7 @@ impl<'a> DocPrinter<'a> {
             self.printed_ids.insert(*field_id);
 
             // Increment level counter for this field item
-            self.increment_current_level();
+            self.post_increment_current_level();
 
             if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_"); // Might be _ for tuple fields
@@ -3668,7 +3668,7 @@ impl<'a> DocPrinter<'a> {
         }
 
         // Increment level counter for this section
-        self.increment_current_level();
+        self.post_increment_current_level();
         let variants_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
         writeln!(
@@ -3753,7 +3753,7 @@ impl<'a> DocPrinter<'a> {
                 self.printed_ids.insert(*variant_id);
 
                 // Increment level counter for this variant item
-                self.increment_current_level();
+                self.post_increment_current_level();
 
                 let signature = format_variant_signature(item, variant_data, self.krate);
                 let variant_header_level = self.get_current_header_level();
@@ -3776,7 +3776,7 @@ impl<'a> DocPrinter<'a> {
                 if !printable_fields.is_empty() || stripped {
                     // Push a new level for the fields section
                     self.push_level();
-                    self.increment_current_level(); // Increment for the "Fields" header itself
+                    self.post_increment_current_level(); // Increment for the "Fields" header itself
                     let field_section_level = self.get_current_header_level();
                     let fields_header_prefix = self.get_header_prefix();
                     writeln!(
@@ -3869,22 +3869,7 @@ impl<'a> DocPrinter<'a> {
         provided_methods
             .sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
 
-        // Increment level counter for this "Associated Items" parent section
-        self.increment_current_level();
-        let assoc_items_header_level = self.get_current_header_level();
-        let header_prefix = self.get_header_prefix(); // Prefix for "Associated Items"
-        writeln!(
-            self.output,
-            "{} {} Associated Items\n",
-            "#".repeat(assoc_items_header_level),
-            header_prefix
-        )
-        .unwrap();
-
-        self.push_level(); // Push level for subsections
-
         if required_types.iter().any(|(_, has_docs)| *has_docs) {
-            self.increment_current_level();
             let sub_level = self.get_current_header_level();
             let sub_prefix = self.get_header_prefix();
             writeln!(
@@ -3901,10 +3886,10 @@ impl<'a> DocPrinter<'a> {
                 }
             }
             self.pop_level();
+            self.post_increment_current_level();
         }
 
         if required_methods.iter().any(|(_, has_docs)| *has_docs) {
-            self.increment_current_level();
             let sub_level = self.get_current_header_level();
             let sub_prefix = self.get_header_prefix();
             writeln!(
@@ -3921,10 +3906,10 @@ impl<'a> DocPrinter<'a> {
                 }
             }
             self.pop_level();
+            self.post_increment_current_level();
         }
 
         if provided_methods.iter().any(|(_, has_docs)| *has_docs) {
-            self.increment_current_level();
             let sub_level = self.get_current_header_level();
             let sub_prefix = self.get_header_prefix();
             writeln!(
@@ -3941,8 +3926,8 @@ impl<'a> DocPrinter<'a> {
                 }
             }
             self.pop_level();
+            self.post_increment_current_level();
         }
-        self.pop_level(); // Pop subsection level
     }
 
     /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
@@ -4012,9 +3997,6 @@ impl<'a> DocPrinter<'a> {
     /// Prints the header and summary for a single associated item (const, type, function).
     fn print_associated_item_summary(&mut self, assoc_item_id: &Id) {
         if let Some(item) = self.krate.index.get(assoc_item_id) {
-            // Increment level counter for this associated item
-            self.increment_current_level();
-
             // Generate summary first (handles template mode internally)
             if let Some(summary) = self.generate_associated_item_summary(assoc_item_id) {
                 let declaration =
@@ -4035,6 +4017,8 @@ impl<'a> DocPrinter<'a> {
                     writeln!(self.output, "{}", summary.trim()).unwrap();
                 }
                 writeln!(self.output).unwrap(); // Ensure a blank line afterwards
+
+                self.post_increment_current_level();
             }
             // If generate_associated_item_summary returns None, the item wasn't selected,
             // so we don't print anything, and the level increment effectively skips it.
@@ -4165,7 +4149,7 @@ impl<'a> DocPrinter<'a> {
             // Print Auto Traits first (simple list) AND mark them printed
             if !auto_trait_impls.is_empty() {
                 for (impl_item, cleaned_path) in &auto_trait_impls {
-                    self.increment_current_level(); // Increment for this list item
+                    self.post_increment_current_level(); // Increment for this list item
                     let template_marker = if self.template_mode && impl_item.docs.is_some() {
                         format!("\n\n{}", self.get_template_marker())
                     } else {
@@ -4188,7 +4172,7 @@ impl<'a> DocPrinter<'a> {
             // Print Simple non-blanket/non-auto impls next (simple list) AND mark them printed
             if !simple_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &simple_impl_data {
-                    self.increment_current_level(); // Increment for this list item
+                    self.post_increment_current_level(); // Increment for this list item
                     let template_marker = if self.template_mode && impl_item.docs.is_some() {
                         format!("\n\n{}", self.get_template_marker())
                     } else {
@@ -4209,7 +4193,7 @@ impl<'a> DocPrinter<'a> {
             // Print Blanket Impls next (list + optional where clause) AND mark them printed
             if !blanket_impl_data.is_empty() {
                 for (impl_item, imp, cleaned_path) in &blanket_impl_data {
-                    self.increment_current_level(); // Increment for this list item
+                    self.post_increment_current_level(); // Increment for this list item
                     self.printed_ids.insert(impl_item.id);
                     let template_marker = if self.template_mode && impl_item.docs.is_some() {
                         format!("\n\n{}", self.get_template_marker())
@@ -4263,7 +4247,7 @@ impl<'a> DocPrinter<'a> {
                             .map(|tp| clean_trait_path(&format_path(tp, self.krate)))
                             .unwrap_or_else(|| "{InherentImpl}".to_string()); // Should not happen here
                                                                               // Increment level counter for this list item *before* getting template marker
-                        self.increment_current_level();
+                        self.post_increment_current_level();
                         let template_marker = if self.template_mode && impl_item.docs.is_some() {
                             format!("\n\n{}", self.get_template_marker())
                         } else {
@@ -4280,7 +4264,7 @@ impl<'a> DocPrinter<'a> {
             }
             self.pop_level(); // Pop the item level for trait impls
 
-            self.increment_current_level();
+            self.post_increment_current_level();
         }
     }
 
@@ -4295,7 +4279,6 @@ impl<'a> DocPrinter<'a> {
             .collect();
 
         if !implementors.is_empty() {
-            self.increment_current_level();
             let implementors_section_level = self.get_current_header_level();
             let header_prefix = self.get_header_prefix();
             writeln!(
@@ -4309,7 +4292,6 @@ impl<'a> DocPrinter<'a> {
             self.push_level();
             for impl_item in implementors {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    self.increment_current_level();
                     let impl_header_only = self.format_impl_decl_header_only(imp);
                     let impl_header_level = self.get_current_header_level();
                     let impl_prefix = self.get_header_prefix();
@@ -4343,9 +4325,12 @@ impl<'a> DocPrinter<'a> {
                             self.printed_ids.insert(*assoc_item_id);
                         }
                     }
+
+                    self.post_increment_current_level();
                 }
             }
             self.pop_level();
+            self.post_increment_current_level();
         }
     }
 
@@ -4433,7 +4418,7 @@ impl<'a> DocPrinter<'a> {
             }
             if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
                 has_items = true; // Mark that we found at least one selected item
-                self.increment_current_level(); // Increment for this associated item
+                self.post_increment_current_level(); // Increment for this associated item
                 match &assoc_item.inner {
                     ItemEnum::AssocConst { type_, value, .. } => {
                         let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
@@ -4529,7 +4514,7 @@ impl<'a> DocPrinter<'a> {
         }
 
         // Increment level counter for this impl block
-        self.increment_current_level();
+        self.post_increment_current_level();
         let impl_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
         let impl_header = self.format_impl_decl(imp);
@@ -4629,7 +4614,7 @@ impl<'a> DocPrinter<'a> {
         for id in items_to_print {
             // Print item details using the detail printer (increments/decrements its level)
             if self.print_item_details(id) {
-                self.increment_current_level();
+                self.post_increment_current_level();
             }
         }
         self.pop_level(); // Pop the item level for this section
@@ -4704,7 +4689,7 @@ impl<'a> DocPrinter<'a> {
                     // print_items_of_kind will increment the level for the section header
                     // and push/pop a level for the items inside it
                     if self.print_items_of_kind(ids, kind, header_name) {
-                        self.increment_current_level();
+                        self.post_increment_current_level();
                     }
                 }
             }
@@ -4734,7 +4719,7 @@ impl<'a> DocPrinter<'a> {
             // Push level for this list (for template markers)
             self.push_level();
             for edge in sorted_edges {
-                self.increment_current_level(); // Increment for this list item
+                self.post_increment_current_level(); // Increment for this list item
                 let source_path = format_id_path_canonical(&edge.source, self.krate);
                 let template_marker = if self.template_mode
                     && self
@@ -4844,7 +4829,7 @@ impl<'a> DocPrinter<'a> {
             self.print_module_contents(&module_id);
 
             self.pop_level();
-            self.increment_current_level();
+            self.post_increment_current_level();
 
             // Recursively print child modules
             if let Some(children) = self.module_tree.children.get(&module_id).cloned() {
@@ -4952,7 +4937,7 @@ impl<'a> DocPrinter<'a> {
         self.pop_level(); // Pop H3 features level
 
         // Increment H2 counter for the next section (README or Macros)
-        self.increment_current_level();
+        self.post_increment_current_level();
 
         // Print README content if available
         if let Some(readme) = &self.readme_content {
@@ -4970,7 +4955,7 @@ impl<'a> DocPrinter<'a> {
             // Use the new adjust_markdown_headers function
             let adjusted_readme = adjust_markdown_headers(readme, section_level);
             writeln!(self.output, "{}\n", adjusted_readme).unwrap();
-            self.increment_current_level(); // Increment H2 counter
+            self.post_increment_current_level(); // Increment H2 counter
         }
 
         // --- Print Top-Level Sections (Macros first, then Modules) ---
@@ -5010,7 +4995,7 @@ impl<'a> DocPrinter<'a> {
                     self.print_item_details(&id); // Macro details at level 3
                 }
                 self.pop_level(); // Pop H3 level
-                self.increment_current_level(); // Increment H2 counter
+                self.post_increment_current_level(); // Increment H2 counter
             }
         }
 
@@ -5110,7 +5095,7 @@ impl<'a> DocPrinter<'a> {
                         self.print_graph_context(id);
                     } else {
                         // Handle case where ID is selected but not in index (rare)
-                        self.increment_current_level(); // Increment level for this item
+                        self.post_increment_current_level(); // Increment level for this item
                         let other_item_level = self.get_current_header_level();
                         let item_prefix = self.get_header_prefix();
                         writeln!(
