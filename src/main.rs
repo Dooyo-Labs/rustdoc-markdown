@@ -1,26 +1,3 @@
-#!/usr/bin/env rust-script
-//! ```cargo
-//! [dependencies]
-//! anyhow = "1.0"
-//! clap = { version = "4.4", features = ["derive"] }
-//! flate2 = "1.0"
-//! reqwest = { version = "0.11", features = ["json", "stream"] }
-//! rustdoc-types = "0.39"
-//! semver = "1.0"
-//! serde = { version = "1.0", features = ["derive"] }
-//! serde_json = "1.0"
-//! std = "1.0"
-//! tar = "0.4"
-//! tempfile = "3.8"
-//! tokio = { version = "1.34", features = ["full"] }
-//! tracing = "0.1"
-//! tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-//! rustdoc-json = "*"
-//! rustup-toolchain = "0.1"
-//! cargo-manifest = "0.19"
-//! pulldown-cmark = "0.13" # Added dependency
-//! pulldown-cmark-to-cmark = "21" # Added dependency
-//! ```
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::cognitive_complexity)] // Allow complex functions for now
