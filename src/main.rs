@@ -38,7 +38,7 @@ use rustdoc_types::{
 use semver::{Version, VersionReq};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
-use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
+use std.fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::{self, File}; // Import fs module
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
@@ -2596,7 +2596,8 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
 
 /// Generates the primary declaration string for an item (e.g., `struct Foo`, `fn bar()`).
 /// For functions, this is deliberately simplified (no attrs, no where clause).
-fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
+/// For traits, prepends the current module path.
+fn generate_item_declaration(item: &Item, krate: &Crate, current_module_path: &[String]) -> String {
     let name = item.name.as_deref().unwrap_or_else(|| match &item.inner {
         ItemEnum::StructField(_) => "{unnamed_field}", // Special case for unnamed fields
         _ => "{unnamed}",
@@ -2620,13 +2621,16 @@ fn generate_item_declaration(item: &Item, krate: &Crate) -> String {
         ItemEnum::Trait(t) => {
             let unsafe_kw = if t.is_unsafe { "unsafe " } else { "" };
             let auto = if t.is_auto { "auto " } else { "" };
-            // Include param generics in trait header
+            let mut fq_path_parts = current_module_path.to_vec();
+            fq_path_parts.push(name.to_string());
+            let fq_path = fq_path_parts.join("::");
+
             format!(
                 "{}{}{}{}{}",
                 auto,
                 unsafe_kw,
                 "trait ",
-                name,
+                fq_path, // Use fully qualified path
                 format_generics_params_only(&t.generics.params, krate)
             )
         }
@@ -3083,6 +3087,7 @@ struct DocPrinter<'a> {
     module_tree: ModuleTree, // Add module tree
     // Tracks the current path in the document structure (e.g., [1, 2, 1] -> 1.2.1)
     doc_path: Vec<usize>,
+    current_module_path: Vec<String>, // Tracks the current module's string path
 }
 
 impl<'a> DocPrinter<'a> {
@@ -3108,8 +3113,9 @@ impl<'a> DocPrinter<'a> {
             template_mode, // Store template mode flag
             printed_ids: HashSet::new(),
             output: String::new(),
-            module_tree,          // Initialize module tree
-            doc_path: Vec::new(), // Initialize empty document path
+            module_tree,                  // Initialize module tree
+            doc_path: Vec::new(),         // Initialize empty document path
+            current_module_path: vec![], // Initialize empty module path
         }
     }
 
@@ -3309,7 +3315,7 @@ impl<'a> DocPrinter<'a> {
 
         let item_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
-        let declaration = generate_item_declaration(item, self.krate);
+        let declaration = generate_item_declaration(item, self.krate, &self.current_module_path);
 
         // Print Header (e.g. `### 1.1.1: `declaration``)
         writeln!(
@@ -3830,25 +3836,14 @@ impl<'a> DocPrinter<'a> {
         false
     }
 
-    /// Checks if any selected associated item has printable documentation.
-    fn has_printable_associated_items(&self, t: &Trait) -> bool {
-        t.items.iter().any(|item_id| {
-            self.selected_ids.contains(item_id)
-                && self.krate.index.get(item_id).map_or(false, |assoc_item| {
-                    (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item)
-                })
-        })
-    }
+    /// Prints the "Associated Items" section for a trait, categorized.
+    fn print_trait_associated_items(&mut self, _trait_item: &Item, t: &Trait) {
+        let mut required_types = Vec::new();
+        let mut required_methods = Vec::new();
+        let mut provided_methods = Vec::new();
+        let mut has_printable_assoc_item = false;
 
-    /// Prints the "Associated Items" section for a trait, only if any selected item has printable docs.
-    /// Also marks *all* selected associated items as printed.
-    fn print_trait_associated_items(&mut self, _item: &Item, t: &Trait) {
-        let mut assoc_consts = vec![];
-        let mut assoc_types = vec![];
-        let mut assoc_fns = vec![];
-        let mut any_assoc_has_printable_docs = false;
-
-        // Filter and categorize selected associated items, and mark *all* selected ones as printed.
+        // Filter and categorize selected associated items.
         for item_id in &t.items {
             if !self.selected_ids.contains(item_id) {
                 continue;
@@ -3860,102 +3855,94 @@ impl<'a> DocPrinter<'a> {
                 let item_has_printable_docs =
                     (self.template_mode && assoc_item.docs.is_some()) || has_docs(assoc_item);
                 if item_has_printable_docs {
-                    any_assoc_has_printable_docs = true; // Mark if any item has printable docs
+                    has_printable_assoc_item = true;
                 }
+
                 match &assoc_item.inner {
-                    ItemEnum::AssocConst { .. } => {
-                        assoc_consts.push((item_id, item_has_printable_docs))
-                    }
                     ItemEnum::AssocType { .. } => {
-                        assoc_types.push((item_id, item_has_printable_docs))
+                        required_types.push((*item_id, item_has_printable_docs));
                     }
-                    ItemEnum::Function(_) => assoc_fns.push((item_id, item_has_printable_docs)),
+                    ItemEnum::Function(f) => {
+                        if !f.has_body {
+                            required_methods.push((*item_id, item_has_printable_docs));
+                        } else {
+                            provided_methods.push((*item_id, item_has_printable_docs));
+                        }
+                    }
+                    ItemEnum::AssocConst { .. } => {
+                        // For now, treat associated consts similarly to required types or methods.
+                        // Could be a separate category if needed.
+                        // Let's put them with required types for now as they don't have 'body'.
+                        required_types.push((*item_id, item_has_printable_docs));
+                    }
                     _ => {} // Ignore others
                 }
             }
         }
 
         // If no selected associated item has printable documentation, skip printing the entire section
-        if !any_assoc_has_printable_docs {
+        if !has_printable_assoc_item {
             return;
         }
 
-        // Increment level counter for this section
+        // Sort items within each category
+        required_types.sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
+        required_methods.sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
+        provided_methods.sort_by_key(|(id, _)| self.krate.index.get(id).and_then(|i| i.name.clone()));
+
+
+        // Increment level counter for this "Associated Items" parent section
         self.increment_current_level();
         let assoc_items_header_level = self.get_current_header_level();
-        let header_prefix = self.get_header_prefix();
+        let header_prefix = self.get_header_prefix(); // Prefix for "Associated Items"
         writeln!(
             self.output,
-            "{} {} Associated Items\n", // Add newline after header
+            "{} {} Associated Items\n",
             "#".repeat(assoc_items_header_level),
             header_prefix
         )
         .unwrap();
 
-        // Push a new level for the subsections (Consts, Types, Fns)
-        self.push_level();
+        self.push_level(); // Push level for subsections
 
-        // Print in order: consts, types, fns, only if they have printable items
-        if assoc_consts.iter().any(|(_, has_docs)| *has_docs) {
-            self.increment_current_level(); // Increment for this subsection
-            let sub_section_level = self.get_current_header_level();
-            let sub_header_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "{} {} Associated Constants\n",
-                "#".repeat(sub_section_level),
-                sub_header_prefix
-            )
-            .unwrap();
-            self.push_level(); // Push level for items within subsection
-            for (id, has_item_docs) in assoc_consts {
-                if has_item_docs {
-                    self.print_associated_item_summary(id);
-                }
+        if required_types.iter().any(|(_, has_docs)| *has_docs) {
+            self.increment_current_level();
+            let sub_level = self.get_current_header_level();
+            let sub_prefix = self.get_header_prefix();
+            writeln!(self.output, "{} {} Required Associated Types\n", "#".repeat(sub_level), sub_prefix).unwrap();
+            self.push_level();
+            for (id, has_docs) in required_types {
+                if has_docs { self.print_associated_item_summary(&id); }
             }
-            self.pop_level(); // Pop item level
-        }
-        if assoc_types.iter().any(|(_, has_docs)| *has_docs) {
-            self.increment_current_level(); // Increment for this subsection
-            let sub_section_level = self.get_current_header_level();
-            let sub_header_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "{} {} Associated Types\n",
-                "#".repeat(sub_section_level),
-                sub_header_prefix
-            )
-            .unwrap();
-            self.push_level(); // Push level for items within subsection
-            for (id, has_item_docs) in assoc_types {
-                if has_item_docs {
-                    self.print_associated_item_summary(id);
-                }
-            }
-            self.pop_level(); // Pop item level
-        }
-        if assoc_fns.iter().any(|(_, has_docs)| *has_docs) {
-            self.increment_current_level(); // Increment for this subsection
-            let sub_section_level = self.get_current_header_level();
-            let sub_header_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "{} {} Associated Functions\n",
-                "#".repeat(sub_section_level),
-                sub_header_prefix
-            )
-            .unwrap();
-            self.push_level(); // Push level for items within subsection
-            for (id, has_item_docs) in assoc_fns {
-                if has_item_docs {
-                    self.print_associated_item_summary(id);
-                }
-            }
-            self.pop_level(); // Pop item level
+            self.pop_level();
         }
 
-        self.pop_level(); // Pop the subsection level
+        if required_methods.iter().any(|(_, has_docs)| *has_docs) {
+            self.increment_current_level();
+            let sub_level = self.get_current_header_level();
+            let sub_prefix = self.get_header_prefix();
+            writeln!(self.output, "{} {} Required Methods\n", "#".repeat(sub_level), sub_prefix).unwrap();
+            self.push_level();
+            for (id, has_docs) in required_methods {
+                 if has_docs { self.print_associated_item_summary(&id); }
+            }
+            self.pop_level();
+        }
+
+        if provided_methods.iter().any(|(_, has_docs)| *has_docs) {
+            self.increment_current_level();
+            let sub_level = self.get_current_header_level();
+            let sub_prefix = self.get_header_prefix();
+            writeln!(self.output, "{} {} Provided Methods\n", "#".repeat(sub_level), sub_prefix).unwrap();
+            self.push_level();
+            for (id, has_docs) in provided_methods {
+                if has_docs { self.print_associated_item_summary(&id); }
+            }
+            self.pop_level();
+        }
+        self.pop_level(); // Pop subsection level
     }
+
 
     /// Generates the formatted summary string for an associated item (for use within impl blocks or trait defs).
     /// Does NOT include the markdown header. Includes docs with adjusted headers, respecting template mode.
@@ -4029,7 +4016,8 @@ impl<'a> DocPrinter<'a> {
 
             // Generate summary first (handles template mode internally)
             if let Some(summary) = self.generate_associated_item_summary(assoc_item_id) {
-                let declaration = generate_item_declaration(item, self.krate);
+                let declaration =
+                    generate_item_declaration(item, self.krate, &self.current_module_path);
                 let assoc_item_header_level = self.get_current_header_level();
                 let header_prefix = self.get_header_prefix();
                 // Print Header (e.g. ##### 1.1.1.1: `declaration`)
@@ -4306,69 +4294,80 @@ impl<'a> DocPrinter<'a> {
             .collect();
 
         if !implementors.is_empty() {
-            // Increment level counter for this section
             self.increment_current_level();
             let implementors_section_level = self.get_current_header_level();
             let header_prefix = self.get_header_prefix();
             writeln!(
                 self.output,
-                "{} {} Implementors\n", // Add newline after header
+                "{} {} Implementors\n",
                 "#".repeat(implementors_section_level),
                 header_prefix
             )
             .unwrap();
 
-            // Push a new level for the impl items
             self.push_level();
             for impl_item in implementors {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    // Increment level counter for this implementor header
                     self.increment_current_level();
-                    // Only print the header for the implementation here
-                    let impl_header = self.format_impl_decl(imp);
+                    let impl_header_only = self.format_impl_decl_header_only(imp);
                     let impl_header_level = self.get_current_header_level();
                     let impl_prefix = self.get_header_prefix();
-                    // Print the impl block header (e.g. ##### 1.1.1.1: `impl ...`)
+
                     writeln!(
                         self.output,
-                        "{} {} `{}`\n", // Add newline after header
+                        "{} {} `{}`\n",
                         "#".repeat(impl_header_level),
                         impl_prefix,
-                        impl_header.trim() // Trim potential trailing space
+                        impl_header_only.trim()
                     )
                     .unwrap();
 
-                    // Print docs for the impl block itself (using helper)
-                    // Create a temporary DocPrinter to isolate output
+                    // Print where clause if it exists
+                    if !imp.generics.where_predicates.is_empty() {
+                        let where_clause =
+                            format_generics_where_only(&imp.generics.where_predicates, self.krate);
+                        writeln!(self.output, "```rust\n{}\n```\n", where_clause).unwrap();
+                    }
+
+                    // Print docs for the impl block itself
                     let mut temp_printer = self.clone_with_new_output();
-                    // Copy current doc path to temp printer for correct template marker generation
                     temp_printer.doc_path = self.doc_path.clone();
                     temp_printer.print_docs(impl_item);
                     write!(self.output, "{}", temp_printer.output).unwrap();
-
-                    // We don't print the associated items here, just list the implementor
                 }
             }
-            self.pop_level(); // Pop the impl item level
+            self.pop_level();
         }
     }
 
-    /// Helper to format a single-line impl block or trait impl header
-    #[allow(dead_code)] // Keep for potential future use
-    fn format_impl_header(&self, imp: &Impl) -> String {
-        let mut impl_header = String::new();
+
+    /// Helper to format only the header part of an impl declaration (e.g., `impl MyTrait for MyStruct<T>`)
+    fn format_impl_decl_header_only(&self, imp: &Impl) -> String {
+        let mut decl = String::new();
         if imp.is_unsafe {
-            write!(impl_header, "unsafe ").unwrap();
+            write!(decl, "unsafe ").unwrap();
+        }
+        write!(decl, "impl").unwrap();
+
+        // Add generics params <...> to the impl block itself (not the trait part)
+        let generics_params = format_generics_params_only(&imp.generics.params, self.krate);
+        if !generics_params.is_empty() {
+            write!(decl, "{}", generics_params).unwrap();
         }
 
+        // Add Trait (if it's a trait impl)
         if let Some(trait_path) = &imp.trait_ {
-            write!(impl_header, "impl {}", format_path(trait_path, self.krate)).unwrap();
-        } else {
-            write!(impl_header, "impl {}", format_type(&imp.for_, self.krate)).unwrap();
+            // For trait impl header, format trait_path with its own generics
+            write!(decl, " {} for", format_path(trait_path, self.krate)).unwrap();
         }
 
-        impl_header
+        // Add Type it's for
+        write!(decl, " {}", format_type(&imp.for_, self.krate)).unwrap();
+
+        // DO NOT add where clause here
+        decl
     }
+
 
     /// Helper to format an impl block or trait impl declaration line.
     fn format_impl_decl(&self, imp: &Impl) -> String {
@@ -4776,6 +4775,7 @@ impl<'a> DocPrinter<'a> {
             output: String::new(),                 // New empty output
             module_tree: self.module_tree.clone(), // Clone module tree as well
             doc_path: self.doc_path.clone(),       // Clone doc path
+            current_module_path: self.current_module_path.clone(), // Clone current module path
         }
     }
 
@@ -4789,11 +4789,28 @@ impl<'a> DocPrinter<'a> {
         }
 
         if let Some(item) = self.krate.index.get(&module_id) {
+            // Update current_module_path
+            let module_segment = item.name.as_deref().unwrap_or("").to_string();
+            if module_id == self.krate.root {
+                // For root module, use the crate name
+                self.current_module_path = vec![self
+                    .krate
+                    .index
+                    .get(&self.krate.root)
+                    .unwrap()
+                    .name
+                    .as_ref()
+                    .unwrap()
+                    .replace('-', "_")];
+            } else {
+                self.current_module_path.push(module_segment);
+            }
+
             let module_header_level = self.get_current_header_level(); // Should be 2
             let header_prefix = self.get_header_prefix();
-            let module_path_str = format_id_path_canonical(&module_id, self.krate); // Use canonical path
+            let module_path_str = self.current_module_path.join("::");
             let display_path = if module_path_str.is_empty() {
-                item.name.as_deref().unwrap_or("::") // Use item name for root if path is empty
+                item.name.as_deref().unwrap_or("::")
             } else {
                 &module_path_str
             };
@@ -4823,15 +4840,19 @@ impl<'a> DocPrinter<'a> {
             self.increment_current_level();
 
             // Recursively print child modules
-            // Clone children list to avoid borrow checker issue
             if let Some(children) = self.module_tree.children.get(&module_id).cloned() {
-                // No need to manage level here, the recursive call handles it
                 for child_id in children {
                     self.print_module_recursive(child_id);
                 }
             }
+
+            // Restore current_module_path
+            if module_id != self.krate.root {
+                self.current_module_path.pop();
+            }
         }
     }
+
 
     /// Finalizes the documentation string, printing the crate header and contents.
     fn finalize(mut self) -> String {
