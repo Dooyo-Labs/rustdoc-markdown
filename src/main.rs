@@ -24,7 +24,7 @@ use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
 
 // Import pulldown-cmark related items
-use pulldown_cmark::{Event, HeadingLevel, Parser as CmarkParser, Tag, TagEnd}; // Import HeadingLevel, Tag, TagEnd
+use pulldown_cmark::{Event, Parser as CmarkParser, Tag, TagEnd}; // Import Tag, TagEnd
 use pulldown_cmark_to_cmark::cmark;
 
 const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
@@ -4203,7 +4203,7 @@ impl<'a> DocPrinter<'a> {
                     .map(|item| {
                         clean_trait_path(item.name.as_deref().unwrap_or_else(|| {
                             // Fallback to path if name is None (e.g. for re-exported traits)
-                            &format_id_path_canonical(item.id(), self.krate)
+                            &format_id_path_canonical(&item.id, self.krate)
                         }))
                     })
                     .collect();
@@ -5082,7 +5082,7 @@ impl<'a> DocPrinter<'a> {
                 .map(|item| {
                     clean_trait_path(item.name.as_deref().unwrap_or_else(|| {
                         // Fallback to path if name is None (e.g. for re-exported traits)
-                        &format_id_path_canonical(item.id(), self.krate)
+                        &format_id_path_canonical(&item.id, self.krate)
                     }))
                 })
                 .collect();
