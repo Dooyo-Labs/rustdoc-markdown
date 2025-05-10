@@ -3142,7 +3142,7 @@ impl<'a> DocPrinter<'a> {
                     | ItemEnum::Enum(_)
                     | ItemEnum::Union(_)
                     | ItemEnum::Primitive(_) => {
-                        all_type_ids_with_impls.insert(*id);
+                        all_type_ids_with_impls.insert(item.id);
                     }
                     _ => {}
                 }
@@ -4201,10 +4201,12 @@ impl<'a> DocPrinter<'a> {
                     .iter()
                     .filter_map(|id| self.krate.index.get(id))
                     .map(|item| {
-                        clean_trait_path(item.name.as_deref().unwrap_or_else(|| {
-                            // Fallback to path if name is None (e.g. for re-exported traits)
-                            &format_id_path_canonical(&item.id, self.krate)
-                        }))
+                        let name_or_path_str = item
+                            .name
+                            .as_deref()
+                            .map(String::from)
+                            .unwrap_or_else(|| format_id_path_canonical(&item.id, self.krate));
+                        clean_trait_path(&name_or_path_str)
                     })
                     .collect();
                 sorted_missing_common_traits.sort();
@@ -5080,10 +5082,12 @@ impl<'a> DocPrinter<'a> {
                 .iter()
                 .filter_map(|id| self.krate.index.get(id))
                 .map(|item| {
-                    clean_trait_path(item.name.as_deref().unwrap_or_else(|| {
-                        // Fallback to path if name is None (e.g. for re-exported traits)
-                        &format_id_path_canonical(&item.id, self.krate)
-                    }))
+                    let name_or_path_str = item
+                        .name
+                        .as_deref()
+                        .map(String::from)
+                        .unwrap_or_else(|| format_id_path_canonical(&item.id, self.krate));
+                    clean_trait_path(&name_or_path_str)
                 })
                 .collect();
             sorted_common_traits.sort();
