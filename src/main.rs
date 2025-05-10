@@ -2573,28 +2573,43 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
 
 /// Generates the primary declaration string for an item (e.g., `struct Foo`, `fn bar()`).
 /// For functions, this is deliberately simplified (no attrs, no where clause).
-/// For traits, prepends the current module path.
+/// For traits, structs, and enums, prepends the current module path.
 fn generate_item_declaration(item: &Item, krate: &Crate, current_module_path: &[String]) -> String {
     let name = item.name.as_deref().unwrap_or_else(|| match &item.inner {
         ItemEnum::StructField(_) => "{unnamed_field}", // Special case for unnamed fields
         _ => "{unnamed}",
     });
     match &item.inner {
-        ItemEnum::Struct(s) => format!(
-            "struct {}{}",
-            name,
-            format_generics_params_only(&s.generics.params, krate)
-        ),
-        ItemEnum::Enum(e) => format!(
-            "enum {}{}",
-            name,
-            format_generics_params_only(&e.generics.params, krate)
-        ),
-        ItemEnum::Union(u) => format!(
-            "union {}{}",
-            name,
-            format_generics_params_only(&u.generics.params, krate)
-        ),
+        ItemEnum::Struct(s) => {
+            let mut fq_path_parts = current_module_path.to_vec();
+            fq_path_parts.push(name.to_string());
+            let fq_path = fq_path_parts.join("::");
+            format!(
+                "struct {}{}",
+                fq_path,
+                format_generics_params_only(&s.generics.params, krate)
+            )
+        }
+        ItemEnum::Enum(e) => {
+            let mut fq_path_parts = current_module_path.to_vec();
+            fq_path_parts.push(name.to_string());
+            let fq_path = fq_path_parts.join("::");
+            format!(
+                "enum {}{}",
+                fq_path,
+                format_generics_params_only(&e.generics.params, krate)
+            )
+        }
+        ItemEnum::Union(u) => {
+            let mut fq_path_parts = current_module_path.to_vec();
+            fq_path_parts.push(name.to_string());
+            let fq_path = fq_path_parts.join("::");
+            format!(
+                "union {}{}",
+                fq_path,
+                format_generics_params_only(&u.generics.params, krate)
+            )
+        }
         ItemEnum::Trait(t) => {
             let unsafe_kw = if t.is_unsafe { "unsafe " } else { "" };
             let auto = if t.is_auto { "auto " } else { "" };
