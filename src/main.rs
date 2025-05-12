@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BT
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::{self, File}; // Import fs module
 use std::hash::{Hash, Hasher};
-use std.io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
+use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
@@ -2618,7 +2618,7 @@ impl Hash for NormalizedTraitImpl {
 // Helper function to convert GenericArgs to Generics
 // This function attempts to create a Generics struct from GenericArgs.
 // It's a simplification, primarily for representing the generics *of a path* (like a trait path).
-fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>) -> Generics {
+fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>, krate: &Crate) -> Generics {
     let mut params = Vec::new();
     let mut where_predicates = Vec::new(); // Not typically part of GenericArgs directly
 
@@ -2632,7 +2632,7 @@ fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>) -> Generics {
                         GenericArg::Type(t) => {
                             let name = match t {
                                 Type::Generic(g_name) => g_name,
-                                _ => format_type(&t, &Crate::default()), // Fallback to formatted type if not simple generic. Pass dummy Crate.
+                                _ => format_type(&t, &krate), // Fallback to formatted type if not simple generic.
                             };
                             params.push(GenericParamDef {
                                 name,
@@ -2683,20 +2683,23 @@ fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>) -> Generics {
                             // Construct a Type for the LHS: Self::AssocName<Args>
                             let lhs_type = Type::QualifiedPath {
                                 name: assoc_name,
-                                args: assoc_args,
+                                args: Box::new(assoc_args),
                                 self_type: Box::new(Type::Generic("Self".to_string())), // Placeholder "Self"
                                 trait_: None, // Assuming it's an associated type on "Self"
                             };
-                            where_predicates.push(WherePredicate::EqPredicate { lhs: lhs_type, rhs: term });
+                            where_predicates.push(WherePredicate::EqPredicate {
+                                lhs: lhs_type,
+                                rhs: term,
+                            });
                         }
                         rustdoc_types::AssocItemConstraint {
                             name: assoc_name,
                             args: assoc_args,
                             binding: rustdoc_types::AssocItemConstraintKind::Constraint(bounds),
                         } => {
-                             let for_type = Type::QualifiedPath {
+                            let for_type = Type::QualifiedPath {
                                 name: assoc_name,
-                                args: assoc_args,
+                                args: Box::new(assoc_args),
                                 self_type: Box::new(Type::Generic("Self".to_string())),
                                 trait_: None,
                             };
@@ -2706,7 +2709,6 @@ fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>) -> Generics {
                                 generic_params: vec![], // HRTBs not directly in constraints
                             });
                         }
-
                     }
                 }
             }
@@ -2719,7 +2721,6 @@ fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>) -> Generics {
         where_predicates,
     }
 }
-
 
 impl NormalizedTraitImpl {
     /// Creates a NormalizedTraitImpl from a rustdoc_types::Impl and the krate context.
@@ -2747,7 +2748,7 @@ impl NormalizedTraitImpl {
         NormalizedTraitImpl {
             trait_id: trait_path.id,
             trait_path_str: cleaned_trait_path.clone(),
-            trait_generics: generic_args_to_generics(trait_path.args.clone()),
+            trait_generics: generic_args_to_generics(trait_path.args.clone(), krate),
             impl_generics: imp.generics.clone(),
             is_auto: AUTO_TRAITS.contains(&cleaned_trait_path.as_str()) && imp.is_synthetic,
             is_unsafe_impl: imp.is_unsafe,
@@ -2757,7 +2758,6 @@ impl NormalizedTraitImpl {
         }
     }
 }
-
 
 /// Generates the primary declaration string for an item (e.g., `struct Foo`, `fn bar()`).
 /// For functions, this is deliberately simplified (no attrs, no where clause).
@@ -4735,7 +4735,8 @@ impl<'a> DocPrinter<'a> {
                 .unwrap();
             }
 
-            let formatted_list = self.format_trait_list(&non_common_trait_impls, false, Some(target_item_id));
+            let formatted_list =
+                self.format_trait_list(&non_common_trait_impls, false, Some(target_item_id));
             if !formatted_list.is_empty() {
                 writeln!(self.output, "{}", formatted_list).unwrap();
             }
@@ -4743,7 +4744,6 @@ impl<'a> DocPrinter<'a> {
             self.post_increment_current_level();
         }
     }
-
 
     /// Prints implementors *of* a trait. Handles template mode for the impl docs.
     fn print_trait_implementors(&mut self, impl_ids: &[Id], _trait_item: &Item) {
