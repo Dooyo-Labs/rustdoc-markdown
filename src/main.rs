@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BT
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::{self, File}; // Import fs module
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
-use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
+use std::path::{self, Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -3088,7 +3088,7 @@ struct DocPrinter<'a> {
     // Tracks the current path in the document structure (e.g., [1, 2, 1] -> 1.2.1)
     doc_path: Vec<usize>,
     current_module_path: Vec<String>, // Tracks the current module's string path
-    common_traits: HashSet<Id>,       // New: Stores IDs of common traits
+    common_traits: HashMap<(Id, Generics), Path>,
     all_type_ids_with_impls: HashSet<Id>, // New: Stores IDs of types with impls
 }
 
@@ -3127,27 +3127,29 @@ impl<'a> DocPrinter<'a> {
     }
 
     /// Pre-calculates common traits.
+    ///
+    /// Note: we can't assume that the traits exist in krate.index because they might be
+    /// defined in other crates.
     fn calculate_common_traits(
         krate: &'a Crate,
         selected_ids: &'a HashSet<Id>,
-    ) -> (HashSet<Id>, HashSet<Id>) {
-        let mut trait_counts: HashMap<Id, usize> = HashMap::new();
+    ) -> (HashMap<(Id, Generics), Path>, HashSet<Id>) {
+        let mut trait_counts: HashMap<(Id, Generics), (Path, usize)> = HashMap::new();
         let mut all_type_ids_with_impls = HashSet::new();
 
-        // Identify all selected types that can have implementations
-        for id in selected_ids {
-            if let Some(item) = krate.index.get(id) {
-                match item.inner {
-                    ItemEnum::Struct(_)
-                    | ItemEnum::Enum(_)
-                    | ItemEnum::Union(_)
-                    | ItemEnum::Primitive(_) => {
-                        all_type_ids_with_impls.insert(item.id);
+        for item in krate.index.values() {
+            if let ItemEnum::Impl(imp) = &item.inner {
+                if let Some(for_type_id) = get_type_id(&imp.for_) {
+                    if selected_ids.contains(&for_type_id) {
+                        all_type_ids_with_impls.insert(for_type_id);
                     }
-                    _ => {}
                 }
             }
         }
+        debug!(
+            "Found {} types with trait implementations",
+            all_type_ids_with_impls.len()
+        );
 
         // Count trait implementations for these types
         for item in krate.index.values() {
@@ -3156,7 +3158,10 @@ impl<'a> DocPrinter<'a> {
                     // Check if the 'for_' type of the impl is one of our selected types
                     if let Some(for_type_id) = get_type_id(&imp.for_) {
                         if all_type_ids_with_impls.contains(&for_type_id) {
-                            *trait_counts.entry(trait_path.id).or_insert(0) += 1;
+                            trait_counts
+                                .entry((trait_path.id, imp.generics.clone()))
+                                .or_insert((trait_path.clone(), 0))
+                                .1 += 1;
                         }
                     } else {
                         // If get_type_id returns None for imp.for_, it means it's not a direct Path.
@@ -3168,7 +3173,20 @@ impl<'a> DocPrinter<'a> {
             }
         }
 
-        let mut common_traits = HashSet::new();
+        debug!("Found {} traits", trait_counts.len());
+        for ((_, generics), (path, count)) in &trait_counts {
+            let percent = (*count as f64 / all_type_ids_with_impls.len() as f64) * 100.0;
+            debug!(
+                "Trait {}{} has {} / {} implementations ({}%)",
+                path.path,
+                format_generics_full(&generics, krate),
+                count,
+                all_type_ids_with_impls.len(),
+                percent.round() as u8
+            );
+        }
+
+        let mut common_traits = HashMap::new();
         let num_types_with_impls = all_type_ids_with_impls.len();
         if num_types_with_impls == 0 {
             return (common_traits, all_type_ids_with_impls); // Avoid division by zero
@@ -3176,20 +3194,17 @@ impl<'a> DocPrinter<'a> {
 
         let threshold = num_types_with_impls / 2; // Integer division for >= 50%
 
-        for (trait_id, count) in trait_counts {
+        for ((trait_id, generics), (path, count)) in trait_counts {
             if count >= threshold {
-                if krate.index.contains_key(&trait_id) {
-                    // Ensure the trait is part of the current crate
-                    common_traits.insert(trait_id);
-                    if let Some(trait_item) = krate.index.get(&trait_id) {
-                        info!(
-                            "Identified common trait: {} (implemented by {} of {} types)",
-                            trait_item.name.as_deref().unwrap_or("?"),
-                            count,
-                            num_types_with_impls
-                        );
-                    }
-                }
+                // Ensure the trait is part of the current crate
+                common_traits.insert((trait_id, generics.clone()), path.clone());
+                info!(
+                    "Identified common trait: {}{} (implemented by {} of {} types)",
+                    path.path,
+                    format_generics_full(&generics, krate),
+                    count,
+                    num_types_with_impls
+                );
             }
         }
         (common_traits, all_type_ids_with_impls)
@@ -4163,8 +4178,9 @@ impl<'a> DocPrinter<'a> {
         for impl_item in &trait_impls {
             if let ItemEnum::Impl(imp) = &impl_item.inner {
                 if let Some(trait_path) = &imp.trait_ {
-                    if self.common_traits.contains(&trait_path.id) {
-                        missing_common_traits.remove(&trait_path.id);
+                    let key = (trait_path.id, imp.generics.clone());
+                    if self.common_traits.contains_key(&key) {
+                        missing_common_traits.remove(&key);
                         // Mark common trait impls as printed so they don't show up in "Other"
                         // or get printed again if they were also complex.
                         self.printed_ids.insert(impl_item.id);
@@ -4199,20 +4215,12 @@ impl<'a> DocPrinter<'a> {
             if !missing_common_traits.is_empty() {
                 let mut sorted_missing_common_traits: Vec<String> = missing_common_traits
                     .iter()
-                    .filter_map(|id| self.krate.index.get(id))
-                    .map(|item| {
-                        let name_or_path_str = item
-                            .name
-                            .as_deref()
-                            .map(String::from)
-                            .unwrap_or_else(|| format_id_path_canonical(&item.id, self.krate));
-                        clean_trait_path(&name_or_path_str)
-                    })
+                    .map(|(_, path)| clean_trait_path(&path.path).clone())
                     .collect();
                 sorted_missing_common_traits.sort();
                 writeln!(
                     self.output,
-                    "**(Note: Does not implement `{}`*)**\n",
+                    "**(Note: Does not implement `{}`)**\n",
                     sorted_missing_common_traits.join("`, `")
                 )
                 .unwrap();
@@ -5065,39 +5073,6 @@ impl<'a> DocPrinter<'a> {
         // Increment H2 counter for the next section (README or Common Traits)
         self.post_increment_current_level();
 
-        // Print Common Traits Section (H2)
-        if !self.common_traits.is_empty() {
-            let common_traits_level = self.get_current_header_level(); // Should be 2
-            let common_traits_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "\n{} {} Common Traits\n",
-                "#".repeat(common_traits_level),
-                common_traits_prefix
-            )
-            .unwrap();
-            writeln!(self.output, "The following traits are commonly implemented by types in this crate. Unless otherwise noted, you can assume these traits are implemented:\n").unwrap();
-            let mut sorted_common_traits: Vec<String> = self
-                .common_traits
-                .iter()
-                .filter_map(|id| self.krate.index.get(id))
-                .map(|item| {
-                    let name_or_path_str = item
-                        .name
-                        .as_deref()
-                        .map(String::from)
-                        .unwrap_or_else(|| format_id_path_canonical(&item.id, self.krate));
-                    clean_trait_path(&name_or_path_str)
-                })
-                .collect();
-            sorted_common_traits.sort();
-            for trait_name in sorted_common_traits {
-                writeln!(self.output, "- `{}`", trait_name).unwrap();
-            }
-            writeln!(self.output).unwrap();
-            self.post_increment_current_level(); // Increment H2 counter
-        }
-
         // Print README content if available
         if let Some(readme) = &self.readme_content {
             info!("Injecting README content.");
@@ -5114,6 +5089,37 @@ impl<'a> DocPrinter<'a> {
             // Use the new adjust_markdown_headers function
             let adjusted_readme = adjust_markdown_headers(readme, section_level);
             writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+            self.post_increment_current_level(); // Increment H2 counter
+        }
+
+        // Print Common Traits Section (H2)
+        if !self.common_traits.is_empty() {
+            let common_traits_level = self.get_current_header_level(); // Should be 2
+            let common_traits_prefix = self.get_header_prefix();
+            writeln!(
+                self.output,
+                "\n{} {} Common Traits\n",
+                "#".repeat(common_traits_level),
+                common_traits_prefix
+            )
+            .unwrap();
+            writeln!(self.output, "The following traits are commonly implemented by types in this crate. Unless otherwise noted, you can assume these traits are implemented:\n").unwrap();
+            let mut sorted_common_traits: Vec<String> = self
+                .common_traits
+                .iter()
+                .map(|((_, generics), path)| {
+                    format!(
+                        "{}{}",
+                        clean_trait_path(&path.path),
+                        format_generics_full(generics, &self.krate)
+                    )
+                })
+                .collect();
+            sorted_common_traits.sort();
+            for trait_name in sorted_common_traits {
+                writeln!(self.output, "- `{}`", trait_name).unwrap();
+            }
+            writeln!(self.output).unwrap();
             self.post_increment_current_level(); // Increment H2 counter
         }
 
