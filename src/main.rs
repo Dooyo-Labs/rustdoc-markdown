@@ -1267,26 +1267,21 @@ fn find_generic_args_dependencies(
             }
         }
         GenericArgs::Parenthesized { inputs, output, .. } => {
-            // Usually for Fn traits. source_id references this Fn trait path.
-            for input in inputs {
-                find_type_dependencies(
-                    input,
-                    source_id,
-                    krate,
-                    dependencies,
-                    graph,
-                    EdgeLabel::Dependency, // Input type for Fn trait arg
-                );
-            }
-            if let Some(out) = output {
-                find_type_dependencies(
-                    out,
-                    source_id,
-                    krate,
-                    dependencies,
-                    graph,
-                    EdgeLabel::Dependency, // Output type for Fn trait arg
-                );
+            if angle_brackets_only {
+                "".to_string() // Don't format Fn() args when angle brackets are expected
+            } else {
+                // Format like function signature inputs/output
+                format!(
+                    "({}) -> {}",
+                    inputs
+                        .iter()
+                        .map(|t| format_type(t, krate))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    output
+                        .as_ref()
+                        .map_or("()".to_string(), |t| format_type(t, krate))
+                )
             }
         }
         GenericArgs::ReturnTypeNotation { .. } => {} // TODO: Handle this? T::method(..) - maybe the T part?
@@ -2073,7 +2068,14 @@ fn format_id_path_canonical(id: &Id, krate: &Crate) -> String {
         .paths
         .get(id)
         .map(|p| p.path.join("::"))
-        .unwrap_or_else(|| format!("{{id:{}}}", id.0)) // Fallback
+        .unwrap_or_else(|| {
+            // Fallback if not in paths (e.g., some external or generated IDs)
+            krate
+                .index
+                .get(id)
+                .and_then(|item| item.name.as_deref())
+                .map_or_else(|| format!("{{id:{}}}", id.0), |name| name.to_string())
+        })
 }
 
 /// Formats a Path struct, trying to use the canonical path for the ID.
@@ -2410,7 +2412,7 @@ fn format_generic_param_def(p: &GenericParamDef, krate: &Crate) -> String {
         rustdoc_types::GenericParamDefKind::Type {
             bounds,
             default,
-            is_synthetic, // Renamed from synthetic
+            is_synthetic,
             ..
         } => {
             format!(
@@ -2570,6 +2572,70 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
 }
 
 // --- Structured Printing Logic ---
+
+/// Represents a normalized trait implementation for comparison and storage.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct NormalizedTraitImpl {
+    trait_id: Id,
+    /// Cleaned, canonical path to the trait itself (e.g., "Clone", "std::fmt::Debug").
+    /// Does NOT include generics of the trait path.
+    trait_path_str: String,
+    /// Generics of the trait path itself (e.g., `<'a>` in `Trait<'a>`).
+    trait_generics: Generics,
+    /// Generics of the `impl` block (e.g., `<T: Bound>` in `impl<T: Bound> Trait for Foo<T>`).
+    impl_generics: Generics,
+    is_auto: bool,
+    is_unsafe_impl: bool,
+    is_blanket: bool,
+    /// A user-friendly, cleaned string representation of the trait including its generics,
+    /// e.g., "Debug", "Iterator<Item = u32>". Used for display in lists.
+    cleaned_path_for_display: String,
+    // Store the original rustdoc_types::Impl for full formatting if needed later,
+    // but this might be too much for an Eq/Hash key.
+    // For now, we'll reconstruct the display string from the components above.
+}
+
+impl NormalizedTraitImpl {
+    /// Creates a NormalizedTraitImpl from a rustdoc_types::Impl and the krate context.
+    fn from_impl(imp: &Impl, trait_path: &Path, krate: &Crate) -> Self {
+        let trait_path_str = format_id_path_canonical(&trait_path.id, krate);
+        let cleaned_trait_path = clean_trait_path(&trait_path_str);
+
+        let mut display_generics = trait_path.generics.clone();
+        if display_generics.is_none() {
+            display_generics = Some(Box::default());
+        }
+
+        let display_path_with_generics = format!(
+            "{}{}",
+            cleaned_trait_path,
+            if let Some(args) = &trait_path.args {
+                let args_str = format_generic_args(args, krate, true);
+                if !args_str.is_empty() {
+                    format!("<{}>", args_str)
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        );
+
+        NormalizedTraitImpl {
+            trait_id: trait_path.id,
+            trait_path_str: cleaned_trait_path.clone(), // Store the cleaned path
+            trait_generics: trait_path
+                .args
+                .as_ref()
+                .map_or_else(Generics::default, |ga| (*ga).clone().into()), // Convert GenericArgs to Generics if possible, or default. This is a simplification.
+            impl_generics: imp.generics.clone(),
+            is_auto: AUTO_TRAITS.contains(&cleaned_trait_path.as_str()) && imp.is_synthetic,
+            is_unsafe_impl: imp.is_unsafe,
+            is_blanket: imp.blanket_impl.is_some(),
+            cleaned_path_for_display: display_path_with_generics,
+        }
+    }
+}
 
 /// Generates the primary declaration string for an item (e.g., `struct Foo`, `fn bar()`).
 /// For functions, this is deliberately simplified (no attrs, no where clause).
@@ -3088,8 +3154,9 @@ struct DocPrinter<'a> {
     // Tracks the current path in the document structure (e.g., [1, 2, 1] -> 1.2.1)
     doc_path: Vec<usize>,
     current_module_path: Vec<String>, // Tracks the current module's string path
-    common_traits: HashMap<(Id, Generics), Path>,
+    crate_common_traits: HashSet<NormalizedTraitImpl>, // Renamed
     all_type_ids_with_impls: HashSet<Id>, // New: Stores IDs of types with impls
+    module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl>>, // New
 }
 
 impl<'a> DocPrinter<'a> {
@@ -3104,8 +3171,8 @@ impl<'a> DocPrinter<'a> {
         template_mode: bool, // Add template mode flag
     ) -> Self {
         let module_tree = Self::build_module_tree(krate);
-        let (common_traits, all_type_ids_with_impls) =
-            Self::calculate_common_traits(krate, selected_ids);
+        let (crate_common_traits, all_type_ids_with_impls) =
+            Self::calculate_crate_common_traits(krate, selected_ids);
 
         DocPrinter {
             krate,
@@ -3118,96 +3185,151 @@ impl<'a> DocPrinter<'a> {
             template_mode, // Store template mode flag
             printed_ids: HashSet::new(),
             output: String::new(),
-            module_tree,                 // Initialize module tree
-            doc_path: Vec::new(),        // Initialize empty document path
-            current_module_path: vec![], // Initialize empty module path
-            common_traits,               // Store common traits
-            all_type_ids_with_impls,     // Store types with impls
+            module_tree,                          // Initialize module tree
+            doc_path: Vec::new(),                 // Initialize empty document path
+            current_module_path: vec![],          // Initialize empty module path
+            crate_common_traits,                  // Store common traits
+            all_type_ids_with_impls,              // Store types with impls
+            module_common_traits: HashMap::new(), // Initialize module common traits
         }
     }
 
-    /// Pre-calculates common traits.
-    ///
-    /// Note: we can't assume that the traits exist in krate.index because they might be
-    /// defined in other crates.
-    fn calculate_common_traits(
+    /// Pre-calculates common traits for the entire crate.
+    fn calculate_crate_common_traits(
         krate: &'a Crate,
         selected_ids: &'a HashSet<Id>,
-    ) -> (HashMap<(Id, Generics), Path>, HashSet<Id>) {
-        let mut trait_counts: HashMap<(Id, Generics), (Path, usize)> = HashMap::new();
+    ) -> (HashSet<NormalizedTraitImpl>, HashSet<Id>) {
+        let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
         let mut all_type_ids_with_impls = HashSet::new();
 
         for item in krate.index.values() {
             if let ItemEnum::Impl(imp) = &item.inner {
                 if let Some(for_type_id) = get_type_id(&imp.for_) {
+                    // Only consider types that are selected for documentation
                     if selected_ids.contains(&for_type_id) {
                         all_type_ids_with_impls.insert(for_type_id);
+
+                        if let Some(trait_path) = &imp.trait_ {
+                            let norm_impl = NormalizedTraitImpl::from_impl(imp, trait_path, krate);
+                            *trait_counts.entry(norm_impl).or_insert(0) += 1;
+                        }
                     }
                 }
             }
         }
         debug!(
-            "Found {} types with trait implementations",
+            "Found {} types with trait implementations for crate-level common trait calculation.",
             all_type_ids_with_impls.len()
         );
 
-        // Count trait implementations for these types
-        for item in krate.index.values() {
-            if let ItemEnum::Impl(imp) = &item.inner {
-                if let Some(trait_path) = &imp.trait_ {
-                    // Check if the 'for_' type of the impl is one of our selected types
-                    if let Some(for_type_id) = get_type_id(&imp.for_) {
-                        if all_type_ids_with_impls.contains(&for_type_id) {
-                            trait_counts
-                                .entry((trait_path.id, imp.generics.clone()))
-                                .or_insert((trait_path.clone(), 0))
-                                .1 += 1;
+        let mut common_traits_set = HashSet::new();
+        if all_type_ids_with_impls.is_empty() {
+            return (common_traits_set, all_type_ids_with_impls);
+        }
+
+        let threshold = (all_type_ids_with_impls.len() as f32 * 0.5).ceil() as usize;
+        debug!(
+            "Crate common trait threshold: {} (out of {} types)",
+            threshold,
+            all_type_ids_with_impls.len()
+        );
+
+        for (norm_impl, count) in trait_counts {
+            if count >= threshold {
+                common_traits_set.insert(norm_impl.clone());
+                info!(
+                    "Identified crate-common trait: {} (implemented by {} of {} types)",
+                    norm_impl.cleaned_path_for_display,
+                    count,
+                    all_type_ids_with_impls.len()
+                );
+            }
+        }
+        (common_traits_set, all_type_ids_with_impls)
+    }
+
+    /// Calculates common traits for a specific module.
+    fn calculate_module_common_traits(
+        &self,
+        module_id: &Id,
+    ) -> (HashSet<NormalizedTraitImpl>, usize) {
+        let mut module_common_traits = self.crate_common_traits.clone(); // Start with crate-level
+        let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
+        let mut module_types_with_impls_count = 0;
+
+        if let Some(resolved_mod) = self.resolved_modules.get(module_id) {
+            let mut module_types_considered = HashSet::new();
+            for item_id in &resolved_mod.items {
+                if let Some(item) = self.krate.index.get(item_id) {
+                    // Consider structs, enums, unions, primitives for common trait calculation within the module
+                    if matches!(
+                        item.inner,
+                        ItemEnum::Struct(_)
+                            | ItemEnum::Enum(_)
+                            | ItemEnum::Union(_)
+                            | ItemEnum::Primitive(_)
+                    ) && self.selected_ids.contains(item_id)
+                    {
+                        // Check if this type implements any traits
+                        let has_impls = self.krate.index.values().any(|idx_item| {
+                            if let ItemEnum::Impl(imp) = &idx_item.inner {
+                                if let Some(for_id) = get_type_id(&imp.for_) {
+                                    return for_id == *item_id;
+                                }
+                            }
+                            false
+                        });
+                        if has_impls {
+                            module_types_considered.insert(*item_id);
                         }
-                    } else {
-                        // If get_type_id returns None for imp.for_, it means it's not a direct Path.
-                        // This can happen for e.g. `impl Trait for Box<SomeType>`.
-                        // For simplicity, we currently only count direct type impls.
-                        // A more sophisticated approach might try to resolve the inner type.
+                    }
+                }
+            }
+            module_types_with_impls_count = module_types_considered.len();
+
+            if module_types_with_impls_count == 0 {
+                return (module_common_traits, 0);
+            }
+
+            // Count traits implemented by these module types
+            for item_id in &module_types_considered {
+                for krate_item in self.krate.index.values() {
+                    if let ItemEnum::Impl(imp) = &krate_item.inner {
+                        if let Some(for_id) = get_type_id(&imp.for_) {
+                            if for_id == *item_id {
+                                if let Some(trait_path) = &imp.trait_ {
+                                    let norm_impl =
+                                        NormalizedTraitImpl::from_impl(imp, trait_path, self.krate);
+                                    *trait_counts.entry(norm_impl).or_insert(0) += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let threshold = (module_types_with_impls_count as f32 * 0.5).ceil() as usize;
+            debug!(
+                "Module {:?} common trait threshold: {} (out of {} types in module)",
+                module_id, threshold, module_types_with_impls_count
+            );
+
+            for (norm_impl, count) in trait_counts {
+                if count >= threshold {
+                    if module_common_traits.insert(norm_impl.clone()) {
+                        // Inserted a new one not present in crate_common_traits
+                        info!(
+                            "Identified module-specific common trait for {:?}: {} (implemented by {} of {} module types)",
+                            self.krate.paths.get(module_id).map(|p|p.path.join("::")).unwrap_or_default(),
+                            norm_impl.cleaned_path_for_display,
+                            count,
+                            module_types_with_impls_count
+                        );
                     }
                 }
             }
         }
-
-        debug!("Found {} traits", trait_counts.len());
-        for ((_, generics), (path, count)) in &trait_counts {
-            let percent = (*count as f64 / all_type_ids_with_impls.len() as f64) * 100.0;
-            debug!(
-                "Trait {}{} has {} / {} implementations ({}%)",
-                path.path,
-                format_generics_full(&generics, krate),
-                count,
-                all_type_ids_with_impls.len(),
-                percent.round() as u8
-            );
-        }
-
-        let mut common_traits = HashMap::new();
-        let num_types_with_impls = all_type_ids_with_impls.len();
-        if num_types_with_impls == 0 {
-            return (common_traits, all_type_ids_with_impls); // Avoid division by zero
-        }
-
-        let threshold = num_types_with_impls / 2; // Integer division for >= 50%
-
-        for ((trait_id, generics), (path, count)) in trait_counts {
-            if count >= threshold {
-                // Ensure the trait is part of the current crate
-                common_traits.insert((trait_id, generics.clone()), path.clone());
-                info!(
-                    "Identified common trait: {}{} (implemented by {} of {} types)",
-                    path.path,
-                    format_generics_full(&generics, krate),
-                    count,
-                    num_types_with_impls
-                );
-            }
-        }
-        (common_traits, all_type_ids_with_impls)
+        (module_common_traits, module_types_with_impls_count)
     }
 
     /// Builds the module hierarchy tree.
@@ -4139,67 +4261,335 @@ impl<'a> DocPrinter<'a> {
         }
     }
 
-    /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
-    /// Handles template mode for impl docs. Handles blanket impls specially.
-    fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
-        let target_name = target_item.name.as_deref().unwrap_or_else(|| {
-            match &target_item.inner {
-                ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
-                _ => "{unknown_primitive}", // Should not happen if called correctly
-            }
-        });
+    /// Helper to categorize and format a list of NormalizedTraitImpls for display.
+    fn format_trait_list(
+        &mut self,
+        traits: &[NormalizedTraitImpl],
+        is_common_traits_section: bool, // True if called from "Common Traits" header
+    ) -> String {
+        if traits.is_empty() {
+            return String::new();
+        }
 
-        let all_impls: Vec<&Item> = impl_ids
+        let mut output = String::new();
+        let mut auto_traits = Vec::new();
+        let mut blanket_impls = Vec::new();
+        let mut simple_impls = Vec::new();
+        let mut generic_or_complex_impls = Vec::new();
+
+        for norm_trait in traits {
+            if norm_trait.is_auto {
+                auto_traits.push(norm_trait);
+            } else if norm_trait.is_blanket {
+                blanket_impls.push(norm_trait);
+            } else if norm_trait.impl_generics.params.is_empty()
+                && norm_trait.impl_generics.where_predicates.is_empty()
+            {
+                simple_impls.push(norm_trait);
+            } else {
+                generic_or_complex_impls.push(norm_trait);
+            }
+        }
+
+        // Sort each category
+        auto_traits.sort_by_key(|t| &t.cleaned_path_for_display);
+        blanket_impls.sort_by_key(|t| &t.cleaned_path_for_display);
+        simple_impls.sort_by_key(|t| &t.cleaned_path_for_display);
+        generic_or_complex_impls.sort_by_key(|t| &t.cleaned_path_for_display);
+
+        // Push level for the list items within this section
+        // (Only if not in common traits section, as that's already indented)
+        if !is_common_traits_section {
+            self.push_level();
+        }
+
+        if !auto_traits.is_empty() {
+            for norm_trait in auto_traits {
+                if !is_common_traits_section {
+                    self.post_increment_current_level();
+                }
+                // Template marker logic for common traits section is simpler
+                // For item impls, docs are on the impl_item, not NormalizedTraitImpl
+                let template_marker = if self.template_mode && is_common_traits_section {
+                    // For common traits, we don't have a specific impl_item doc.
+                    // If we want template markers for common traits, they'd need to be generic.
+                    // For now, no template marker for common trait list itself.
+                    "".to_string()
+                } else {
+                    "".to_string() // No specific item docs for this format
+                };
+                writeln!(
+                    output,
+                    "- `{}`{}",
+                    norm_trait.cleaned_path_for_display, template_marker
+                )
+                .unwrap();
+            }
+            writeln!(output).unwrap();
+        }
+
+        if !simple_impls.is_empty() {
+            for norm_trait in simple_impls {
+                if !is_common_traits_section {
+                    self.post_increment_current_level();
+                }
+                let template_marker = if self.template_mode && is_common_traits_section {
+                    "".to_string()
+                } else {
+                    "".to_string()
+                };
+                writeln!(
+                    output,
+                    "- `{}`{}",
+                    norm_trait.cleaned_path_for_display, template_marker
+                )
+                .unwrap();
+            }
+            writeln!(output).unwrap();
+        }
+
+        if !blanket_impls.is_empty() {
+            for norm_trait in blanket_impls {
+                if !is_common_traits_section {
+                    self.post_increment_current_level();
+                }
+                let template_marker = if self.template_mode && is_common_traits_section {
+                    "".to_string()
+                } else {
+                    "".to_string()
+                };
+                let where_clause = format_generics_where_only(
+                    &norm_trait.impl_generics.where_predicates,
+                    self.krate,
+                );
+                if !where_clause.is_empty() {
+                    if where_clause.lines().count() == 1 {
+                        writeln!(
+                            output,
+                            "- `{}` (`{}`){}",
+                            norm_trait.cleaned_path_for_display, where_clause, template_marker
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(
+                            output,
+                            "- `{}`{}",
+                            norm_trait.cleaned_path_for_display, template_marker
+                        )
+                        .unwrap();
+                        let code_block = format!("```rust\n{}\n```", where_clause);
+                        let indented_block = indent_string(&code_block, 4);
+                        writeln!(output, "\n{}\n", indented_block).unwrap();
+                    }
+                } else {
+                    writeln!(
+                        output,
+                        "- `{}`{}",
+                        norm_trait.cleaned_path_for_display, template_marker
+                    )
+                    .unwrap();
+                }
+            }
+        }
+
+        if !generic_or_complex_impls.is_empty() {
+            for norm_trait in generic_or_complex_impls {
+                if !is_common_traits_section {
+                    self.post_increment_current_level();
+                }
+                let template_marker = if self.template_mode && is_common_traits_section {
+                    "".to_string()
+                } else {
+                    "".to_string()
+                };
+                // For generic/complex, we need the full impl block to show the generics.
+                // This requires finding the original Impl item.
+                // For "Common Traits" section, we just list the name.
+                // For item-specific impls, we show the full block.
+                if is_common_traits_section {
+                    writeln!(
+                        output,
+                        "- `{}` (Generic Impl){}", // Simplified for common traits list
+                        norm_trait.cleaned_path_for_display, template_marker
+                    )
+                    .unwrap();
+                } else {
+                    // This path should be hit when printing individual item's trait impls.
+                    // Find the original Impl item to format it fully.
+                    let original_impl_item_id = self.find_original_impl_id(norm_trait);
+                    if let Some(impl_item_id) = original_impl_item_id {
+                        if let Some(impl_item) = self.krate.index.get(&impl_item_id) {
+                            if let ItemEnum::Impl(imp) = &impl_item.inner {
+                                if let Some(impl_block_str) =
+                                    self.generate_impl_trait_block(impl_item, imp)
+                                {
+                                    writeln!(
+                                        output,
+                                        "- `{}`{}",
+                                        norm_trait.cleaned_path_for_display, template_marker
+                                    )
+                                    .unwrap();
+                                    writeln!(output).unwrap();
+                                    let full_code_block =
+                                        format!("```rust\n{}\n```", impl_block_str);
+                                    let indented_block = indent_string(&full_code_block, 4);
+                                    writeln!(output, "{}\n", indented_block).unwrap();
+                                }
+                            }
+                        }
+                    } else {
+                        writeln!(
+                            output,
+                            "- `{}` (Generic Impl){}", // Fallback if original can't be found
+                            norm_trait.cleaned_path_for_display, template_marker
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+        }
+
+        if !is_common_traits_section {
+            self.pop_level();
+        }
+        output
+    }
+
+    /// Helper to find the original Impl item ID for a NormalizedTraitImpl.
+    /// This is a placeholder; a more robust lookup might be needed.
+    fn find_original_impl_id(&self, norm_trait: &NormalizedTraitImpl) -> Option<Id> {
+        // Iterate through all impls in the crate and try to match
+        for (id, item) in &self.krate.index {
+            if let ItemEnum::Impl(imp) = &item.inner {
+                if let Some(trait_path) = &imp.trait_ {
+                    if trait_path.id == norm_trait.trait_id
+                        && imp.generics == norm_trait.impl_generics
+                    {
+                        // This is a heuristic. A more precise match might be needed
+                        // if multiple impl blocks could result in the same NormalizedTraitImpl.
+                        return Some(*id);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
+    fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
+        let target_item_id = target_item.id;
+        let target_name = target_item
+            .name
+            .as_deref()
+            .unwrap_or_else(|| match &target_item.inner {
+                ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
+                _ => "{unknown_item_type}",
+            });
+
+        let mut item_specific_impls = Vec::new();
+        for impl_id in impl_ids {
+            if let Some(impl_item) = self.krate.index.get(impl_id) {
+                if self.selected_ids.contains(&impl_item.id) {
+                    if let ItemEnum::Impl(imp) = &impl_item.inner {
+                        item_specific_impls.push((impl_item, imp.clone()));
+                    }
+                }
+            }
+        }
+
+        // --- Inherent Impls (handled first, as they don't involve common trait filtering) ---
+        let inherent_impl_items: Vec<_> = item_specific_impls
             .iter()
-            .filter_map(|impl_id| self.krate.index.get(impl_id))
-            .filter(|impl_item| self.selected_ids.contains(&impl_item.id))
+            .filter(|(_, imp)| imp.trait_.is_none())
             .collect();
 
-        let (inherent_impls, trait_impls): (Vec<_>, Vec<_>) = all_impls.into_iter().partition(
-            |impl_item| matches!(&impl_item.inner, ItemEnum::Impl(i) if i.trait_.is_none()),
-        );
-
-        // --- Inherent Impls ---
-        if !inherent_impls.is_empty() {
-            for impl_item in inherent_impls {
+        if !inherent_impl_items.is_empty() {
+            for (impl_item, imp) in inherent_impl_items {
                 if self.printed_ids.contains(&impl_item.id) {
                     continue;
                 }
-                if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    self.print_impl_block_details(impl_item, imp);
-                }
+                self.print_impl_block_details(impl_item, imp);
             }
         }
 
-        // --- Trait Impls ---
-        let mut non_common_trait_impls = Vec::new();
-        let mut missing_common_traits = self.common_traits.clone();
+        // --- Trait Impls (will involve common trait filtering) ---
+        let trait_impl_data: Vec<NormalizedTraitImpl> = item_specific_impls
+            .iter()
+            .filter_map(|(impl_item, imp)| {
+                if self.printed_ids.contains(&impl_item.id) {
+                    return None;
+                } // Skip already printed
+                imp.trait_
+                    .as_ref()
+                    .map(|tp| NormalizedTraitImpl::from_impl(imp, tp, self.krate))
+            })
+            .collect();
 
-        for impl_item in &trait_impls {
-            if let ItemEnum::Impl(imp) = &impl_item.inner {
-                if let Some(trait_path) = &imp.trait_ {
-                    let key = (trait_path.id, imp.generics.clone());
-                    if self.common_traits.contains_key(&key) {
-                        missing_common_traits.remove(&key);
-                        // Mark common trait impls as printed so they don't show up in "Other"
-                        // or get printed again if they were also complex.
-                        self.printed_ids.insert(impl_item.id);
-                        for assoc_item_id in &imp.items {
-                            if self.selected_ids.contains(assoc_item_id) {
-                                self.printed_ids.insert(*assoc_item_id);
+        if trait_impl_data.is_empty() {
+            return; // No trait impls to print for this item
+        }
+
+        let current_module_id = self
+            .current_module_path
+            .last()
+            .and_then(|mod_name| {
+                self.resolved_modules
+                    .values()
+                    .find(|rm| {
+                        self.krate
+                            .paths
+                            .get(&rm.id)
+                            .map_or(false, |p| p.path.last() == Some(mod_name))
+                    })
+                    .map(|rm| rm.id)
+            })
+            .unwrap_or(self.krate.root); // Default to crate root if path is empty or module not found
+
+        let module_common_traits = self
+            .module_common_traits
+            .get(&current_module_id)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut non_common_trait_impls = Vec::new();
+        let mut missing_crate_common = self.crate_common_traits.clone();
+        let mut missing_module_common = module_common_traits.clone();
+
+        for norm_trait in &trait_impl_data {
+            let is_crate_common = self.crate_common_traits.contains(norm_trait);
+            let is_module_common = module_common_traits.contains(norm_trait);
+
+            if is_crate_common {
+                missing_crate_common.remove(norm_trait);
+            }
+            if is_module_common {
+                missing_module_common.remove(norm_trait);
+            }
+
+            if !is_crate_common && !is_module_common {
+                non_common_trait_impls.push(norm_trait.clone());
+            } else {
+                // Mark common trait impls as printed by finding their original impl_item.id
+                if let Some(original_impl_id) = self.find_original_impl_id(norm_trait) {
+                    self.printed_ids.insert(original_impl_id);
+                    if let Some(impl_item) = self.krate.index.get(&original_impl_id) {
+                        if let ItemEnum::Impl(imp_data) = &impl_item.inner {
+                            for assoc_item_id in &imp_data.items {
+                                if self.selected_ids.contains(assoc_item_id) {
+                                    self.printed_ids.insert(*assoc_item_id);
+                                }
                             }
                         }
-                        continue; // Skip adding common traits to the list to be printed
                     }
-                    non_common_trait_impls.push(*impl_item);
-                } else {
-                    // This case should be caught by inherent_impls partition, but as a safeguard:
-                    non_common_trait_impls.push(*impl_item);
                 }
             }
         }
+        // Combine missing traits, ensuring no duplicates in the final note
+        let mut combined_missing_common = HashSet::new();
+        combined_missing_common.extend(missing_crate_common.iter().cloned());
+        combined_missing_common.extend(missing_module_common.iter().cloned());
 
-        if !non_common_trait_impls.is_empty() || !missing_common_traits.is_empty() {
+        if !non_common_trait_impls.is_empty() || !combined_missing_common.is_empty() {
             let trait_impl_header_level = self.get_current_header_level();
             let header_prefix = self.get_header_prefix();
             writeln!(
@@ -4211,13 +4601,12 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
 
-            // Print note about missing common traits
-            if !missing_common_traits.is_empty() {
-                let mut sorted_missing_common_traits: Vec<String> = missing_common_traits
+            if !combined_missing_common.is_empty() {
+                let mut sorted_missing_common_traits: Vec<String> = combined_missing_common
                     .iter()
-                    .map(|(_, path)| clean_trait_path(&path.path).clone())
+                    .map(|nt| nt.cleaned_path_for_display.clone())
                     .collect();
-                sorted_missing_common_traits.sort();
+                sorted_missing_common_traits.sort_unstable();
                 writeln!(
                     self.output,
                     "**(Note: Does not implement `{}`)**\n",
@@ -4226,176 +4615,11 @@ impl<'a> DocPrinter<'a> {
                 .unwrap();
             }
 
-            let mut auto_trait_impls: Vec<(&Item, String)> = Vec::new();
-            let mut blanket_impl_data: Vec<(&Item, &Impl, String)> = Vec::new();
-            let mut simple_impl_data: Vec<(&Item, &Impl, String)> = Vec::new();
-            let mut generic_or_complex_impls = Vec::new();
-
-            // Categorize non-common trait impls
-            for impl_item in &non_common_trait_impls {
-                if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    if let Some(trait_path) = &imp.trait_ {
-                        // Already filtered common traits, so all traits here are non-common
-                        let full_path_str = format_id_path_canonical(&trait_path.id, self.krate);
-                        let cleaned_path = clean_trait_path(&format_path(trait_path, self.krate));
-
-                        if imp.is_synthetic && AUTO_TRAITS.contains(&cleaned_path.as_str()) {
-                            auto_trait_impls.push((impl_item, cleaned_path));
-                            continue;
-                        }
-                        if imp.blanket_impl.is_some() {
-                            blanket_impl_data.push((impl_item, imp, cleaned_path));
-                            continue;
-                        }
-
-                        let is_core_or_alloc = full_path_str.starts_with("core::")
-                            || full_path_str.starts_with("alloc::");
-                        let is_selected_trait = self.selected_ids.contains(&trait_path.id);
-
-                        if is_core_or_alloc || is_selected_trait {
-                            simple_impl_data.push((impl_item, imp, cleaned_path));
-                            continue;
-                        }
-
-                        let is_simple_structure = imp.generics.params.is_empty()
-                            && imp.generics.where_predicates.is_empty()
-                            && trait_path.args.as_ref().map_or(true, |args| match **args {
-                                GenericArgs::AngleBracketed {
-                                    ref args,
-                                    ref constraints,
-                                    ..
-                                } => {
-                                    args.iter().all(|a| matches!(a, GenericArg::Lifetime(_)))
-                                        && constraints.is_empty()
-                                }
-                                _ => false,
-                            });
-
-                        if is_simple_structure {
-                            simple_impl_data.push((impl_item, imp, cleaned_path));
-                        } else {
-                            generic_or_complex_impls.push(*impl_item);
-                        }
-                    }
-                }
+            let formatted_list = self.format_trait_list(&non_common_trait_impls, false);
+            if !formatted_list.is_empty() {
+                writeln!(self.output, "{}", formatted_list).unwrap();
             }
 
-            // Sort each category
-            auto_trait_impls.sort_by(|a, b| a.1.cmp(&b.1));
-            blanket_impl_data.sort_by(|a, b| a.2.cmp(&b.2));
-            simple_impl_data.sort_by(|a, b| a.2.cmp(&b.2));
-            generic_or_complex_impls.sort_by_key(|item| {
-                if let ItemEnum::Impl(imp) = &item.inner {
-                    imp.trait_.as_ref().map(|p| format_path(p, self.krate))
-                } else {
-                    None
-                }
-            });
-
-            self.push_level();
-
-            if !auto_trait_impls.is_empty() {
-                for (impl_item, cleaned_path) in &auto_trait_impls {
-                    self.post_increment_current_level();
-                    let template_marker = if self.template_mode && impl_item.docs.is_some() {
-                        format!("\n\n{}", self.get_template_marker())
-                    } else {
-                        "".to_string()
-                    };
-                    writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
-                    self.printed_ids.insert(impl_item.id);
-                    if let ItemEnum::Impl(imp) = &impl_item.inner {
-                        for assoc_item_id in &imp.items {
-                            if self.selected_ids.contains(assoc_item_id) {
-                                self.printed_ids.insert(*assoc_item_id);
-                            }
-                        }
-                    }
-                }
-                writeln!(self.output).unwrap();
-            }
-
-            if !simple_impl_data.is_empty() {
-                for (impl_item, imp, cleaned_path) in &simple_impl_data {
-                    self.post_increment_current_level();
-                    let template_marker = if self.template_mode && impl_item.docs.is_some() {
-                        format!("\n\n{}", self.get_template_marker())
-                    } else {
-                        "".to_string()
-                    };
-                    writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
-                    self.printed_ids.insert(impl_item.id);
-                    for assoc_item_id in &imp.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
-                        }
-                    }
-                }
-                writeln!(self.output).unwrap();
-            }
-
-            if !blanket_impl_data.is_empty() {
-                for (impl_item, imp, cleaned_path) in &blanket_impl_data {
-                    self.post_increment_current_level();
-                    self.printed_ids.insert(impl_item.id);
-                    let template_marker = if self.template_mode && impl_item.docs.is_some() {
-                        format!("\n\n{}", self.get_template_marker())
-                    } else {
-                        "".to_string()
-                    };
-                    if !imp.generics.where_predicates.is_empty() {
-                        let where_clause =
-                            format_generics_where_only(&imp.generics.where_predicates, self.krate);
-                        if where_clause.lines().count() == 1 {
-                            writeln!(
-                                self.output,
-                                "- `{cleaned_path}` (`{where_clause}`){}",
-                                template_marker
-                            )
-                            .unwrap();
-                        } else {
-                            writeln!(self.output, "- `{cleaned_path}`{}", template_marker).unwrap();
-                            let code_block = format!("```rust\n{}\n```", where_clause);
-                            let indented_block = indent_string(&code_block, 4);
-                            writeln!(self.output, "\n{}\n", indented_block).unwrap();
-                        }
-                    } else {
-                        writeln!(self.output, "- `{cleaned_path}`{}", template_marker).unwrap();
-                    }
-                    for assoc_item_id in &imp.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
-                        }
-                    }
-                }
-            }
-
-            for impl_item in generic_or_complex_impls {
-                if self.printed_ids.contains(&impl_item.id) {
-                    continue;
-                }
-                if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    if let Some(impl_block_str) = self.generate_impl_trait_block(impl_item, imp) {
-                        let cleaned_path = imp
-                            .trait_
-                            .as_ref()
-                            .map(|tp| clean_trait_path(&format_path(tp, self.krate)))
-                            .unwrap_or_else(|| "{InherentImpl}".to_string());
-                        self.post_increment_current_level();
-                        let template_marker = if self.template_mode && impl_item.docs.is_some() {
-                            format!("\n\n{}", self.get_template_marker())
-                        } else {
-                            "".to_string()
-                        };
-                        writeln!(self.output, "- `{}`{}", cleaned_path, template_marker).unwrap();
-                        writeln!(self.output).unwrap();
-                        let full_code_block = format!("```rust\n{}\n```", impl_block_str);
-                        let indented_block = indent_string(&full_code_block, 4);
-                        writeln!(self.output, "{}\n", indented_block).unwrap();
-                    }
-                }
-            }
-            self.pop_level();
             self.post_increment_current_level();
         }
     }
@@ -4900,8 +5124,9 @@ impl<'a> DocPrinter<'a> {
             module_tree: self.module_tree.clone(), // Clone module tree as well
             doc_path: self.doc_path.clone(),       // Clone doc path
             current_module_path: self.current_module_path.clone(), // Clone current module path
-            common_traits: self.common_traits.clone(), // Clone common traits
+            crate_common_traits: self.crate_common_traits.clone(), // Clone common traits
             all_type_ids_with_impls: self.all_type_ids_with_impls.clone(), // Clone types with impls
+            module_common_traits: self.module_common_traits.clone(), // Clone module common traits
         }
     }
 
@@ -4958,6 +5183,34 @@ impl<'a> DocPrinter<'a> {
 
             // Print module docs (using helper)
             self.print_docs(item);
+
+            // --- Module Common Traits ---
+            let (mod_common, _num_mod_types) = self.calculate_module_common_traits(&module_id);
+            self.module_common_traits
+                .insert(module_id, mod_common.clone()); // Store for later use
+
+            let displayable_module_common: Vec<NormalizedTraitImpl> = mod_common
+                .iter()
+                .filter(|nt| !self.crate_common_traits.contains(nt)) // Only those not in crate common
+                .cloned()
+                .collect();
+
+            if !displayable_module_common.is_empty() {
+                let common_traits_header_level = self.get_current_header_level(); // Should be H3
+                let common_traits_prefix = self.get_header_prefix();
+                writeln!(
+                    self.output,
+                    "{} {} Common Traits\n",
+                    "#".repeat(common_traits_header_level),
+                    common_traits_prefix
+                )
+                .unwrap();
+                let formatted_list = self.format_trait_list(&displayable_module_common, true);
+                if !formatted_list.is_empty() {
+                    writeln!(self.output, "{}", formatted_list).unwrap();
+                }
+                self.post_increment_current_level(); // Increment for this section
+            }
 
             // Print module contents (non-module items only)
             self.print_module_contents(&module_id);
@@ -5092,8 +5345,8 @@ impl<'a> DocPrinter<'a> {
             self.post_increment_current_level(); // Increment H2 counter
         }
 
-        // Print Common Traits Section (H2)
-        if !self.common_traits.is_empty() {
+        // Print Crate Common Traits Section (H2)
+        if !self.crate_common_traits.is_empty() {
             let common_traits_level = self.get_current_header_level(); // Should be 2
             let common_traits_prefix = self.get_header_prefix();
             writeln!(
@@ -5104,20 +5357,16 @@ impl<'a> DocPrinter<'a> {
             )
             .unwrap();
             writeln!(self.output, "The following traits are commonly implemented by types in this crate. Unless otherwise noted, you can assume these traits are implemented:\n").unwrap();
-            let mut sorted_common_traits: Vec<String> = self
-                .common_traits
-                .iter()
-                .map(|((_, generics), path)| {
-                    format!(
-                        "{}{}",
-                        clean_trait_path(&path.path),
-                        format_generics_full(generics, &self.krate)
-                    )
-                })
-                .collect();
-            sorted_common_traits.sort();
-            for trait_name in sorted_common_traits {
-                writeln!(self.output, "- `{}`", trait_name).unwrap();
+
+            let sorted_common_traits: Vec<NormalizedTraitImpl> = {
+                let mut traits: Vec<_> = self.crate_common_traits.iter().cloned().collect();
+                traits.sort_by_key(|t| t.cleaned_path_for_display.clone());
+                traits
+            };
+
+            let formatted_list = self.format_trait_list(&sorted_common_traits, true);
+            if !formatted_list.is_empty() {
+                writeln!(self.output, "{}", formatted_list).unwrap();
             }
             writeln!(self.output).unwrap();
             self.post_increment_current_level(); // Increment H2 counter
@@ -5605,4 +5854,72 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+impl GenericArgs {
+    fn into_generics(self) -> Generics {
+        // This is a simplified conversion. `GenericArgs` and `Generics` have different structures.
+        // `GenericArgs` are arguments passed to a type/path.
+        // `Generics` are parameters defined by an item.
+        // This conversion might lose information or not be perfectly accurate for all cases.
+        // For `NormalizedTraitImpl`, we mostly care about the `args` part of `AngleBracketed`
+        // to represent the generics *of the trait path itself*.
+        let mut params = Vec::new();
+        match self {
+            GenericArgs::AngleBracketed { args, .. } => {
+                for arg in args {
+                    match arg {
+                        GenericArg::Type(t) => {
+                            // Try to convert Type to a simple GenericParamDef name
+                            let name = match t {
+                                Type::Generic(g_name) => g_name,
+                                // Other types are harder to represent as a simple param name here.
+                                _ => "_".to_string(), // Placeholder
+                            };
+                            params.push(GenericParamDef {
+                                name,
+                                kind: rustdoc_types::GenericParamDefKind::Type {
+                                    bounds: vec![], // Simplified: bounds are not directly in GenericArgs
+                                    default: None,
+                                    is_synthetic: false,
+                                },
+                            });
+                        }
+                        GenericArg::Lifetime(lt_name) => {
+                            params.push(GenericParamDef {
+                                name: lt_name,
+                                kind: rustdoc_types::GenericParamDefKind::Lifetime {
+                                    outlives: vec![],
+                                },
+                            });
+                        }
+                        GenericArg::Const(c) => {
+                            params.push(GenericParamDef {
+                                name: c.expr, // Use expression as name, simplified
+                                kind: rustdoc_types::GenericParamDefKind::Const {
+                                    type_: Type::Infer, // Simplified
+                                    default: None,
+                                },
+                            });
+                        }
+                        GenericArg::Infer => {
+                            params.push(GenericParamDef {
+                                name: "_".to_string(),
+                                kind: rustdoc_types::GenericParamDefKind::Type {
+                                    bounds: vec![],
+                                    default: None,
+                                    is_synthetic: true, // Treat Infer as synthetic
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {} // Parenthesized and ReturnTypeNotation are not directly convertible to params.
+        }
+        Generics {
+            params,
+            where_predicates: Vec::new(), // Where predicates are not part of GenericArgs
+        }
+    }
 }
