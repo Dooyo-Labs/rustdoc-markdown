@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BT
 use std::fmt::{Display, Formatter, Write as FmtWrite}; // Use FmtWrite alias
 use std::fs::{self, File}; // Import fs module
 use std::io::{BufReader, BufWriter, Cursor, Write as IoWrite}; // Use IoWrite alias and IMPORT Cursor
-use std::path::{self, Path as FilePath, PathBuf}; // Corrected use statement
+use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tar::Archive;
 use tracing::{debug, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -1267,21 +1267,27 @@ fn find_generic_args_dependencies(
             }
         }
         GenericArgs::Parenthesized { inputs, output, .. } => {
-            if angle_brackets_only {
-                "".to_string() // Don't format Fn() args when angle brackets are expected
-            } else {
-                // Format like function signature inputs/output
-                format!(
-                    "({}) -> {}",
-                    inputs
-                        .iter()
-                        .map(|t| format_type(t, krate))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    output
-                        .as_ref()
-                        .map_or("()".to_string(), |t| format_type(t, krate))
-                )
+            // Process inputs
+            for input_type in inputs {
+                find_type_dependencies(
+                    input_type,
+                    source_id,
+                    krate,
+                    dependencies,
+                    graph,
+                    EdgeLabel::GenericArgument, // Or a more specific label if context implies Fn traits
+                );
+            }
+            // Process output
+            if let Some(output_type) = output {
+                find_type_dependencies(
+                    output_type,
+                    source_id,
+                    krate,
+                    dependencies,
+                    graph,
+                    EdgeLabel::GenericArgument, // Or a more specific label
+                );
             }
         }
         GenericArgs::ReturnTypeNotation { .. } => {} // TODO: Handle this? T::method(..) - maybe the T part?
@@ -2252,7 +2258,6 @@ fn format_type(ty: &Type, krate: &Crate) -> String {
 
 fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: bool) -> String {
     match args {
-        // Use renamed field constraints
         GenericArgs::AngleBracketed {
             args, constraints, ..
         } => {
@@ -2260,10 +2265,9 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
             let constraint_strs: Vec<String> = constraints
                 .iter()
                 .map(|c| match c {
-                    // Use tuple variant matching
                     rustdoc_types::AssocItemConstraint {
                         name,
-                        args: assoc_args, // these are args for the assoc item constraint itself
+                        args: assoc_args,
                         binding: rustdoc_types::AssocItemConstraintKind::Equality(term),
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
@@ -2273,7 +2277,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
                             if assoc_args_str.is_empty() { "" } else { ">" },
-                            format!(" = {}", format_term(term, krate)) // Put equality inside
+                            format!(" = {}", format_term(term, krate))
                         )
                     }
                     rustdoc_types::AssocItemConstraint {
@@ -2283,20 +2287,16 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate, true);
                         format!(
-                            "{}{}{}{}{}",
+                            "{}{}{}{}: {}",
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
                             if assoc_args_str.is_empty() { "" } else { ">" },
-                            format!(
-                                // Put constraint inside
-                                ": {}",
-                                bounds
-                                    .iter()
-                                    .map(|bnd| format_generic_bound(bnd, krate))
-                                    .collect::<Vec<_>>()
-                                    .join(" + ")
-                            )
+                            bounds
+                                .iter()
+                                .map(|bnd| format_generic_bound(bnd, krate))
+                                .collect::<Vec<_>>()
+                                .join(" + ")
                         )
                     }
                 })
@@ -2307,9 +2307,8 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
         }
         GenericArgs::Parenthesized { inputs, output, .. } => {
             if angle_brackets_only {
-                "".to_string() // Don't format Fn() args when angle brackets are expected
+                String::new() // Don't format Fn() args when angle brackets are expected
             } else {
-                // Format like function signature inputs/output
                 format!(
                     "({}) -> {}",
                     inputs
@@ -2323,7 +2322,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate, angle_brackets_only: b
                 )
             }
         }
-        GenericArgs::ReturnTypeNotation { .. } => "".to_string(), // How to format T::method(..) args? Ignore for now.
+        GenericArgs::ReturnTypeNotation { .. } => String::new(),
     }
 }
 
@@ -2595,16 +2594,80 @@ struct NormalizedTraitImpl {
     // For now, we'll reconstruct the display string from the components above.
 }
 
+// Helper function to convert GenericArgs to Generics
+fn generic_args_to_generics(args: Option<Box<GenericArgs>>) -> Generics {
+    // This is a simplified conversion. `GenericArgs` and `Generics` have different structures.
+    // `GenericArgs` are arguments passed to a type/path.
+    // `Generics` are parameters defined by an item.
+    // This conversion might lose information or not be perfectly accurate for all cases.
+    // For `NormalizedTraitImpl`, we mostly care about the `args` part of `AngleBracketed`
+    // to represent the generics *of the trait path itself*.
+    let mut params = Vec::new();
+    if let Some(actual_args) = args {
+        match *actual_args {
+            GenericArgs::AngleBracketed { args, .. } => {
+                for arg in args {
+                    match arg {
+                        GenericArg::Type(t) => {
+                            // Try to convert Type to a simple GenericParamDef name
+                            let name = match t {
+                                Type::Generic(g_name) => g_name,
+                                // Other types are harder to represent as a simple param name here.
+                                _ => "_".to_string(), // Placeholder
+                            };
+                            params.push(GenericParamDef {
+                                name,
+                                kind: rustdoc_types::GenericParamDefKind::Type {
+                                    bounds: vec![], // Simplified: bounds are not directly in GenericArgs
+                                    default: None,
+                                    is_synthetic: false,
+                                },
+                            });
+                        }
+                        GenericArg::Lifetime(lt_name) => {
+                            params.push(GenericParamDef {
+                                name: lt_name,
+                                kind: rustdoc_types::GenericParamDefKind::Lifetime {
+                                    outlives: vec![],
+                                },
+                            });
+                        }
+                        GenericArg::Const(c) => {
+                            params.push(GenericParamDef {
+                                name: c.expr, // Use expression as name, simplified
+                                kind: rustdoc_types::GenericParamDefKind::Const {
+                                    type_: Type::Infer, // Simplified
+                                    default: None,
+                                },
+                            });
+                        }
+                        GenericArg::Infer => {
+                            params.push(GenericParamDef {
+                                name: "_".to_string(),
+                                kind: rustdoc_types::GenericParamDefKind::Type {
+                                    bounds: vec![],
+                                    default: None,
+                                    is_synthetic: true, // Treat Infer as synthetic
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {} // Parenthesized and ReturnTypeNotation are not directly convertible to params.
+        }
+    }
+    Generics {
+        params,
+        where_predicates: Vec::new(), // Where predicates are not part of GenericArgs
+    }
+}
+
 impl NormalizedTraitImpl {
     /// Creates a NormalizedTraitImpl from a rustdoc_types::Impl and the krate context.
     fn from_impl(imp: &Impl, trait_path: &Path, krate: &Crate) -> Self {
         let trait_path_str = format_id_path_canonical(&trait_path.id, krate);
         let cleaned_trait_path = clean_trait_path(&trait_path_str);
-
-        let mut display_generics = trait_path.generics.clone();
-        if display_generics.is_none() {
-            display_generics = Some(Box::default());
-        }
 
         let display_path_with_generics = format!(
             "{}{}",
@@ -2623,11 +2686,8 @@ impl NormalizedTraitImpl {
 
         NormalizedTraitImpl {
             trait_id: trait_path.id,
-            trait_path_str: cleaned_trait_path.clone(), // Store the cleaned path
-            trait_generics: trait_path
-                .args
-                .as_ref()
-                .map_or_else(Generics::default, |ga| (*ga).clone().into()), // Convert GenericArgs to Generics if possible, or default. This is a simplification.
+            trait_path_str: cleaned_trait_path.clone(),
+            trait_generics: generic_args_to_generics(trait_path.args.clone()),
             impl_generics: imp.generics.clone(),
             is_auto: AUTO_TRAITS.contains(&cleaned_trait_path.as_str()) && imp.is_synthetic,
             is_unsafe_impl: imp.is_unsafe,
@@ -4477,7 +4537,6 @@ impl<'a> DocPrinter<'a> {
 
     /// Prints Inherent and Trait Implementations *for* an item (Struct, Enum, Union, Primitive).
     fn print_item_implementations(&mut self, impl_ids: &[Id], target_item: &Item) {
-        let target_item_id = target_item.id;
         let target_name = target_item
             .name
             .as_deref()
@@ -5854,72 +5913,4 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-impl GenericArgs {
-    fn into_generics(self) -> Generics {
-        // This is a simplified conversion. `GenericArgs` and `Generics` have different structures.
-        // `GenericArgs` are arguments passed to a type/path.
-        // `Generics` are parameters defined by an item.
-        // This conversion might lose information or not be perfectly accurate for all cases.
-        // For `NormalizedTraitImpl`, we mostly care about the `args` part of `AngleBracketed`
-        // to represent the generics *of the trait path itself*.
-        let mut params = Vec::new();
-        match self {
-            GenericArgs::AngleBracketed { args, .. } => {
-                for arg in args {
-                    match arg {
-                        GenericArg::Type(t) => {
-                            // Try to convert Type to a simple GenericParamDef name
-                            let name = match t {
-                                Type::Generic(g_name) => g_name,
-                                // Other types are harder to represent as a simple param name here.
-                                _ => "_".to_string(), // Placeholder
-                            };
-                            params.push(GenericParamDef {
-                                name,
-                                kind: rustdoc_types::GenericParamDefKind::Type {
-                                    bounds: vec![], // Simplified: bounds are not directly in GenericArgs
-                                    default: None,
-                                    is_synthetic: false,
-                                },
-                            });
-                        }
-                        GenericArg::Lifetime(lt_name) => {
-                            params.push(GenericParamDef {
-                                name: lt_name,
-                                kind: rustdoc_types::GenericParamDefKind::Lifetime {
-                                    outlives: vec![],
-                                },
-                            });
-                        }
-                        GenericArg::Const(c) => {
-                            params.push(GenericParamDef {
-                                name: c.expr, // Use expression as name, simplified
-                                kind: rustdoc_types::GenericParamDefKind::Const {
-                                    type_: Type::Infer, // Simplified
-                                    default: None,
-                                },
-                            });
-                        }
-                        GenericArg::Infer => {
-                            params.push(GenericParamDef {
-                                name: "_".to_string(),
-                                kind: rustdoc_types::GenericParamDefKind::Type {
-                                    bounds: vec![],
-                                    default: None,
-                                    is_synthetic: true, // Treat Infer as synthetic
-                                },
-                            });
-                        }
-                    }
-                }
-            }
-            _ => {} // Parenthesized and ReturnTypeNotation are not directly convertible to params.
-        }
-        Generics {
-            params,
-            where_predicates: Vec::new(), // Where predicates are not part of GenericArgs
-        }
-    }
 }
