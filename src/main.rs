@@ -5762,7 +5762,10 @@ impl<'a> DocPrinter<'a> {
 
         // --- Examples Appendix ---
         if !self.no_examples {
-            if let Some(examples) = &self.examples_content {
+            // Clone examples_content to avoid borrow checker issues
+            let examples_content_cloned = self.examples_content.clone();
+
+            if let Some(examples) = examples_content_cloned {
                 if !examples.is_empty() || self.examples_readme_content.is_some() {
                     let examples_section_level = self.get_current_header_level(); // Should be 2
                     let header_prefix = self.get_header_prefix();
