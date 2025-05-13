@@ -106,6 +106,10 @@ struct Args {
     /// Do not generate "Common Traits" sections; list all traits for each item.
     #[arg(long)]
     no_common_traits: bool,
+
+    /// Do not include an "Examples Appendix" section.
+    #[arg(long)]
+    no_examples: bool,
 }
 
 /// Parses a string into an `Id`.
@@ -3359,12 +3363,15 @@ struct DocPrinter<'a> {
     krate: &'a Crate,
     manifest: &'a CrateManifestData, // Add field for manifest data
     readme_content: Option<String>,  // Add field for README content
+    examples_readme_content: Option<String>,
+    examples_content: Option<Vec<(String, String)>>,
     selected_ids: &'a HashSet<Id>,
     resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
     graph: &'a IdGraph,                                // Add graph reference
     include_other: bool,
     template_mode: bool,      // New flag for template mode
     no_common_traits: bool,   // New flag for disabling common traits
+    no_examples: bool,        // New flag for disabling examples
     printed_ids: HashSet<Id>, // Stores IDs that have had their primary definition printed
     output: String,
     module_tree: ModuleTree, // Add module tree
@@ -3377,16 +3384,20 @@ struct DocPrinter<'a> {
 }
 
 impl<'a> DocPrinter<'a> {
+    #[allow(clippy::too_many_arguments)] // Allow more arguments for constructor
     fn new(
         krate: &'a Crate,
         manifest: &'a CrateManifestData, // Accept manifest data
         readme_content: Option<String>,  // Accept README content
+        examples_readme_content: Option<String>,
+        examples_content: Option<Vec<(String, String)>>,
         selected_ids: &'a HashSet<Id>,
         resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
         graph: &'a IdGraph,                                // Add graph parameter
         include_other: bool,
         template_mode: bool,    // Add template mode flag
         no_common_traits: bool, // Add no_common_traits flag
+        no_examples: bool,      // Add no_examples flag
     ) -> Self {
         let module_tree = Self::build_module_tree(krate);
         let (crate_common_traits, all_type_ids_with_impls) =
@@ -3396,12 +3407,15 @@ impl<'a> DocPrinter<'a> {
             krate,
             manifest,
             readme_content,
+            examples_readme_content,
+            examples_content,
             selected_ids,
             resolved_modules,
             graph,
             include_other,
             template_mode,
-            no_common_traits, // Store the flag
+            no_common_traits,
+            no_examples,
             printed_ids: HashSet::new(),
             output: String::new(),
             module_tree,
@@ -5301,12 +5315,15 @@ impl<'a> DocPrinter<'a> {
             krate: self.krate,
             manifest: self.manifest,
             readme_content: self.readme_content.clone(),
+            examples_readme_content: self.examples_readme_content.clone(),
+            examples_content: self.examples_content.clone(),
             selected_ids: self.selected_ids,
             resolved_modules: self.resolved_modules,
             graph: self.graph,
             include_other: self.include_other,
             template_mode: self.template_mode,
             no_common_traits: self.no_common_traits,
+            no_examples: self.no_examples,
             printed_ids: self.printed_ids.clone(),
             output: String::new(),
             module_tree: self.module_tree.clone(),
@@ -5743,6 +5760,48 @@ impl<'a> DocPrinter<'a> {
             }
         }
 
+        // --- Examples Appendix ---
+        if !self.no_examples {
+            if let Some(examples) = &self.examples_content {
+                if !examples.is_empty() || self.examples_readme_content.is_some() {
+                    let examples_section_level = self.get_current_header_level(); // Should be 2
+                    let header_prefix = self.get_header_prefix();
+                    writeln!(
+                        self.output,
+                        "\n{} {} Examples Appendix\n",
+                        "#".repeat(examples_section_level),
+                        header_prefix
+                    )
+                    .unwrap();
+                    self.post_increment_current_level(); // Increment H2 counter for next top-level section
+
+                    self.push_level(); // Push for H3 example headers
+
+                    if let Some(readme) = &self.examples_readme_content {
+                        let adjusted_readme =
+                            adjust_markdown_headers(readme, examples_section_level);
+                        writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+                    }
+
+                    for (filename, content) in examples {
+                        let example_header_level = self.get_current_header_level(); // Should be 3
+                        let example_prefix = self.get_header_prefix();
+                        writeln!(
+                            self.output,
+                            "{} {} `{}`\n",
+                            "#".repeat(example_header_level),
+                            example_prefix,
+                            filename
+                        )
+                        .unwrap();
+                        writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
+                        self.post_increment_current_level(); // Increment H3 counter for next example
+                    }
+                    self.pop_level(); // Pop H3 example level
+                }
+            }
+        }
+
         self.output
     }
 }
@@ -5751,31 +5810,37 @@ fn generate_documentation(
     krate: &Crate,
     manifest: &CrateManifestData,
     readme_content: Option<String>,
+    examples_readme_content: Option<String>,
+    examples_content: Option<Vec<(String, String)>>,
     selected_ids: &HashSet<Id>,
     resolved_modules: &HashMap<Id, ResolvedModule>,
     graph: &IdGraph,
     include_other: bool,
     template_mode: bool,
-    no_common_traits: bool, // Add no_common_traits flag
+    no_common_traits: bool,
+    no_examples: bool,
 ) -> Result<String> {
     info!(
         "Generating documentation for {} selected items.",
         selected_ids.len()
     );
-    if selected_ids.is_empty() {
-        return Ok("No items selected for documentation.".to_string());
+    if selected_ids.is_empty() && examples_content.as_ref().map_or(true, |e| e.is_empty()) {
+        return Ok("No items selected for documentation and no examples found.".to_string());
     }
 
     let printer = DocPrinter::new(
         krate,
         manifest,
         readme_content,
+        examples_readme_content,
+        examples_content,
         selected_ids,
         resolved_modules,
         graph,
         include_other,
         template_mode,
-        no_common_traits, // Pass the flag
+        no_common_traits,
+        no_examples,
     );
     let output = printer.finalize();
 
@@ -5903,6 +5968,78 @@ async fn main() -> Result<()> {
         }
     };
 
+    // --- Locate and Read Examples ---
+    let mut examples_readme_content: Option<String> = None;
+    let mut examples_content: Option<Vec<(String, String)>> = None;
+
+    if !args.no_examples {
+        let examples_dir = crate_dir.join("examples");
+        if examples_dir.is_dir() {
+            info!("Found examples directory: {}", examples_dir.display());
+
+            // Read examples README
+            let ex_readme_md_path = examples_dir.join("README.md");
+            let ex_readme_path = examples_dir.join("README");
+            if ex_readme_md_path.exists() {
+                match fs::read_to_string(&ex_readme_md_path) {
+                    Ok(content) => examples_readme_content = Some(content),
+                    Err(e) => warn!(
+                        "Failed to read examples README.md at {}: {}",
+                        ex_readme_md_path.display(),
+                        e
+                    ),
+                }
+            } else if ex_readme_path.exists() {
+                match fs::read_to_string(&ex_readme_path) {
+                    Ok(content) => examples_readme_content = Some(content),
+                    Err(e) => warn!(
+                        "Failed to read examples README at {}: {}",
+                        ex_readme_path.display(),
+                        e
+                    ),
+                }
+            }
+
+            // Read .rs example files
+            let mut found_examples = Vec::new();
+            for entry_result in fs::read_dir(&examples_dir).with_context(|| {
+                format!(
+                    "Failed to read examples directory: {}",
+                    examples_dir.display()
+                )
+            })? {
+                let entry = entry_result?;
+                let path = entry.path();
+                if path.is_file() && path.extension().map_or(false, |ext| ext == "rs") {
+                    if let Some(filename_osstr) = path.file_name() {
+                        if let Some(filename_str) = filename_osstr.to_str() {
+                            match fs::read_to_string(&path) {
+                                Ok(content) => {
+                                    found_examples.push((filename_str.to_string(), content));
+                                }
+                                Err(e) => {
+                                    warn!("Failed to read example file {}: {}", path.display(), e)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !found_examples.is_empty() {
+                found_examples.sort_by(|a, b| a.0.cmp(&b.0)); // Sort by filename
+                examples_content = Some(found_examples);
+                info!(
+                    "Found {} example files.",
+                    examples_content.as_ref().unwrap().len()
+                );
+            } else {
+                info!("No .rs files found in examples directory.");
+            }
+        } else {
+            info!("No examples directory found at {}", examples_dir.display());
+        }
+    }
+
     // Use the *actual* crate name from the API response, as it might differ in casing
     let actual_crate_name = &target_version.crate_name;
     let json_output_path = run_rustdoc(
@@ -6007,17 +6144,19 @@ async fn main() -> Result<()> {
     }
 
     // --- Generate Documentation ---
-    // Pass resolved modules, full graph, template flag, README content, and manifest data
     let documentation = generate_documentation(
         &krate,
         &manifest_data,
         readme_content,
+        examples_readme_content,
+        examples_content,
         &selected_ids,
         &resolved_modules,
         &full_graph,
         args.include_other,
         args.template,
-        args.no_common_traits, // Pass the new flag
+        args.no_common_traits,
+        args.no_examples,
     )?;
 
     // --- Output Documentation ---
