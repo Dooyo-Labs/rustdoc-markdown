@@ -102,6 +102,10 @@ struct Args {
     /// Do not embed the crate's README file in the output.
     #[arg(long)]
     no_readme: bool,
+
+    /// Do not generate "Common Traits" sections; list all traits for each item.
+    #[arg(long)]
+    no_common_traits: bool,
 }
 
 /// Parses a string into an `Id`.
@@ -2575,7 +2579,7 @@ struct NormalizedTraitImpl {
     is_auto: bool,
     is_unsafe_impl: bool,
     is_blanket: bool,
-    is_effectively_blanket: bool, // New field
+    is_effectively_blanket: bool,
     is_negative: bool,
     /// A user-friendly, cleaned string representation of the trait including its generics,
     /// e.g., "Debug", "Iterator<Item = u32>". Used for display in lists.
@@ -3359,16 +3363,17 @@ struct DocPrinter<'a> {
     resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
     graph: &'a IdGraph,                                // Add graph reference
     include_other: bool,
-    template_mode: bool, // New flag for template mode
-    printed_ids: HashSet<Id>,
+    template_mode: bool,      // New flag for template mode
+    no_common_traits: bool,   // New flag for disabling common traits
+    printed_ids: HashSet<Id>, // Stores IDs that have had their primary definition printed
     output: String,
     module_tree: ModuleTree, // Add module tree
     // Tracks the current path in the document structure (e.g., [1, 2, 1] -> 1.2.1)
     doc_path: Vec<usize>,
     current_module_path: Vec<String>, // Tracks the current module's string path
-    crate_common_traits: HashSet<NormalizedTraitImpl>, // Renamed
-    all_type_ids_with_impls: HashSet<Id>, // New: Stores IDs of types with impls
-    module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl>>, // New
+    crate_common_traits: HashSet<NormalizedTraitImpl>,
+    all_type_ids_with_impls: HashSet<Id>,
+    module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl>>,
 }
 
 impl<'a> DocPrinter<'a> {
@@ -3380,29 +3385,31 @@ impl<'a> DocPrinter<'a> {
         resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
         graph: &'a IdGraph,                                // Add graph parameter
         include_other: bool,
-        template_mode: bool, // Add template mode flag
+        template_mode: bool,    // Add template mode flag
+        no_common_traits: bool, // Add no_common_traits flag
     ) -> Self {
         let module_tree = Self::build_module_tree(krate);
         let (crate_common_traits, all_type_ids_with_impls) =
-            Self::calculate_crate_common_traits(krate, selected_ids);
+            Self::calculate_crate_common_traits(krate, selected_ids, no_common_traits);
 
         DocPrinter {
             krate,
-            manifest,       // Store manifest data
-            readme_content, // Store README content
+            manifest,
+            readme_content,
             selected_ids,
-            resolved_modules, // Store resolved modules
-            graph,            // Store graph reference
+            resolved_modules,
+            graph,
             include_other,
-            template_mode, // Store template mode flag
+            template_mode,
+            no_common_traits, // Store the flag
             printed_ids: HashSet::new(),
             output: String::new(),
-            module_tree,                          // Initialize module tree
-            doc_path: Vec::new(),                 // Initialize empty document path
-            current_module_path: vec![],          // Initialize empty module path
-            crate_common_traits,                  // Store common traits
-            all_type_ids_with_impls,              // Store types with impls
-            module_common_traits: HashMap::new(), // Initialize module common traits
+            module_tree,
+            doc_path: Vec::new(),
+            current_module_path: vec![],
+            crate_common_traits,
+            all_type_ids_with_impls,
+            module_common_traits: HashMap::new(),
         }
     }
 
@@ -3410,19 +3417,30 @@ impl<'a> DocPrinter<'a> {
     fn calculate_crate_common_traits(
         krate: &'a Crate,
         selected_ids: &'a HashSet<Id>,
+        no_common_traits: bool,
     ) -> (HashSet<NormalizedTraitImpl>, HashSet<Id>) {
-        let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
         let mut all_type_ids_with_impls = HashSet::new();
+        if no_common_traits {
+            // Still calculate all_type_ids_with_impls for other logic if needed
+            for (_, item) in &krate.index {
+                if let ItemEnum::Impl(imp) = &item.inner {
+                    if let Some(for_type_id) = get_type_id(&imp.for_) {
+                        if selected_ids.contains(&for_type_id) {
+                            all_type_ids_with_impls.insert(for_type_id);
+                        }
+                    }
+                }
+            }
+            return (HashSet::new(), all_type_ids_with_impls);
+        }
 
+        let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
         for (_, item) in &krate.index {
             if let ItemEnum::Impl(imp) = &item.inner {
                 if let Some(for_type_id) = get_type_id(&imp.for_) {
-                    // Only consider types that are selected for documentation
                     if selected_ids.contains(&for_type_id) {
                         all_type_ids_with_impls.insert(for_type_id);
-
                         if let Some(trait_path) = &imp.trait_ {
-                            // For common trait calculation, we don't need a specific impl_id link yet.
                             let norm_impl =
                                 NormalizedTraitImpl::from_impl(imp, None, trait_path, krate);
                             *trait_counts.entry(norm_impl).or_insert(0) += 1;
@@ -3471,13 +3489,16 @@ impl<'a> DocPrinter<'a> {
 
     /// Calculates common traits for a specific module.
     fn calculate_module_common_traits(&self, module_id: &Id) -> HashSet<NormalizedTraitImpl> {
-        let mut module_common_traits = self.crate_common_traits.clone(); // Start with crate-level
+        if self.no_common_traits {
+            return HashSet::new();
+        }
+
+        let mut module_common_traits = self.crate_common_traits.clone();
 
         if let Some(resolved_mod) = self.resolved_modules.get(module_id) {
             let mut module_types_considered = HashSet::new();
             for item_id in &resolved_mod.items {
                 if let Some(item) = self.krate.index.get(item_id) {
-                    // Consider structs, enums, unions, primitives for common trait calculation within the module
                     if matches!(
                         item.inner,
                         ItemEnum::Struct(_)
@@ -3486,7 +3507,6 @@ impl<'a> DocPrinter<'a> {
                             | ItemEnum::Primitive(_)
                     ) && self.selected_ids.contains(item_id)
                     {
-                        // Check if this type implements any traits
                         let has_impls = self.krate.index.values().any(|idx_item| {
                             if let ItemEnum::Impl(imp) = &idx_item.inner {
                                 if let Some(for_id) = get_type_id(&imp.for_) {
@@ -3507,8 +3527,6 @@ impl<'a> DocPrinter<'a> {
             }
 
             let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
-
-            // Count traits implemented by these module types
             for item_id in &module_types_considered {
                 for krate_item in self.krate.index.values() {
                     if let ItemEnum::Impl(imp) = &krate_item.inner {
@@ -3535,7 +3553,6 @@ impl<'a> DocPrinter<'a> {
             for (norm_impl, count) in trait_counts {
                 if count >= threshold {
                     if module_common_traits.insert(norm_impl.clone()) {
-                        // Inserted a new one not present in crate_common_traits
                         debug!(
                             "Identified module-specific common trait for {:?}: {:?} (implemented by {} of {} module types)",
                             self.krate.paths.get(module_id).map(|p|p.path.join("::")).unwrap_or_default(),
@@ -4502,19 +4519,16 @@ impl<'a> DocPrinter<'a> {
     /// Note: when formatting lists of traits for a specific item, we can expect
     /// `all_traits_for_item` to only contains traits that are implemented for the
     /// target item so there's no need to filter again by a target `Id`
-    fn format_trait_list(
-        &mut self,
-        traits_to_format: &[NormalizedTraitImpl],
-    ) -> String {
+    fn format_trait_list(&mut self, traits_to_format: &[NormalizedTraitImpl]) -> String {
         if traits_to_format.is_empty() {
             return String::new();
         }
 
         let mut output = String::new();
-        let mut auto_traits = Vec::new();
-        let mut blanket_impls = Vec::new(); // Actual blanket from `imp.blanket_impl`
         let mut simple_impls = Vec::new();
         let mut generic_or_complex_impls = Vec::new();
+        let mut auto_traits = Vec::new();
+        let mut blanket_impls = Vec::new();
 
         for norm_trait in traits_to_format {
             if norm_trait.is_auto {
@@ -4522,10 +4536,8 @@ impl<'a> DocPrinter<'a> {
             } else if norm_trait.is_blanket {
                 blanket_impls.push(norm_trait);
             } else {
-                // Check if it's simple (effectively blanket AND no associated items, or truly simple)
                 let is_simple_display = norm_trait.is_effectively_blanket
                     && !norm_trait.has_associated_items(self.krate);
-
                 if is_simple_display {
                     simple_impls.push(norm_trait);
                 } else {
@@ -4535,26 +4547,17 @@ impl<'a> DocPrinter<'a> {
         }
 
         // Sort each category
-        auto_traits.sort_by_key(|t| &t.cleaned_path_for_display);
-        blanket_impls.sort_by_key(|t| &t.cleaned_path_for_display);
         simple_impls.sort_by_key(|t| &t.cleaned_path_for_display);
         generic_or_complex_impls.sort_by_key(|t| &t.cleaned_path_for_display);
+        auto_traits.sort_by_key(|t| &t.cleaned_path_for_display);
+        blanket_impls.sort_by_key(|t| &t.cleaned_path_for_display);
 
         self.push_level();
-
         let mut preceding_section = false;
 
         if !simple_impls.is_empty() {
-            if preceding_section {
-                writeln!(output).unwrap(); // Add blank line before next section
-            }
             for norm_trait in simple_impls {
-                writeln!(
-                    output,
-                    "- `{}`",
-                    norm_trait.cleaned_path_for_display,
-                )
-                .unwrap();
+                writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
                     self.printed_ids.insert(impl_id);
                     for assoc_item_id in &trait_impl.items {
@@ -4570,43 +4573,25 @@ impl<'a> DocPrinter<'a> {
 
         if !generic_or_complex_impls.is_empty() {
             if preceding_section {
-                writeln!(output).unwrap(); // Add blank line before next section
+                writeln!(output).unwrap();
             }
             for norm_trait in generic_or_complex_impls {
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    // For item-specific trait lists, print the impl block
                     if let Some(impl_block_str) = self.generate_impl_trait_block(trait_impl) {
-                        // Check if the impl block is not empty after potential method skipping
                         if !impl_block_str.trim_end_matches("{\n}").trim().is_empty() {
-                            writeln!(
-                                output,
-                                "- `{}`",
-                                norm_trait.cleaned_path_for_display,
-                            )
-                            .unwrap();
+                            writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display)
+                                .unwrap();
                             writeln!(output).unwrap();
                             let full_code_block = format!("```rust\n{}\n```", impl_block_str);
                             let indented_block = indent_string(&full_code_block, 4);
                             writeln!(output, "{}\n", indented_block).unwrap();
                         } else {
-                            // Impl block became empty (only methods), so just list the trait name
-                            writeln!(
-                                output,
-                                "- `{}`",
-                                norm_trait.cleaned_path_for_display,
-                            )
-                            .unwrap();
+                            writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display)
+                                .unwrap();
                         }
                     } else {
-                        // Fallback if generate_impl_trait_block decided not to print
-                        writeln!(
-                            output,
-                            "- `{}`",
-                            norm_trait.cleaned_path_for_display,
-                        )
-                        .unwrap();
+                        writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                     }
-                    // Mark impl_id and its items as printed regardless of block generation
                     self.printed_ids.insert(impl_id);
                     for assoc_item_id in &trait_impl.items {
                         if self.selected_ids.contains(assoc_item_id) {
@@ -4614,13 +4599,7 @@ impl<'a> DocPrinter<'a> {
                         }
                     }
                 } else {
-                    // Fallback for common traits section or if get_impl_data fails
-                    writeln!(
-                        output,
-                        "- `{}`",
-                        norm_trait.cleaned_path_for_display,
-                    )
-                    .unwrap();
+                    writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 }
                 preceding_section = true;
                 self.post_increment_current_level();
@@ -4628,13 +4607,11 @@ impl<'a> DocPrinter<'a> {
         }
 
         if !auto_traits.is_empty() {
+            if preceding_section {
+                writeln!(output).unwrap();
+            }
             for norm_trait in auto_traits {
-                writeln!(
-                    output,
-                    "- `{}`",
-                    norm_trait.cleaned_path_for_display,
-                )
-                .unwrap();
+                writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
                     self.printed_ids.insert(impl_id);
                     for assoc_item_id in &trait_impl.items {
@@ -4650,7 +4627,7 @@ impl<'a> DocPrinter<'a> {
 
         if !blanket_impls.is_empty() {
             if preceding_section {
-                writeln!(output).unwrap(); // Add blank line before next section
+                writeln!(output).unwrap();
             }
             for norm_trait in blanket_impls {
                 let where_clause = if let Some((trait_impl, _impl_id)) =
@@ -4669,23 +4646,13 @@ impl<'a> DocPrinter<'a> {
                         )
                         .unwrap();
                     } else {
-                        writeln!(
-                            output,
-                            "- `{}`",
-                            norm_trait.cleaned_path_for_display,
-                        )
-                        .unwrap();
+                        writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                         let code_block = format!("```rust\n{}\n```", where_clause);
                         let indented_block = indent_string(&code_block, 4);
                         writeln!(output, "\n{}\n", indented_block).unwrap();
                     }
                 } else {
-                    writeln!(
-                        output,
-                        "- `{}`",
-                        norm_trait.cleaned_path_for_display,
-                    )
-                    .unwrap();
+                    writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 }
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
                     self.printed_ids.insert(impl_id);
@@ -4695,6 +4662,7 @@ impl<'a> DocPrinter<'a> {
                         }
                     }
                 }
+                // preceding_section = true; // Not strictly needed if it's the last section
                 self.post_increment_current_level();
             }
         }
@@ -4836,8 +4804,7 @@ impl<'a> DocPrinter<'a> {
                 .unwrap();
             }
 
-            let formatted_list =
-                self.format_trait_list(&non_common_trait_impls);
+            let formatted_list = self.format_trait_list(&non_common_trait_impls);
             if !formatted_list.is_empty() {
                 write!(self.output, "{}", formatted_list).unwrap();
             }
@@ -5332,21 +5299,22 @@ impl<'a> DocPrinter<'a> {
     fn clone_with_new_output(&self) -> Self {
         DocPrinter {
             krate: self.krate,
-            manifest: self.manifest, // Pass manifest reference
-            readme_content: self.readme_content.clone(), // Clone README content
+            manifest: self.manifest,
+            readme_content: self.readme_content.clone(),
             selected_ids: self.selected_ids,
             resolved_modules: self.resolved_modules,
             graph: self.graph,
             include_other: self.include_other,
             template_mode: self.template_mode,
-            printed_ids: self.printed_ids.clone(), // Clone printed IDs too? Or share? Let's clone for isolation.
-            output: String::new(),                 // New empty output
-            module_tree: self.module_tree.clone(), // Clone module tree as well
-            doc_path: self.doc_path.clone(),       // Clone doc path
-            current_module_path: self.current_module_path.clone(), // Clone current module path
-            crate_common_traits: self.crate_common_traits.clone(), // Clone common traits
-            all_type_ids_with_impls: self.all_type_ids_with_impls.clone(), // Clone types with impls
-            module_common_traits: self.module_common_traits.clone(), // Clone module common traits
+            no_common_traits: self.no_common_traits,
+            printed_ids: self.printed_ids.clone(),
+            output: String::new(),
+            module_tree: self.module_tree.clone(),
+            doc_path: self.doc_path.clone(),
+            current_module_path: self.current_module_path.clone(),
+            crate_common_traits: self.crate_common_traits.clone(),
+            all_type_ids_with_impls: self.all_type_ids_with_impls.clone(),
+            module_common_traits: self.module_common_traits.clone(),
         }
     }
 
@@ -5405,32 +5373,34 @@ impl<'a> DocPrinter<'a> {
             self.print_docs(item);
 
             // --- Module Common Traits ---
-            let mod_common = self.calculate_module_common_traits(&module_id);
-            self.module_common_traits
-                .insert(module_id, mod_common.clone()); // Store for later use
+            if !self.no_common_traits {
+                let mod_common = self.calculate_module_common_traits(&module_id);
+                self.module_common_traits
+                    .insert(module_id, mod_common.clone()); // Store for later use
 
-            let displayable_module_common: Vec<NormalizedTraitImpl> = mod_common
-                .iter()
-                .filter(|nt| !self.crate_common_traits.contains(nt)) // Only those not in crate common
-                .cloned()
-                .collect();
+                let displayable_module_common: Vec<NormalizedTraitImpl> = mod_common
+                    .iter()
+                    .filter(|nt| !self.crate_common_traits.contains(nt)) // Only those not in crate common
+                    .cloned()
+                    .collect();
 
-            if !displayable_module_common.is_empty() {
-                let common_traits_header_level = self.get_current_header_level(); // Should be H3
-                let common_traits_prefix = self.get_header_prefix();
-                writeln!(
-                    self.output,
-                    "{} {} Common Traits\n",
-                    "#".repeat(common_traits_header_level),
-                    common_traits_prefix
-                )
-                .unwrap();
-                writeln!(self.output, "In addition to the crate's 'Common Traits', the following traits are commonly implemented by types in this module. Unless otherwise noted, you can assume these traits are implemented:\n").unwrap();
-                let formatted_list = self.format_trait_list(&displayable_module_common);
-                if !formatted_list.is_empty() {
-                    write!(self.output, "{}", formatted_list).unwrap();
+                if !displayable_module_common.is_empty() {
+                    let common_traits_header_level = self.get_current_header_level(); // Should be H3
+                    let common_traits_prefix = self.get_header_prefix();
+                    writeln!(
+                        self.output,
+                        "{} {} Common Traits\n",
+                        "#".repeat(common_traits_header_level),
+                        common_traits_prefix
+                    )
+                    .unwrap();
+                    writeln!(self.output, "In addition to the crate's 'Common Traits', the following traits are commonly implemented by types in this module. Unless otherwise noted, you can assume these traits are implemented:\n").unwrap();
+                    let formatted_list = self.format_trait_list(&displayable_module_common);
+                    if !formatted_list.is_empty() {
+                        write!(self.output, "{}", formatted_list).unwrap();
+                    }
+                    self.post_increment_current_level(); // Increment for this section
                 }
-                self.post_increment_current_level(); // Increment for this section
             }
 
             // Print module contents (non-module items only)
@@ -5567,7 +5537,7 @@ impl<'a> DocPrinter<'a> {
         }
 
         // Print Crate Common Traits Section (H2)
-        if !self.crate_common_traits.is_empty() {
+        if !self.no_common_traits && !self.crate_common_traits.is_empty() {
             let common_traits_level = self.get_current_header_level(); // Should be 2
             let common_traits_prefix = self.get_header_prefix();
             writeln!(
@@ -5779,13 +5749,14 @@ impl<'a> DocPrinter<'a> {
 
 fn generate_documentation(
     krate: &Crate,
-    manifest: &CrateManifestData,   // Accept manifest data
-    readme_content: Option<String>, // Accept README content
+    manifest: &CrateManifestData,
+    readme_content: Option<String>,
     selected_ids: &HashSet<Id>,
-    resolved_modules: &HashMap<Id, ResolvedModule>, // Accept resolved modules
-    graph: &IdGraph,                                // Accept graph
+    resolved_modules: &HashMap<Id, ResolvedModule>,
+    graph: &IdGraph,
     include_other: bool,
-    template_mode: bool, // Add template mode flag
+    template_mode: bool,
+    no_common_traits: bool, // Add no_common_traits flag
 ) -> Result<String> {
     info!(
         "Generating documentation for {} selected items.",
@@ -5797,13 +5768,14 @@ fn generate_documentation(
 
     let printer = DocPrinter::new(
         krate,
-        manifest,       // Pass manifest data
-        readme_content, // Pass README content
+        manifest,
+        readme_content,
         selected_ids,
         resolved_modules,
         graph,
         include_other,
-        template_mode, // Pass template mode flag
+        template_mode,
+        no_common_traits, // Pass the flag
     );
     let output = printer.finalize();
 
@@ -6038,13 +6010,14 @@ async fn main() -> Result<()> {
     // Pass resolved modules, full graph, template flag, README content, and manifest data
     let documentation = generate_documentation(
         &krate,
-        &manifest_data, // Pass manifest data here
-        readme_content, // Pass README content here
+        &manifest_data,
+        readme_content,
         &selected_ids,
         &resolved_modules,
         &full_graph,
         args.include_other,
         args.template,
+        args.no_common_traits, // Pass the new flag
     )?;
 
     // --- Output Documentation ---
