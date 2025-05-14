@@ -33,6 +33,20 @@ const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    #[clap(subcommand)]
+    command: Command,
+}
+
+#[derive(Parser, Debug)]
+enum Command {
+    /// Print crate documentation to Markdown
+    Print(PrintCommand),
+    /// Dump the crate's item dependency graph
+    DumpGraph(DumpGraphCommand),
+}
+
+#[derive(Parser, Debug)]
+struct PrintCommand {
     /// Name of the crate on crates.io
     crate_name: String,
 
@@ -46,32 +60,11 @@ struct Args {
 
     /// Build directory for crate documentation artifacts
     #[arg(long, default_value = ".ai/docs/rust/build")]
-    build_dir: String, // Renamed from output_dir
+    build_dir: String,
 
     /// Path to write the generated documentation (defaults to stdout)
     #[arg(long)]
-    output: Option<PathBuf>, // New argument for output file
-
-    /// Enable dependency graph dumping and specify the output file.
-    #[arg(long)]
-    dump_graph: Option<PathBuf>,
-
-    /// Dump graph starting only from module roots (requires --dump-graph).
-    #[arg(long, requires = "dump_graph")]
-    dump_modules: bool,
-
-    /// Dump graph starting only from this ID (requires --dump-graph). Takes precedence over --dump-modules.
-    #[arg(long, value_parser = parse_id, requires = "dump_graph")]
-    dump_from_id: Option<Id>,
-
-    /// Filter graph dump to only include paths leading to this leaf ID (requires --dump-graph).
-    #[arg(long, value_parser = parse_id, requires = "dump_graph")]
-    dump_to_id: Option<Id>,
-
-    /// Limit the maximum depth of the dumped graph (requires --dump-graph).
-    /// 0 means root only, 1 means root and direct children, etc.
-    #[arg(long, requires = "dump_graph")]
-    dump_max_depth: Option<usize>,
+    output: Option<PathBuf>,
 
     /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
     /// Paths starting with '::' imply the root of the current crate.
@@ -85,7 +78,7 @@ struct Args {
 
     /// Space-separated list of features to activate
     #[arg(long)]
-    features: Option<String>, // Vec<String>? Clap might handle space separation
+    features: Option<String>,
 
     /// Do not activate the `default` feature
     #[arg(long)]
@@ -110,6 +103,65 @@ struct Args {
     /// Do not include an "Examples Appendix" section.
     #[arg(long)]
     no_examples: bool,
+}
+
+#[derive(Parser, Debug)]
+struct DumpGraphCommand {
+    /// Name of the crate on crates.io
+    crate_name: String,
+
+    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*")
+    #[arg(default_value = "*")]
+    crate_version: String,
+
+    /// Include prerelease versions when selecting the latest
+    #[arg(long)]
+    include_prerelease: bool,
+
+    /// Build directory for crate documentation artifacts
+    #[arg(long, default_value = ".ai/docs/rust/build")]
+    build_dir: String,
+
+    /// Path to write the graph dump (defaults to stdout)
+    #[arg(long)]
+    output: Option<PathBuf>,
+
+    /// Dump graph starting only from module roots.
+    #[arg(long)]
+    modules: bool,
+
+    /// Dump graph starting only from this ID. Takes precedence over --modules.
+    #[arg(long, value_parser = parse_id)]
+    from_id: Option<Id>,
+
+    /// Filter graph dump to only include paths leading to this leaf ID.
+    #[arg(long, value_parser = parse_id)]
+    to_id: Option<Id>,
+
+    /// Limit the maximum depth of the dumped graph.
+    /// 0 means root only, 1 means root and direct children, etc.
+    #[arg(long)]
+    max_depth: Option<usize>,
+
+    /// Space-separated list of features to activate
+    #[arg(long)]
+    features: Option<String>,
+
+    /// Do not activate the `default` feature
+    #[arg(long)]
+    no_default_features: bool,
+
+    /// Build documentation for the specified target triple
+    #[arg(long)]
+    target: Option<String>,
+
+    /// Filter items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
+    /// Paths starting with '::' imply the root of the current crate.
+    /// Matches are prefix-based (e.g., "::style" matches "::style::TextStyle").
+    /// This filter is applied *before* graph construction if --to-id is not used,
+    /// or *after* graph filtering if --to-id is used.
+    #[arg(long = "path")]
+    paths: Vec<String>,
 }
 
 /// Parses a string into an `Id`.
@@ -489,8 +541,8 @@ fn dump_node(
     node_id: Id,
     graph: &IdGraph, // Use the potentially filtered graph
     krate: &Crate,
-    writer: &mut BufWriter<File>,
-    visited: &mut HashSet<Id>, // Use mutable reference to shared visited set
+    writer: &mut dyn IoWrite,         // Changed to dyn Write for flexibility
+    visited: &mut HashSet<Id>,        // Use mutable reference to shared visited set
     path_to_target: &mut HashSet<Id>, // Tracks current path to target leaf
     indent: usize,
     depth: usize,                     // Current recursion depth
@@ -614,28 +666,15 @@ fn dump_node(
     Ok(())
 }
 
-/// Dumps a subset of the dependency graph to a file based on specified roots.
+/// Dumps a subset of the dependency graph to a writer.
 fn dump_graph_subset(
     graph: &IdGraph, // Use the potentially filtered graph
     krate: &Crate,
     root_ids: &HashSet<Id>,
-    output_path: &FilePath,
+    writer: &mut dyn IoWrite, // Changed to dyn Write
     dump_description: &str,
     max_depth: Option<usize>, // Add max_depth parameter
 ) -> Result<()> {
-    info!(
-        "Dumping {} graph to: {}",
-        dump_description,
-        output_path.display()
-    );
-    let file = File::create(output_path).with_context(|| {
-        format!(
-            "Failed to create graph dump file: {}",
-            output_path.display()
-        )
-    })?;
-    let mut writer = BufWriter::new(file);
-
     // Use a single visited set for the entire dump process across all roots
     let mut visited = HashSet::new();
 
@@ -657,7 +696,7 @@ fn dump_graph_subset(
                     node_id,
                     graph,
                     krate,
-                    &mut writer,
+                    writer,
                     &mut visited,        // Pass shared mutable visited set
                     &mut path_to_target, // Pass new mutable path set
                     0,
@@ -680,7 +719,7 @@ fn dump_graph_subset(
                     root_id,
                     graph,
                     krate,
-                    &mut writer,
+                    writer,
                     &mut visited,        // Pass shared mutable visited set
                     &mut path_to_target, // Pass new mutable path set for this root
                     0,
@@ -693,11 +732,6 @@ fn dump_graph_subset(
             }
         }
     }
-
-    writer
-        .flush()
-        .with_context(|| format!("Failed to write graph to file: {}", output_path.display()))?;
-    info!("Successfully dumped graph to {}", output_path.display());
     Ok(())
 }
 
@@ -5865,322 +5899,338 @@ async fn main() -> Result<()> {
         ))
         .build()?;
 
-    let target_version = find_best_version(
-        &client,
-        &args.crate_name,
-        &args.crate_version,
-        args.include_prerelease,
-    )
-    .await?;
+    match args.command {
+        Command::Print(print_args) => {
+            let target_version = find_best_version(
+                &client,
+                &print_args.crate_name,
+                &print_args.crate_version,
+                print_args.include_prerelease,
+            )
+            .await?;
 
-    info!(
-        "Selected version {} for crate {}",
-        target_version.num, target_version.crate_name
-    );
+            info!(
+                "Selected version {} for crate {}",
+                target_version.num, target_version.crate_name
+            );
 
-    let build_path = PathBuf::from(args.build_dir); // Use build_dir
-    std::fs::create_dir_all(&build_path)
-        .with_context(|| format!("Failed to create build directory: {}", build_path.display()))?;
+            let build_path = PathBuf::from(print_args.build_dir);
+            std::fs::create_dir_all(&build_path).with_context(|| {
+                format!("Failed to create build directory: {}", build_path.display())
+            })?;
 
-    let crate_dir = download_and_unpack_crate(&client, &target_version, &build_path).await?;
+            let crate_dir =
+                download_and_unpack_crate(&client, &target_version, &build_path).await?;
 
-    // --- Load Cargo.toml ---
-    let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest: Manifest = Manifest::from_path(&manifest_path).with_context(|| {
-        format!(
-            "Failed to read or parse Cargo.toml: {}",
-            manifest_path.display()
-        )
-    })?;
-
-    // Extract relevant manifest data (handle potential missing fields)
-    // Use .package field (Option<Package>) then access fields on the Package struct
-    let package_data = manifest.package.as_ref().unwrap(); // Assume package exists
-    let manifest_data = CrateManifestData {
-        description: package_data
-            .description
-            .as_ref()
-            .and_then(|d| d.as_ref().as_local())
-            .cloned(),
-        homepage: package_data
-            .homepage
-            .as_ref()
-            .and_then(|h| h.as_ref().as_local())
-            .cloned(),
-        repository: package_data
-            .repository
-            .as_ref()
-            .and_then(|r| r.as_ref().as_local())
-            .cloned(),
-        categories: package_data
-            .categories
-            .as_ref()
-            .and_then(|c| c.as_ref().as_local())
-            .cloned()
-            .unwrap_or_default(),
-        license: package_data
-            .license
-            .as_ref()
-            .and_then(|l| l.as_ref().as_local())
-            .cloned(),
-        rust_version: package_data
-            .rust_version
-            .as_ref()
-            .and_then(|rv| rv.as_ref().as_local())
-            .cloned(),
-        edition: package_data
-            .edition
-            .as_ref()
-            .and_then(|e| e.as_ref().as_local()) // Get Option<&Edition>
-            .map(|e| e.as_str().to_string()), // Use as_str() then to_string()
-        features: manifest.features.clone().unwrap_or_default(), // Use manifest.features field
-    };
-
-    // --- Locate and Read README ---
-    let readme_content = if args.no_readme {
-        None
-    } else {
-        let readme_md_path = crate_dir.join("README.md");
-        let readme_path = crate_dir.join("README");
-        let readme_file_path = if readme_md_path.exists() {
-            Some(readme_md_path)
-        } else if readme_path.exists() {
-            Some(readme_path)
-        } else {
-            None
-        };
-
-        if let Some(path) = readme_file_path {
-            info!("Found README file: {}", path.display());
-            match fs::read_to_string(&path) {
-                Ok(content) => Some(content),
-                Err(e) => {
-                    warn!("Failed to read README file at {}: {}", path.display(), e);
-                    None
-                }
-            }
-        } else {
-            info!("No README.md or README file found in crate root.");
-            None
-        }
-    };
-
-    // --- Locate and Read Examples ---
-    let mut examples_readme_content: Option<String> = None;
-    let mut examples_content: Option<Vec<(String, String)>> = None;
-
-    if !args.no_examples {
-        let examples_dir = crate_dir.join("examples");
-        if examples_dir.is_dir() {
-            info!("Found examples directory: {}", examples_dir.display());
-
-            // Read examples README
-            let ex_readme_md_path = examples_dir.join("README.md");
-            let ex_readme_path = examples_dir.join("README");
-            if ex_readme_md_path.exists() {
-                match fs::read_to_string(&ex_readme_md_path) {
-                    Ok(content) => examples_readme_content = Some(content),
-                    Err(e) => warn!(
-                        "Failed to read examples README.md at {}: {}",
-                        ex_readme_md_path.display(),
-                        e
-                    ),
-                }
-            } else if ex_readme_path.exists() {
-                match fs::read_to_string(&ex_readme_path) {
-                    Ok(content) => examples_readme_content = Some(content),
-                    Err(e) => warn!(
-                        "Failed to read examples README at {}: {}",
-                        ex_readme_path.display(),
-                        e
-                    ),
-                }
-            }
-
-            // Read .rs example files
-            let mut found_examples = Vec::new();
-            for entry_result in fs::read_dir(&examples_dir).with_context(|| {
+            let manifest_path = crate_dir.join("Cargo.toml");
+            let manifest: Manifest = Manifest::from_path(&manifest_path).with_context(|| {
                 format!(
-                    "Failed to read examples directory: {}",
-                    examples_dir.display()
+                    "Failed to read or parse Cargo.toml: {}",
+                    manifest_path.display()
                 )
-            })? {
-                let entry = entry_result?;
-                let path = entry.path();
-                if path.is_file() && path.extension().map_or(false, |ext| ext == "rs") {
-                    if let Some(filename_osstr) = path.file_name() {
-                        if let Some(filename_str) = filename_osstr.to_str() {
-                            match fs::read_to_string(&path) {
-                                Ok(content) => {
-                                    found_examples.push((filename_str.to_string(), content));
-                                }
-                                Err(e) => {
-                                    warn!("Failed to read example file {}: {}", path.display(), e)
+            })?;
+
+            let package_data = manifest.package.as_ref().unwrap();
+            let manifest_data = CrateManifestData {
+                description: package_data
+                    .description
+                    .as_ref()
+                    .and_then(|d| d.as_ref().as_local())
+                    .cloned(),
+                homepage: package_data
+                    .homepage
+                    .as_ref()
+                    .and_then(|h| h.as_ref().as_local())
+                    .cloned(),
+                repository: package_data
+                    .repository
+                    .as_ref()
+                    .and_then(|r| r.as_ref().as_local())
+                    .cloned(),
+                categories: package_data
+                    .categories
+                    .as_ref()
+                    .and_then(|c| c.as_ref().as_local())
+                    .cloned()
+                    .unwrap_or_default(),
+                license: package_data
+                    .license
+                    .as_ref()
+                    .and_then(|l| l.as_ref().as_local())
+                    .cloned(),
+                rust_version: package_data
+                    .rust_version
+                    .as_ref()
+                    .and_then(|rv| rv.as_ref().as_local())
+                    .cloned(),
+                edition: package_data
+                    .edition
+                    .as_ref()
+                    .and_then(|e| e.as_ref().as_local())
+                    .map(|e| e.as_str().to_string()),
+                features: manifest.features.clone().unwrap_or_default(),
+            };
+
+            let readme_content = if print_args.no_readme {
+                None
+            } else {
+                let readme_md_path = crate_dir.join("README.md");
+                let readme_path = crate_dir.join("README");
+                let readme_file_path = if readme_md_path.exists() {
+                    Some(readme_md_path)
+                } else if readme_path.exists() {
+                    Some(readme_path)
+                } else {
+                    None
+                };
+                readme_file_path
+                    .and_then(|path| fs::read_to_string(&path).ok())
+                    .or_else(|| {
+                        if readme_file_path.is_some() {
+                            warn!("Failed to read README.");
+                        } else {
+                            info!("No README found.");
+                        }
+                        None
+                    })
+            };
+
+            let mut examples_readme_content: Option<String> = None;
+            let mut examples_content: Option<Vec<(String, String)>> = None;
+            if !print_args.no_examples {
+                let examples_dir = crate_dir.join("examples");
+                if examples_dir.is_dir() {
+                    let ex_readme_md_path = examples_dir.join("README.md");
+                    let ex_readme_path = examples_dir.join("README");
+                    examples_readme_content = ex_readme_md_path
+                        .exists()
+                        .then_some(ex_readme_md_path)
+                        .or_else(|| ex_readme_path.exists().then_some(ex_readme_path))
+                        .and_then(|p| fs::read_to_string(p).ok());
+
+                    let mut found_examples = Vec::new();
+                    if let Ok(entries) = fs::read_dir(&examples_dir) {
+                        for entry_result in entries {
+                            if let Ok(entry) = entry_result {
+                                let path = entry.path();
+                                if path.is_file()
+                                    && path.extension().map_or(false, |ext| ext == "rs")
+                                {
+                                    if let Some(filename_str) =
+                                        path.file_name().and_then(|n| n.to_str())
+                                    {
+                                        if let Ok(content) = fs::read_to_string(&path) {
+                                            found_examples
+                                                .push((filename_str.to_string(), content));
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                    if !found_examples.is_empty() {
+                        found_examples.sort_by(|a, b| a.0.cmp(&b.0));
+                        examples_content = Some(found_examples);
+                    }
                 }
             }
-            if !found_examples.is_empty() {
-                found_examples.sort_by(|a, b| a.0.cmp(&b.0)); // Sort by filename
-                examples_content = Some(found_examples);
+
+            let actual_crate_name = &target_version.crate_name;
+            let json_output_path = run_rustdoc(
+                &crate_dir,
+                actual_crate_name,
+                print_args.features.as_deref(),
+                print_args.no_default_features,
+                print_args.target.as_deref(),
+            )?;
+
+            info!("Parsing rustdoc JSON: {}", json_output_path.display());
+            let file = File::open(&json_output_path).with_context(|| {
+                format!("Failed to open JSON file: {}", json_output_path.display())
+            })?;
+            let reader = BufReader::new(file);
+            let krate: Crate = serde_json::from_reader(reader).with_context(|| {
+                format!("Failed to parse JSON file: {}", json_output_path.display())
+            })?;
+            info!(
+                "Loaded rustdoc JSON for {} v{}",
+                actual_crate_name,
+                krate.crate_version.as_deref().unwrap_or("?")
+            );
+
+            let resolved_modules = build_resolved_module_index(&krate);
+            let (selected_ids, full_graph) =
+                select_items(&krate, &print_args.paths, &resolved_modules)?;
+
+            let documentation = generate_documentation(
+                &krate,
+                &manifest_data,
+                readme_content,
+                examples_readme_content,
+                examples_content,
+                &selected_ids,
+                &resolved_modules,
+                &full_graph,
+                print_args.include_other,
+                print_args.template,
+                print_args.no_common_traits,
+                print_args.no_examples,
+            )?;
+
+            if let Some(output_file_path) = print_args.output {
                 info!(
-                    "Found {} example files.",
-                    examples_content.as_ref().unwrap().len()
+                    "Writing documentation to file: {}",
+                    output_file_path.display()
+                );
+                let mut file = File::create(&output_file_path).with_context(|| {
+                    format!(
+                        "Failed to create output file: {}",
+                        output_file_path.display()
+                    )
+                })?;
+                file.write_all(documentation.as_bytes()).with_context(|| {
+                    format!(
+                        "Failed to write to output file: {}",
+                        output_file_path.display()
+                    )
+                })?;
+                info!(
+                    "Successfully wrote documentation to {}",
+                    output_file_path.display()
                 );
             } else {
-                info!("No .rs files found in examples directory.");
+                info!("Printing documentation to stdout.");
+                print!("{}", documentation);
             }
-        } else {
-            info!("No examples directory found at {}", examples_dir.display());
         }
-    }
+        Command::DumpGraph(dump_args) => {
+            let target_version = find_best_version(
+                &client,
+                &dump_args.crate_name,
+                &dump_args.crate_version,
+                dump_args.include_prerelease,
+            )
+            .await?;
 
-    // Use the *actual* crate name from the API response, as it might differ in casing
-    let actual_crate_name = &target_version.crate_name;
-    let json_output_path = run_rustdoc(
-        &crate_dir,
-        actual_crate_name,
-        args.features.as_deref(),
-        args.no_default_features,
-        args.target.as_deref(),
-    )?;
+            let build_path = PathBuf::from(dump_args.build_dir);
+            std::fs::create_dir_all(&build_path).with_context(|| {
+                format!("Failed to create build directory: {}", build_path.display())
+            })?;
 
-    // --- Load Rustdoc JSON ---
-    info!("Parsing rustdoc JSON: {}", json_output_path.display());
-    let file = File::open(&json_output_path)
-        .with_context(|| format!("Failed to open JSON file: {}", json_output_path.display()))?;
-    let reader = BufReader::new(file);
-    let krate: Crate = serde_json::from_reader(reader)
-        .with_context(|| format!("Failed to parse JSON file: {}", json_output_path.display()))?;
-    info!(
-        "Loaded rustdoc JSON for {} v{}",
-        actual_crate_name,
-        krate.crate_version.as_deref().unwrap_or("?")
-    );
-    info!("Found {} total items in the index.", krate.index.len());
-    info!("Found {} items in the paths map.", krate.paths.len());
+            let crate_dir =
+                download_and_unpack_crate(&client, &target_version, &build_path).await?;
 
-    // --- Resolve Modules ---
-    let resolved_modules = build_resolved_module_index(&krate);
+            let actual_crate_name = &target_version.crate_name;
+            let json_output_path = run_rustdoc(
+                &crate_dir,
+                actual_crate_name,
+                dump_args.features.as_deref(),
+                dump_args.no_default_features,
+                dump_args.target.as_deref(),
+            )?;
 
-    // --- Select Items & Build Graph ---
-    let (selected_ids, full_graph) = select_items(&krate, &args.paths, &resolved_modules)?;
+            let file = File::open(&json_output_path)?;
+            let reader = BufReader::new(file);
+            let krate: Crate = serde_json::from_reader(reader)?;
 
-    // --- Graph Dumping ---
-    if let Some(dump_output_path) = &args.dump_graph {
-        // Determine the graph to dump based on --dump-to-id
-        let graph_to_dump = if let Some(target_leaf_id) = args.dump_to_id {
-            info!(
-                "Filtering graph to include only paths leading to leaf ID: {}",
-                target_leaf_id.0
-            );
-            let filtered_graph = full_graph.filter_to_leaf(target_leaf_id);
-            if filtered_graph.edges.is_empty() && !full_graph.edges.is_empty() {
-                warn!(
-                    "Target leaf ID {} for --dump-to-id not found or no paths lead to it in the graph. Dump will be empty.",
+            let resolved_modules = build_resolved_module_index(&krate);
+            let (_, full_graph) = select_items(&krate, &dump_args.paths, &resolved_modules)?;
+
+            let graph_to_dump = if let Some(target_leaf_id) = dump_args.to_id {
+                info!(
+                    "Filtering graph to include only paths leading to leaf ID: {}",
                     target_leaf_id.0
                 );
-            }
-            filtered_graph // Use the filtered graph for dumping
-        } else {
-            full_graph.clone() // Use the full graph if no filtering needed
-        };
-
-        // Determine roots and description based on --dump-from-id and --dump-modules
-        let (root_ids, dump_description) = if let Some(root_id) = args.dump_from_id {
-            // --dump-from-id takes precedence
-            let roots: HashSet<Id> = [root_id].into_iter().collect();
-            let description = format!("ID {}", root_id.0);
-            // Check if the specified root exists in the *graph_to_dump*
-            let root_exists_in_graph = graph_to_dump.adjacency.contains_key(&root_id)
-                || graph_to_dump.reverse_adjacency.contains_key(&root_id);
-            if !root_exists_in_graph {
-                warn!(
-                    "Root ID {} provided via --dump-from-id not found in the {}graph. Dump file will be empty.",
-                    root_id.0,
-                    if args.dump_to_id.is_some() { "filtered " } else { "" },
-                );
-                // Create an empty file and skip dumping
-                File::create(dump_output_path)?;
-                (HashSet::new(), description) // Set roots to empty to skip dump_graph_subset logic
+                let filtered_graph = full_graph.filter_to_leaf(target_leaf_id);
+                if filtered_graph.edges.is_empty() && !full_graph.edges.is_empty() {
+                    warn!(
+                        "Target leaf ID {} for --to-id not found or no paths lead to it in the graph. Dump will be empty.",
+                        target_leaf_id.0
+                    );
+                }
+                filtered_graph
             } else {
-                (roots, description)
+                full_graph.clone()
+            };
+
+            let (root_ids, dump_description) = if let Some(root_id) = dump_args.from_id {
+                let roots: HashSet<Id> = [root_id].into_iter().collect();
+                let description = format!("ID {}", root_id.0);
+                let root_exists_in_graph = graph_to_dump.adjacency.contains_key(&root_id)
+                    || graph_to_dump.reverse_adjacency.contains_key(&root_id);
+                if !root_exists_in_graph {
+                    warn!(
+                        "Root ID {} provided via --from-id not found in the {}graph. Dump will be empty.",
+                        root_id.0,
+                        if dump_args.to_id.is_some() { "filtered " } else { "" },
+                    );
+                    (HashSet::new(), description)
+                } else {
+                    (roots, description)
+                }
+            } else if dump_args.modules {
+                let module_roots: HashSet<Id> = krate
+                    .index
+                    .iter()
+                    .filter(|(_, item)| matches!(item.inner, ItemEnum::Module(_)))
+                    .map(|(id, _)| *id)
+                    .filter(|id| {
+                        graph_to_dump.adjacency.contains_key(id)
+                            || graph_to_dump.reverse_adjacency.contains_key(id)
+                    })
+                    .collect();
+                (module_roots, "modules".to_string())
+            } else {
+                (graph_to_dump.find_roots(), "full".to_string())
+            };
+
+            if !root_ids.is_empty() {
+                if let Some(output_path) = dump_args.output {
+                    info!(
+                        "Dumping {} graph to: {}",
+                        dump_description,
+                        output_path.display()
+                    );
+                    let file = File::create(&output_path).with_context(|| {
+                        format!(
+                            "Failed to create graph dump file: {}",
+                            output_path.display()
+                        )
+                    })?;
+                    let mut writer = BufWriter::new(file);
+                    dump_graph_subset(
+                        &graph_to_dump,
+                        &krate,
+                        &root_ids,
+                        &mut writer,
+                        &dump_description,
+                        dump_args.max_depth,
+                    )?;
+                    writer.flush().with_context(|| {
+                        format!("Failed to write graph to file: {}", output_path.display())
+                    })?;
+                    info!("Successfully dumped graph to {}", output_path.display());
+                } else {
+                    info!("Dumping {} graph to stdout.", dump_description);
+                    let mut stdout_writer = BufWriter::new(std::io::stdout());
+                    dump_graph_subset(
+                        &graph_to_dump,
+                        &krate,
+                        &root_ids,
+                        &mut stdout_writer,
+                        &dump_description,
+                        dump_args.max_depth,
+                    )?;
+                    stdout_writer.flush()?;
+                }
+            } else if dump_args.output.is_some() {
+                // If roots are empty (e.g. --from-id specified a non-existent ID) and output file is given, create an empty file.
+                File::create(dump_args.output.unwrap())?;
+                info!("Graph dump is empty, created empty file.");
+            } else if root_ids.is_empty() {
+                info!("Graph dump is empty, nothing to print to stdout.");
             }
-        } else if args.dump_modules {
-            // --dump-modules is used
-            let module_roots: HashSet<Id> = krate
-                .index
-                .iter()
-                .filter(|(_, item)| matches!(item.inner, ItemEnum::Module(_)))
-                .map(|(id, _)| *id)
-                // Only include module roots that actually exist in the potentially filtered graph's nodes
-                .filter(|id| {
-                    graph_to_dump.adjacency.contains_key(id)
-                        || graph_to_dump.reverse_adjacency.contains_key(id)
-                })
-                .collect();
-            (module_roots, "modules".to_string())
-        } else {
-            // Default: dump all roots
-            (graph_to_dump.find_roots(), "full".to_string())
-        };
-
-        // Dump the subset if root_ids is not empty (handles the case where dump_from_id root didn't exist)
-        if !root_ids.is_empty() {
-            dump_graph_subset(
-                &graph_to_dump,
-                &krate,
-                &root_ids,
-                dump_output_path,
-                &dump_description,
-                args.dump_max_depth,
-            )?;
         }
-    }
-
-    // --- Generate Documentation ---
-    let documentation = generate_documentation(
-        &krate,
-        &manifest_data,
-        readme_content,
-        examples_readme_content,
-        examples_content,
-        &selected_ids,
-        &resolved_modules,
-        &full_graph,
-        args.include_other,
-        args.template,
-        args.no_common_traits,
-        args.no_examples,
-    )?;
-
-    // --- Output Documentation ---
-    if let Some(output_file_path) = args.output {
-        info!(
-            "Writing documentation to file: {}",
-            output_file_path.display()
-        );
-        let mut file = File::create(&output_file_path).with_context(|| {
-            format!(
-                "Failed to create output file: {}",
-                output_file_path.display()
-            )
-        })?;
-        file.write_all(documentation.as_bytes()).with_context(|| {
-            format!(
-                "Failed to write to output file: {}",
-                output_file_path.display()
-            )
-        })?;
-        info!(
-            "Successfully wrote documentation to {}",
-            output_file_path.display()
-        );
-    } else {
-        info!("Printing documentation to stdout.");
-        print!("{}", documentation); // Use print! to avoid extra newline at the end
     }
 
     Ok(())
