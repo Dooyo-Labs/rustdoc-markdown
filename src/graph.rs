@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use rustdoc_types::{
-    Crate, GenericArg, GenericArgs, GenericBound,
-    GenericParamDef, Generics, Id, ItemEnum, Path,
+    Crate, GenericArg, GenericArgs, GenericBound, GenericParamDef, Generics, Id, ItemEnum, Path,
     Term, Type, WherePredicate,
 };
 use std::collections::{HashMap, HashSet, VecDeque}; // Use HashMap instead of BTreeMap where needed
@@ -11,7 +10,6 @@ use std::io::Write as IoWrite; // Use IoWrite alias and IMPORT Cursor
 use tracing::{debug, info, warn};
 
 use crate::get_type_id;
-
 
 // --- ID Graph Structures ---
 
@@ -336,10 +334,8 @@ fn find_type_dependencies(
 ) {
     // Add the direct ID if the type itself resolves to one
     if let Some(id) = get_type_id(ty) {
-        if krate.index.contains_key(&id) {
-            if dependencies.insert(id) {
-                graph.add_edge(source_id, id, edge_label.clone(), krate);
-            }
+        if krate.index.contains_key(&id) && dependencies.insert(id) {
+            graph.add_edge(source_id, id, edge_label.clone(), krate);
         }
     }
 
@@ -347,10 +343,8 @@ fn find_type_dependencies(
     match ty {
         Type::ResolvedPath(Path { args, id, .. }) => {
             // Add the path's own ID
-            if krate.index.contains_key(id) {
-                if dependencies.insert(*id) {
-                    graph.add_edge(source_id, *id, edge_label.clone(), krate);
-                }
+            if krate.index.contains_key(id) && dependencies.insert(*id) {
+                graph.add_edge(source_id, *id, edge_label.clone(), krate);
             }
             // Check generic arguments
             if let Some(args_box) = args.as_ref() {
@@ -441,31 +435,29 @@ fn find_type_dependencies(
                 EdgeLabel::Dependency, // Self type in qualified path
             );
             if let Some(trait_path) = trait_ {
-                if krate.index.contains_key(&trait_path.id) {
-                    if dependencies.insert(trait_path.id) {
-                        // This source_id uses an associated type from trait_path.id
-                        graph.add_edge(
-                            source_id,
-                            trait_path.id,
-                            EdgeLabel::AssociatedType, // Or AssociatedConstant? Ambiguous here. Use AssociatedType as default.
-                            krate,
-                        );
-                    }
+                if krate.index.contains_key(&trait_path.id) && dependencies.insert(trait_path.id) {
+                    // This source_id uses an associated type from trait_path.id
+                    graph.add_edge(
+                        source_id,
+                        trait_path.id,
+                        EdgeLabel::AssociatedType, // Or AssociatedConstant? Ambiguous here. Use AssociatedType as default.
+                        krate,
+                    );
                 }
             }
             find_generic_args_dependencies(args, source_id, krate, dependencies, graph);
         }
         Type::DynTrait(dyn_trait) => {
             for poly_trait in &dyn_trait.traits {
-                if krate.index.contains_key(&poly_trait.trait_.id) {
-                    if dependencies.insert(poly_trait.trait_.id) {
-                        graph.add_edge(
-                            source_id,
-                            poly_trait.trait_.id,
-                            EdgeLabel::DynTraitBound,
-                            krate,
-                        );
-                    }
+                if krate.index.contains_key(&poly_trait.trait_.id)
+                    && dependencies.insert(poly_trait.trait_.id)
+                {
+                    graph.add_edge(
+                        source_id,
+                        poly_trait.trait_.id,
+                        EdgeLabel::DynTraitBound,
+                        krate,
+                    );
                 }
                 // Check generic param defs within the poly trait
                 for param_def in &poly_trait.generic_params {
@@ -637,7 +629,7 @@ fn find_generic_args_dependencies(
                 );
             }
         }
-        GenericArgs::ReturnTypeNotation { .. } => {} // TODO: Handle this? T::method(..) - maybe the T part?
+        GenericArgs::ReturnTypeNotation => {} // TODO: Handle this? T::method(..) - maybe the T part?
     }
 }
 
@@ -655,10 +647,8 @@ fn find_generic_bound_dependencies(
             generic_params,
             ..
         } => {
-            if krate.index.contains_key(&trait_.id) {
-                if dependencies.insert(trait_.id) {
-                    graph.add_edge(source_id, trait_.id, edge_label.clone(), krate);
-                }
+            if krate.index.contains_key(&trait_.id) && dependencies.insert(trait_.id) {
+                graph.add_edge(source_id, trait_.id, edge_label.clone(), krate);
             }
             // Trait path itself might have generic args
             if let Some(args) = trait_.args.as_ref() {
@@ -947,12 +937,10 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
 
     if let Some(item) = krate.index.get(&source_id) {
         // 1. Direct Links (value is Id)
-        for (_link_text, link_id_val) in &item.links {
+        for link_id_val in item.links.values() {
             // Check if link_id_val exists in krate.index before adding
-            if krate.index.contains_key(link_id_val) {
-                if item_deps.insert(*link_id_val) {
-                    graph.add_edge(source_id, *link_id_val, EdgeLabel::IntraDocLink, krate);
-                }
+            if krate.index.contains_key(link_id_val) && item_deps.insert(*link_id_val) {
+                graph.add_edge(source_id, *link_id_val, EdgeLabel::IntraDocLink, krate);
             }
         }
 
@@ -972,20 +960,16 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
             ItemEnum::Use(use_item) => {
                 // Add edge from Use item to its target ID (if it exists)
                 if let Some(target_id) = use_item.id {
-                    if krate.index.contains_key(&target_id) {
-                        if item_deps.insert(target_id) {
-                            graph.add_edge(source_id, target_id, EdgeLabel::UseTarget, krate);
-                        }
+                    if krate.index.contains_key(&target_id) && item_deps.insert(target_id) {
+                        graph.add_edge(source_id, target_id, EdgeLabel::UseTarget, krate);
                     }
                 }
             }
             ItemEnum::Struct(s) => {
                 for impl_id in &s.impls {
-                    if krate.index.contains_key(impl_id) {
-                        if item_deps.insert(*impl_id) {
-                            graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
-                            // Struct -> Impl relation
-                        }
+                    if krate.index.contains_key(impl_id) && item_deps.insert(*impl_id) {
+                        graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
+                        // Struct -> Impl relation
                     }
                 }
                 find_generics_dependencies(&s.generics, source_id, krate, &mut item_deps, graph);
@@ -1018,29 +1002,26 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                         }
                     }
                     rustdoc_types::StructKind::Tuple(fields) => {
-                        for field_id_opt in fields {
-                            if let Some(field_id) = field_id_opt {
-                                if krate.index.contains_key(field_id) {
-                                    if item_deps.insert(*field_id) {
-                                        graph.add_edge(
-                                            source_id,
-                                            *field_id,
-                                            EdgeLabel::StructField,
+                        for field_id in fields.iter().flatten() {
+                            if krate.index.contains_key(field_id) {
+                                if item_deps.insert(*field_id) {
+                                    graph.add_edge(
+                                        source_id,
+                                        *field_id,
+                                        EdgeLabel::StructField,
+                                        krate,
+                                    );
+                                }
+                                if let Some(field_item) = krate.index.get(field_id) {
+                                    if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                        find_type_dependencies(
+                                            field_type,
+                                            *field_id, // Source is the field ID
                                             krate,
+                                            &mut item_deps,
+                                            graph,
+                                            EdgeLabel::FieldType,
                                         );
-                                    }
-                                    if let Some(field_item) = krate.index.get(field_id) {
-                                        if let ItemEnum::StructField(field_type) = &field_item.inner
-                                        {
-                                            find_type_dependencies(
-                                                field_type,
-                                                *field_id, // Source is the field ID
-                                                krate,
-                                                &mut item_deps,
-                                                graph,
-                                                EdgeLabel::FieldType,
-                                            );
-                                        }
                                     }
                                 }
                             }
@@ -1051,17 +1032,13 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
             }
             ItemEnum::Enum(e) => {
                 for variant_id in &e.variants {
-                    if krate.index.contains_key(variant_id) {
-                        if item_deps.insert(*variant_id) {
-                            graph.add_edge(source_id, *variant_id, EdgeLabel::EnumVariant, krate);
-                        }
+                    if krate.index.contains_key(variant_id) && item_deps.insert(*variant_id) {
+                        graph.add_edge(source_id, *variant_id, EdgeLabel::EnumVariant, krate);
                     }
                 }
                 for impl_id in &e.impls {
-                    if krate.index.contains_key(impl_id) {
-                        if item_deps.insert(*impl_id) {
-                            graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
-                        }
+                    if krate.index.contains_key(impl_id) && item_deps.insert(*impl_id) {
+                        graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
                     }
                 }
                 find_generics_dependencies(&e.generics, source_id, krate, &mut item_deps, graph);
@@ -1071,29 +1048,26 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                 match &v.kind {
                     rustdoc_types::VariantKind::Plain => {}
                     rustdoc_types::VariantKind::Tuple(fields) => {
-                        for field_id_opt in fields {
-                            if let Some(field_id) = field_id_opt {
-                                if krate.index.contains_key(field_id) {
-                                    if item_deps.insert(*field_id) {
-                                        graph.add_edge(
-                                            source_id,
+                        for field_id in fields.iter().flatten() {
+                            if krate.index.contains_key(field_id) {
+                                if item_deps.insert(*field_id) {
+                                    graph.add_edge(
+                                        source_id,
+                                        *field_id,
+                                        EdgeLabel::VariantField,
+                                        krate,
+                                    );
+                                }
+                                if let Some(field_item) = krate.index.get(field_id) {
+                                    if let ItemEnum::StructField(field_type) = &field_item.inner {
+                                        find_type_dependencies(
+                                            field_type,
                                             *field_id,
-                                            EdgeLabel::VariantField,
                                             krate,
+                                            &mut item_deps,
+                                            graph,
+                                            EdgeLabel::FieldType,
                                         );
-                                    }
-                                    if let Some(field_item) = krate.index.get(field_id) {
-                                        if let ItemEnum::StructField(field_type) = &field_item.inner
-                                        {
-                                            find_type_dependencies(
-                                                field_type,
-                                                *field_id,
-                                                krate,
-                                                &mut item_deps,
-                                                graph,
-                                                EdgeLabel::FieldType,
-                                            );
-                                        }
                                     }
                                 }
                             }
@@ -1152,10 +1126,8 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
             }
             ItemEnum::Trait(t) => {
                 for item_id in &t.items {
-                    if krate.index.contains_key(item_id) {
-                        if item_deps.insert(*item_id) {
-                            graph.add_edge(source_id, *item_id, EdgeLabel::TraitItem, krate);
-                        }
+                    if krate.index.contains_key(item_id) && item_deps.insert(*item_id) {
+                        graph.add_edge(source_id, *item_id, EdgeLabel::TraitItem, krate);
                     }
                 }
                 find_generics_dependencies(&t.generics, source_id, krate, &mut item_deps, graph);
@@ -1170,27 +1142,21 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                     );
                 }
                 for impl_id in &t.implementations {
-                    if krate.index.contains_key(impl_id) {
-                        if item_deps.insert(*impl_id) {
-                            // Relation Trait -> Impl Block (Implementor)
-                            graph.add_edge(source_id, *impl_id, EdgeLabel::Implements, krate);
-                        }
+                    if krate.index.contains_key(impl_id) && item_deps.insert(*impl_id) {
+                        // Relation Trait -> Impl Block (Implementor)
+                        graph.add_edge(source_id, *impl_id, EdgeLabel::Implements, krate);
                     }
                 }
             }
             ItemEnum::Impl(imp) => {
                 for item_id in &imp.items {
-                    if krate.index.contains_key(item_id) {
-                        if item_deps.insert(*item_id) {
-                            graph.add_edge(source_id, *item_id, EdgeLabel::ImplItem, krate);
-                        }
+                    if krate.index.contains_key(item_id) && item_deps.insert(*item_id) {
+                        graph.add_edge(source_id, *item_id, EdgeLabel::ImplItem, krate);
                     }
                 }
                 if let Some(trait_path) = &imp.trait_ {
-                    if krate.index.contains_key(&trait_path.id) {
-                        if item_deps.insert(trait_path.id) {
-                            graph.add_edge(source_id, trait_path.id, EdgeLabel::Implements, krate);
-                        }
+                    if krate.index.contains_key(&trait_path.id) && item_deps.insert(trait_path.id) {
+                        graph.add_edge(source_id, trait_path.id, EdgeLabel::Implements, krate);
                     }
                     if let Some(args) = trait_path.args.as_ref() {
                         find_generic_args_dependencies(
@@ -1303,10 +1269,8 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
                     }
                 }
                 for impl_id in &u.impls {
-                    if krate.index.contains_key(impl_id) {
-                        if item_deps.insert(*impl_id) {
-                            graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
-                        }
+                    if krate.index.contains_key(impl_id) && item_deps.insert(*impl_id) {
+                        graph.add_edge(source_id, *impl_id, EdgeLabel::ImplFor, krate);
                     }
                 }
             }
@@ -1345,7 +1309,6 @@ fn build_graph_for_item(source_id: Id, krate: &Crate, graph: &mut IdGraph) -> Ha
     item_deps
 }
 
-
 // --- Graph Dumping Logic ---
 
 /// Helper to get item info string (name, path, kind)
@@ -1379,6 +1342,7 @@ fn get_item_info_string(id: &Id, krate: &Crate) -> String {
 }
 
 /// Recursive function to dump the graph structure.
+#[allow(clippy::too_many_arguments)]
 fn dump_node(
     node_id: Id,
     graph: &IdGraph, // Use the potentially filtered graph
@@ -1438,11 +1402,7 @@ fn dump_node(
     if let Some(max) = max_depth {
         if depth >= max {
             // If we've reached max depth and there are children, indicate truncation
-            if is_newly_visited
-                && graph
-                    .get_children(&node_id)
-                    .map_or(false, |c| !c.is_empty())
-            {
+            if is_newly_visited && graph.get_children(&node_id).is_some_and(|c| !c.is_empty()) {
                 writeln!(
                     writer,
                     "{}{} [... children truncated due to max depth ...]",

@@ -1,5 +1,3 @@
-
-
 use anyhow::{anyhow, bail, Context, Result};
 use flate2::read::GzDecoder;
 
@@ -68,7 +66,7 @@ pub async fn find_best_version(
     if !include_prerelease {
         api_data
             .versions
-            .retain(|v| v.semver.as_ref().map_or(false, |sv| sv.pre.is_empty()));
+            .retain(|v| v.semver.as_ref().is_some_and(|sv| sv.pre.is_empty()));
     }
 
     // Sort remaining versions (highest first)
@@ -107,7 +105,7 @@ pub async fn find_best_version(
             api_data
                 .versions
                 .into_iter()
-                .find(|v| v.semver.as_ref().map_or(false, |sv| req.matches(sv)))
+                .find(|v| v.semver.as_ref().is_some_and(|sv| req.matches(sv)))
                 .ok_or_else(|| {
                     anyhow!(
                         "No version found matching requirement '{}' for crate '{}'",

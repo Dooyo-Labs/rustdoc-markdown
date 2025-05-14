@@ -1,15 +1,17 @@
 use anyhow::{Context, Result};
 use cargo_manifest::Manifest;
 use clap::Parser;
-use rustdoc_markdown::{cratesio, graph, generate_documentation, run_rustdoc, NIGHTLY_RUST_VERSION}; // Use the library's Printer and GraphDumper
+use rustdoc_markdown::{
+    cratesio, generate_documentation, graph, run_rustdoc, NIGHTLY_RUST_VERSION,
+}; // Use the library's Printer and GraphDumper
 use rustdoc_types::{Crate, Id, ItemEnum};
-use tracing_subscriber::EnvFilter; use std::collections::HashSet;
+use std::collections::HashSet;
+use tracing_subscriber::EnvFilter;
 // Keep this for parse_id
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write as IoWrite}; // Use IoWrite alias
 use std::path::PathBuf;
 use tracing::{info, warn};
-
 
 /// Parses a string into an `Id`.
 fn parse_id(s: &str) -> Result<Id, String> {
@@ -245,19 +247,14 @@ async fn main() -> Result<()> {
 
                     let mut found_examples = Vec::new();
                     if let Ok(entries) = fs::read_dir(&examples_dir) {
-                        for entry_result in entries {
-                            if let Ok(entry) = entry_result {
-                                let path = entry.path();
-                                if path.is_file()
-                                    && path.extension().map_or(false, |ext| ext == "rs")
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                                if let Some(filename_str) =
+                                    path.file_name().and_then(|n| n.to_str())
                                 {
-                                    if let Some(filename_str) =
-                                        path.file_name().and_then(|n| n.to_str())
-                                    {
-                                        if let Ok(content) = fs::read_to_string(&path) {
-                                            found_examples
-                                                .push((filename_str.to_string(), content));
-                                        }
+                                    if let Ok(content) = fs::read_to_string(&path) {
+                                        found_examples.push((filename_str.to_string(), content));
                                     }
                                 }
                             }

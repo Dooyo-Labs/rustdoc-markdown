@@ -26,7 +26,6 @@ pub const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 pub mod cratesio;
 pub mod graph;
 
-
 // --- Manifest Data ---
 
 #[derive(Debug, Clone, Default)]
@@ -40,10 +39,6 @@ struct CrateManifestData {
     edition: Option<String>,
     features: FeatureSet, // Using cargo-manifest's FeatureSet
 }
-
-
-
-
 
 pub fn run_rustdoc(
     crate_dir: &FilePath,
@@ -125,8 +120,6 @@ pub fn run_rustdoc(
     }
 }
 
-
-
 /// Gets the `Id` associated with a type, if it's a path-based type.
 pub(crate) fn get_type_id(ty: &Type) -> Option<Id> {
     match ty {
@@ -151,7 +144,7 @@ pub(crate) fn get_type_id(ty: &Type) -> Option<Id> {
 
 /// Helper to check if an item has non-empty documentation.
 fn has_docs(item: &Item) -> bool {
-    item.docs.as_ref().map_or(false, |d| !d.trim().is_empty())
+    item.docs.as_ref().is_some_and(|d| !d.trim().is_empty())
 }
 
 /// Adjusts the markdown header levels in a string using pulldown-cmark.
@@ -441,12 +434,12 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
                     } => {
                         let assoc_args_str = format_generic_args(assoc_args, krate);
                         format!(
-                            "{}{}{}{}{}",
+                            "{}{}{}{} = {}",
                             name,
                             if assoc_args_str.is_empty() { "" } else { "<" },
                             assoc_args_str,
                             if assoc_args_str.is_empty() { "" } else { ">" },
-                            format!(" = {}", format_term(term, krate))
+                            format_term(term, krate)
                         )
                     }
                     rustdoc_types::AssocItemConstraint {
@@ -487,7 +480,7 @@ fn format_generic_args(args: &GenericArgs, krate: &Crate) -> String {
                     .map_or("()".to_string(), |t| format_type(t, krate))
             )
         }
-        GenericArgs::ReturnTypeNotation { .. } => String::new(),
+        GenericArgs::ReturnTypeNotation => String::new(),
     }
 }
 
@@ -512,7 +505,7 @@ fn format_discriminant_expr(discr: &Discriminant) -> String {
 
 fn format_generic_arg(arg: &GenericArg, krate: &Crate) -> String {
     match arg {
-        GenericArg::Lifetime(lt) => format!("{}", lt), // Add quote
+        GenericArg::Lifetime(lt) => lt.to_string(), // Add quote
         GenericArg::Type(ty) => format_type(ty, krate),
         GenericArg::Const(c) => format_const_expr(c),
         GenericArg::Infer => "_".to_string(),
@@ -546,7 +539,7 @@ fn format_generic_bound(bound: &GenericBound, krate: &Crate) -> String {
             };
             format!("{}{}{}", hrtb, mod_str, format_path(trait_, krate)) // Use format_path
         }
-        GenericBound::Outlives(lifetime) => format!("{}", lifetime), // Add quote
+        GenericBound::Outlives(lifetime) => lifetime.to_string(), // Add quote
         GenericBound::Use(args) => {
             // use<'a, T> syntax
             format!(
@@ -572,7 +565,7 @@ fn format_term(term: &Term, krate: &Crate) -> String {
 
 fn format_generic_param_def(p: &GenericParamDef, krate: &Crate) -> String {
     match &p.kind {
-        rustdoc_types::GenericParamDefKind::Lifetime { .. } => format!("{}", p.name), // Add quote
+        rustdoc_types::GenericParamDefKind::Lifetime { .. } => p.name.to_string(), // Add quote
         rustdoc_types::GenericParamDefKind::Type {
             bounds,
             default,
@@ -713,7 +706,7 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
                     lifetime,
                     outlives
                         .iter()
-                        .map(|lt| format!("{}", lt)) // Add quotes
+                        .map(|lt| lt.to_string()) // Add quotes
                         .collect::<Vec<_>>()
                         .join(" + ")
                 )
@@ -908,7 +901,7 @@ impl NormalizedTraitImpl {
 
         let display_path_with_generics = format!(
             "{}{}{}",
-            imp.is_negative.then(|| "!").unwrap_or_default(),
+            imp.is_negative.then_some("!").unwrap_or_default(),
             cleaned_trait_path,
             if let Some(args) = &trait_path.args {
                 let args_str = format_generic_args(args, krate);
@@ -924,8 +917,7 @@ impl NormalizedTraitImpl {
 
         // Determine if it's effectively blanket
         let mut is_effectively_blanket = false;
-        if trait_path.args.as_ref().map_or(
-            true,
+        if trait_path.args.as_ref().is_none_or(
             |ga| matches!(ga.as_ref(), GenericArgs::AngleBracketed { args, .. } if args.is_empty()),
         ) {
             // Trait has no args or empty angle-bracketed args
@@ -1030,7 +1022,7 @@ impl NormalizedTraitImpl {
 /// For functions, this is deliberately simplified (no attrs, no where clause).
 /// For traits, structs, and enums, prepends the current module path.
 fn generate_item_declaration(item: &Item, krate: &Crate, current_module_path: &[String]) -> String {
-    let name = item.name.as_deref().unwrap_or_else(|| match &item.inner {
+    let name = item.name.as_deref().unwrap_or(match &item.inner {
         ItemEnum::StructField(_) => "{unnamed_field}", // Special case for unnamed fields
         _ => "{unnamed}",
     });
@@ -1177,7 +1169,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
             }
 
             if !fields.is_empty() {
-                write!(code, "\n").unwrap();
+                writeln!(code).unwrap();
             }
             for field_id in fields {
                 if let Some(field_item) = krate.index.get(field_id) {
@@ -1239,18 +1231,11 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
     let mut code = String::new();
     write!(code, "pub enum {}", name).unwrap();
     let generics_str = format_generics_full(&e.generics, krate);
-    let where_is_multiline = generics_str.contains("where\n");
     write!(code, "{}", generics_str).unwrap();
-
-    // Check if generics caused a newline before deciding where to put opening brace
-    if where_is_multiline {
-        write!(code, " {{").unwrap();
-    } else {
-        write!(code, " {{").unwrap();
-    }
+    write!(code, " {{").unwrap();
 
     if !e.variants.is_empty() {
-        write!(code, "\n").unwrap();
+        writeln!(code).unwrap();
     }
     for variant_id in &e.variants {
         if let Some(variant_item) = krate.index.get(variant_id) {
@@ -1605,7 +1590,7 @@ impl<'a> Printer<'a> {
         let mut all_type_ids_with_impls = HashSet::new();
         if no_common_traits {
             // Still calculate all_type_ids_with_impls for other logic if needed
-            for (_, item) in &krate.index {
+            for item in krate.index.values() {
                 if let ItemEnum::Impl(imp) = &item.inner {
                     if let Some(for_type_id) = get_type_id(&imp.for_) {
                         if selected_ids.contains(&for_type_id) {
@@ -1618,7 +1603,7 @@ impl<'a> Printer<'a> {
         }
 
         let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
-        for (_, item) in &krate.index {
+        for item in krate.index.values() {
             if let ItemEnum::Impl(imp) = &item.inner {
                 if let Some(for_type_id) = get_type_id(&imp.for_) {
                     if selected_ids.contains(&for_type_id) {
@@ -1881,7 +1866,7 @@ impl<'a> Printer<'a> {
         self.krate
             .index
             .get(id)
-            .map(|item| Printer::infer_item_kind(item)) // Use associated function syntax
+            .map(Printer::infer_item_kind) // Use associated function syntax
             .or_else(|| self.krate.paths.get(id).map(|summary| summary.kind))
     }
 
@@ -2058,7 +2043,7 @@ impl<'a> Printer<'a> {
         };
         field_ids.iter().any(|field_id| {
             self.selected_ids.contains(field_id)
-                && self.krate.index.get(field_id).map_or(false, |item| {
+                && self.krate.index.get(field_id).is_some_and(|item| {
                     // Consider it "documented" if template mode is on and docs are Some
                     (self.template_mode && item.docs.is_some()) || has_docs(item)
                 })
@@ -2299,7 +2284,7 @@ impl<'a> Printer<'a> {
                     for field_id in field_ids {
                         if self.selected_ids.contains(&field_id) {
                             let field_has_printable_docs =
-                                self.krate.index.get(&field_id).map_or(false, |f_item| {
+                                self.krate.index.get(&field_id).is_some_and(|f_item| {
                                     (self.template_mode && f_item.docs.is_some())
                                         || has_docs(f_item)
                                 });
@@ -2396,7 +2381,7 @@ impl<'a> Printer<'a> {
                 for field_id in &field_ids {
                     if self.selected_ids.contains(field_id) {
                         let field_has_printable_docs =
-                            self.krate.index.get(field_id).map_or(false, |f_item| {
+                            self.krate.index.get(field_id).is_some_and(|f_item| {
                                 (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
                             });
                         if field_has_printable_docs && !self.printed_ids.contains(field_id) {
@@ -2857,7 +2842,7 @@ impl<'a> Printer<'a> {
         let target_name = target_item
             .name
             .as_deref()
-            .unwrap_or_else(|| match &target_item.inner {
+            .unwrap_or(match &target_item.inner {
                 ItemEnum::Primitive(Primitive { name, .. }) => name.as_str(),
                 _ => "{unknown_item_type}",
             });
@@ -2918,7 +2903,7 @@ impl<'a> Printer<'a> {
                         self.krate
                             .paths
                             .get(&rm.id)
-                            .map_or(false, |p| p.path.last() == Some(mod_name))
+                            .is_some_and(|p| p.path.last() == Some(mod_name))
                     })
                     .map(|rm| rm.id)
             })
@@ -3449,7 +3434,7 @@ impl<'a> Printer<'a> {
                         .krate
                         .index
                         .get(&edge.source)
-                        .map_or(false, |i| i.docs.is_some())
+                        .is_some_and(|i| i.docs.is_some())
                 {
                     format!("\n  {}", self.get_template_marker())
                 } else {
@@ -3974,6 +3959,7 @@ impl<'a> Printer<'a> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_documentation(
     manifest: &Manifest,
     krate: &Crate,
@@ -4027,15 +4013,14 @@ pub fn generate_documentation(
         features: manifest.features.clone().unwrap_or_default(),
     };
 
-    let resolved_modules = graph::build_resolved_module_index(&krate);
-    let (selected_ids, graph) =
-        graph::select_items(&krate, paths, &resolved_modules)?;
+    let resolved_modules = graph::build_resolved_module_index(krate);
+    let (selected_ids, graph) = graph::select_items(krate, paths, &resolved_modules)?;
 
     info!(
         "Generating documentation for {} selected items.",
         selected_ids.len()
     );
-    if selected_ids.is_empty() && examples_content.as_ref().map_or(true, |e| e.is_empty()) {
+    if selected_ids.is_empty() && examples_content.as_ref().is_none_or(|e| e.is_empty()) {
         return Ok("No items selected for documentation and no examples found.".to_string());
     }
 
@@ -4057,5 +4042,3 @@ pub fn generate_documentation(
 
     Ok(output)
 }
-
-
