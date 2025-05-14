@@ -4025,9 +4025,6 @@ impl<'a> DocPrinter<'a> {
             // Mark as printed *before* printing details
             self.printed_ids.insert(*field_id);
 
-            // Increment level counter for this field item
-            self.post_increment_current_level();
-
             if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_"); // Might be _ for tuple fields
                 let field_header_level = self.get_current_header_level();
@@ -4051,6 +4048,9 @@ impl<'a> DocPrinter<'a> {
 
                 // Print Docs (using helper, handles template mode)
                 self.print_docs(item);
+
+                // Increment level counter for this field item
+                self.post_increment_current_level();
 
                 // Type (optional)
                 // writeln!(self.output, "_Type: `{}`_\n", format_type(field_type, self.krate)).unwrap();
@@ -4166,8 +4166,6 @@ impl<'a> DocPrinter<'a> {
             return;
         }
 
-        // Increment level counter for this section
-        self.post_increment_current_level();
         let variants_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
         writeln!(
@@ -4186,7 +4184,6 @@ impl<'a> DocPrinter<'a> {
                 printed_any_variant = true;
             }
         }
-        self.pop_level(); // Pop the variant item level
 
         if e.has_stripped_variants {
             // Add newline before stripped message only if variants were printed
@@ -4195,6 +4192,8 @@ impl<'a> DocPrinter<'a> {
             }
             writeln!(self.output, "_[Private variants hidden]_").unwrap();
         }
+        self.pop_level(); // Pop the variant item level
+        self.post_increment_current_level();
     }
 
     /// Prints the details for a single enum variant. Includes variant docs and docs for its fields if present.
@@ -4251,9 +4250,6 @@ impl<'a> DocPrinter<'a> {
                 // Mark as printed *before* printing details
                 self.printed_ids.insert(*variant_id);
 
-                // Increment level counter for this variant item
-                self.post_increment_current_level();
-
                 let signature = format_variant_signature(item, variant_data, self.krate);
                 let variant_header_level = self.get_current_header_level();
                 let header_prefix = self.get_header_prefix();
@@ -4267,15 +4263,13 @@ impl<'a> DocPrinter<'a> {
                     signature
                 )
                 .unwrap();
+                self.push_level();
 
                 // Print Variant Docs (using helper)
                 self.print_docs(item);
 
                 // Print documented fields (if any)
                 if !printable_fields.is_empty() || stripped {
-                    // Push a new level for the fields section
-                    self.push_level();
-                    self.post_increment_current_level(); // Increment for the "Fields" header itself
                     let field_section_level = self.get_current_header_level();
                     let fields_header_prefix = self.get_header_prefix();
                     writeln!(
@@ -4285,16 +4279,13 @@ impl<'a> DocPrinter<'a> {
                         fields_header_prefix
                     )
                     .unwrap();
-
-                    // Push another level for the field items
                     self.push_level();
+
                     for field_id in printable_fields {
                         if self.print_variant_field_details(&field_id) {
                             printed_any_field = true;
                         }
                     }
-                    self.pop_level(); // Pop field item level
-                    self.pop_level(); // Pop fields section level
 
                     if stripped {
                         if printed_any_field {
@@ -4302,7 +4293,11 @@ impl<'a> DocPrinter<'a> {
                         }
                         writeln!(self.output, "_[Private fields hidden]_").unwrap();
                     }
+                    self.pop_level();
                 }
+
+                self.pop_level();
+                self.post_increment_current_level();
 
                 return true; // Variant (or its fields) was printed
             }
@@ -5776,8 +5771,6 @@ impl<'a> DocPrinter<'a> {
                         header_prefix
                     )
                     .unwrap();
-                    self.post_increment_current_level(); // Increment H2 counter for next top-level section
-
                     self.push_level(); // Push for H3 example headers
 
                     if let Some(readme) = &self.examples_readme_content {
@@ -5801,6 +5794,7 @@ impl<'a> DocPrinter<'a> {
                         self.post_increment_current_level(); // Increment H3 counter for next example
                     }
                     self.pop_level(); // Pop H3 example level
+                    self.post_increment_current_level(); // Increment H2 counter for next top-level section
                 }
             }
         }
