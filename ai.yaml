@@ -2,6 +2,10 @@ provider: gemini
 model: "coder-free"
 formatter: cargo fmt
 temperature: 0.4
+agent:
+  name: Nubby
+  full-name: Nubby AI Assistant
+  email: nubby@dooyo.io
 models:
   - name: coder-free
     provider: gemini # Provider used for this named model
