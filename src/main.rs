@@ -5983,7 +5983,9 @@ async fn main() -> Result<()> {
                 } else {
                     None
                 };
+                // Clone readme_file_path before it's moved by and_then
                 readme_file_path
+                    .clone()
                     .and_then(|path| fs::read_to_string(&path).ok())
                     .or_else(|| {
                         if readme_file_path.is_some() {
