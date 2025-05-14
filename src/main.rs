@@ -5860,7 +5860,7 @@ async fn main() -> Result<()> {
 
     let client = reqwest::Client::builder()
         .user_agent(format!(
-            "crate-doc-extractor/{} (github.com/ai-sandbox/aidocs-rust)", // Updated repo
+            "rustdoc-markdown/{} (github.com/Dooyo-Labs/rustdoc-markdown)",
             env!("CARGO_PKG_VERSION")
         ))
         .build()?;
