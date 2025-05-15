@@ -804,10 +804,11 @@ struct NormalizedTraitImpl<'a> {
 }
 
 impl<'a> PartialEq for NormalizedTraitImpl<'a> {
-    /// Compares two NormalizedTraitImpl instances for equality
+    /// Compares two NormalizedTraitImpl instances for equality.
+    /// For common trait identification, `impl_id` and `cleaned_path_for_display` are ignored.
     fn eq(&self, other: &Self) -> bool {
         self.trait_id == other.trait_id
-            && self.trait_generics == other.trait_generics // Compare trait generics
+            && self.trait_generics == other.trait_generics // Compare trait generics structure
             && self.is_auto == other.is_auto
             && self.is_unsafe_impl == other.is_unsafe_impl
             && self.is_blanket == other.is_blanket
@@ -819,15 +820,16 @@ impl<'a> Eq for NormalizedTraitImpl<'a> {}
 
 impl<'a> Hash for NormalizedTraitImpl<'a> {
     /// Hashes the NormalizedTraitImpl instance.
+    /// For common trait identification, `impl_id` and `cleaned_path_for_display` are ignored.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.trait_id.hash(state);
-        self.trait_generics.hash(state); // Hash trait generics
+        self.trait_generics.hash(state); // Hash trait generics structure
         self.is_auto.hash(state);
         self.is_unsafe_impl.hash(state);
         self.is_blanket.hash(state);
         self.is_effectively_blanket.hash(state);
         self.is_negative.hash(state);
-        // Do not hash cleaned_path_for_display or impl_id
+        // Do not hash cleaned_path_for_display or impl_id for common trait grouping
     }
 }
 
@@ -1564,7 +1566,13 @@ struct ModuleTree {
 
 /// `Printer` is responsible for generating Markdown documentation from a `rustdoc_types::Crate`.
 ///
-/// It uses a builder pattern for configuration.
+/// It uses a builder pattern for configuration. The typical workflow is:
+/// 1. Create a `Printer` with `Printer::new(&manifest, &krate)`.
+/// 2. Configure it using builder methods like `paths()`, `readme()`, etc.
+/// 3. Call `print()` to generate the Markdown string.
+///
+/// The "Common Traits" feature summarizes traits frequently implemented by types within
+/// the crate or specific modules. This can be disabled using `no_common_traits()`.
 pub struct Printer<'a> {
     krate: &'a Crate,
     manifest_data: CrateManifestData,
@@ -1597,7 +1605,6 @@ impl<'a> Printer<'a> {
     ///
     /// * `manifest`: The parsed `Cargo.toml` data for the crate.
     /// * `krate`: The `rustdoc_types::Crate` data produced by rustdoc.
-    /// * `build_dir`: The directory used for rustdoc JSON generation and other build artifacts.
     pub fn new(manifest: &'a CargoManifest, krate: &'a Crate) -> Self {
         Printer {
             krate,
@@ -1626,9 +1633,10 @@ impl<'a> Printer<'a> {
     /// Sets the item path filters for documentation generation.
     ///
     /// Items matching these paths (and their dependencies) will be included.
-    /// Paths starting with `::` imply the root of the current crate.
+    /// Paths starting with `::` imply the root of the current crate (e.g., `::my_module::MyStruct`).
+    /// Paths without `::` are assumed to be relative to the crate root (e.g., `my_module::MyStruct` is treated as `crate_name::my_module::MyStruct`).
     /// Matches are prefix-based (e.g., "::style" matches "::style::TextStyle").
-    /// If no paths are provided, all items are considered for selection.
+    /// If no paths are provided, all items are considered for selection (default behavior).
     pub fn paths(mut self, paths: &[String]) -> Self {
         self.paths = paths.to_vec();
         self
@@ -1637,6 +1645,8 @@ impl<'a> Printer<'a> {
     /// Adds README content to be included in the documentation.
     ///
     /// The content should be a string containing the Markdown text of the README.
+    /// It will be placed after the crate's manifest details and before common traits or module listings.
+    /// Headers within the README will be adjusted to fit the overall document structure.
     pub fn readme(mut self, content: String) -> Self {
         self.readme_content = Some(content);
         self
@@ -1648,12 +1658,15 @@ impl<'a> Printer<'a> {
     ///
     /// * `name`: The filename or identifier for the example (e.g., "simple.rs").
     /// * `content`: The Rust code content of the example.
+    ///
+    /// Examples are listed at the end of the generated documentation.
     pub fn example(mut self, name: String, content: String) -> Self {
         self.examples.push((name, content));
         self
     }
 
-    /// Adds the content of `examples/README.md` to be included before other examples.
+    /// Adds the content of `examples/README.md` to be included before other examples
+    /// in the "Examples Appendix".
     pub fn examples_readme(mut self, content: String) -> Self {
         self.examples_readme_content = Some(content);
         self
@@ -1662,6 +1675,8 @@ impl<'a> Printer<'a> {
     /// Includes items that don't fit standard categories in a final "Other" section.
     ///
     /// By default, such items are logged as warnings and not included.
+    /// If enabled, these items will appear at the end of the documentation,
+    /// potentially with their source location and graph context.
     pub fn include_other(mut self) -> Self {
         self.include_other = true;
         self
@@ -1670,8 +1685,10 @@ impl<'a> Printer<'a> {
     /// Enables template mode.
     ///
     /// In template mode, instead of item documentation, Mustache-like markers
-    /// (e.g., `{{MISSING_DOCS_1_2_1}}`) are inserted. This is useful for
-    /// identifying where documentation is present or missing.
+    /// (e.g., `{{MISSING_DOCS_1_2_1}}`) are inserted where documentation
+    /// for an item would normally appear. This is useful for identifying
+    /// where documentation is present or missing in the source crate.
+    /// The default is `false`.
     pub fn template_mode(mut self) -> Self {
         self.template_mode = true;
         self
@@ -1679,8 +1696,10 @@ impl<'a> Printer<'a> {
 
     /// Disables the "Common Traits" sections.
     ///
-    /// When disabled, all implemented traits for each item will be listed directly
-    /// with that item, rather than being summarized at the crate or module level.
+    /// By default, traits frequently implemented by types within the crate or
+    /// specific modules are summarized in "Common Traits" sections. If this method
+    /// is called, these summary sections are omitted, and all implemented traits
+    /// for each item will be listed directly with that item.
     pub fn no_common_traits(mut self) -> Self {
         self.no_common_traits = true;
         self
