@@ -224,7 +224,7 @@ async fn main() -> Result<()> {
                         .as_ref()
                         .and_then(|p| p.version.as_ref())
                         .and_then(|v| v.as_local())
-                        .cloned();
+                        .clone();
                     (dir, m, name_from_manifest, version_from_manifest)
                 } else {
                     let target_version = cratesio::find_best_version(
@@ -416,7 +416,7 @@ async fn main() -> Result<()> {
                         .as_ref()
                         .and_then(|p| p.version.as_ref())
                         .and_then(|v| v.as_local())
-                        .cloned();
+                        .clone();
                     (dir, m, name_from_manifest, version_from_manifest)
                 } else {
                     let target_version = cratesio::find_best_version(
