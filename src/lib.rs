@@ -940,7 +940,7 @@ fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>, krate: &Crate) -
 
 impl<'a> NormalizedTraitImpl<'a> {
     /// Creates a NormalizedTraitImpl from a rustdoc_types::Impl and the krate context.
-    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &'a Crate) -> Self<'a> {
+    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &'a Crate) -> Self {
         let trait_path_str = format_id_path_canonical(&trait_path.id, krate);
         let cleaned_trait_path = clean_trait_path(&trait_path_str);
 
