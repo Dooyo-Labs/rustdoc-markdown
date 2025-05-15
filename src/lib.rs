@@ -1697,7 +1697,7 @@ impl<'a> Printer<'a> {
 
         let (crate_common_traits, all_type_ids_with_impls) = Self::calculate_crate_common_traits(
             self.krate,
-            &self.selected_ids,
+            &self.selected_ids.clone(), // Clone selected_ids here
             self.no_common_traits,
         );
         self.crate_common_traits = crate_common_traits;
@@ -1710,7 +1710,7 @@ impl<'a> Printer<'a> {
     /// Pre-calculates common traits for the entire crate.
     fn calculate_crate_common_traits(
         krate: &'a Crate,
-        selected_ids: &'a HashSet<Id>,
+        selected_ids: &'a HashSet<Id>, // Keep as reference
         no_common_traits: bool,
     ) -> (HashSet<NormalizedTraitImpl>, HashSet<Id>) {
         let mut all_type_ids_with_impls = HashSet::new();
@@ -3538,11 +3538,18 @@ impl<'a> Printer<'a> {
 
     /// Prints graph context for an unprinted item.
     fn print_graph_context(&mut self, id: &Id) {
-        let incoming_edges: Vec<&Edge> = self.graph.find_incoming_edges(id);
-        if !incoming_edges.is_empty() {
+        // Collect incoming edges first to release immutable borrow on self.graph
+        let incoming_edges_data: Vec<Edge> = self
+            .graph
+            .find_incoming_edges(id)
+            .into_iter()
+            .cloned()
+            .collect();
+
+        if !incoming_edges_data.is_empty() {
             writeln!(self.output, "_Referenced by:_").unwrap();
             // Sort edges for consistent output
-            let mut sorted_edges = incoming_edges;
+            let mut sorted_edges = incoming_edges_data;
             sorted_edges.sort_by_key(|edge| {
                 (
                     format_id_path_canonical(&edge.source, self.krate),
@@ -4039,7 +4046,9 @@ impl<'a> Printer<'a> {
         }
 
         // --- Examples Appendix ---
-        if !self.examples.is_empty() || self.examples_readme_content.is_some() {
+        // Clone self.examples before iterating to avoid borrow checker issues with mutable self calls
+        let examples_clone = self.examples.clone();
+        if !examples_clone.is_empty() || self.examples_readme_content.is_some() {
             let examples_section_level = self.get_current_header_level(); // Should be 2
             let header_prefix = self.get_header_prefix();
             writeln!(
@@ -4056,7 +4065,7 @@ impl<'a> Printer<'a> {
                 writeln!(self.output, "{}\n", adjusted_readme).unwrap();
             }
 
-            for (filename, content) in &self.examples {
+            for (filename, content) in &examples_clone {
                 let example_header_level = self.get_current_header_level(); // Should be 3
                 let example_prefix = self.get_header_prefix();
                 writeln!(
