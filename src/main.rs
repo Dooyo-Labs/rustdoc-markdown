@@ -223,8 +223,7 @@ async fn main() -> Result<()> {
                         .package
                         .as_ref()
                         .and_then(|p| p.version.as_ref())
-                        .and_then(|v| v.as_local())
-                        .clone();
+                        .and_then(|v| v.as_ref().as_local().cloned());
                     (dir, m, name_from_manifest, version_from_manifest)
                 } else {
                     let target_version = cratesio::find_best_version(
@@ -379,7 +378,7 @@ async fn main() -> Result<()> {
             }
         }
         Command::DumpGraph(dump_args) => {
-            let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) =
+            let (crate_dir, _manifest, actual_crate_name_from_manifest, _target_version_num) =
                 if let Some(manifest_path) = &dump_args.manifest {
                     info!(
                         "Using local manifest: {}",
@@ -415,8 +414,7 @@ async fn main() -> Result<()> {
                         .package
                         .as_ref()
                         .and_then(|p| p.version.as_ref())
-                        .and_then(|v| v.as_local())
-                        .clone();
+                        .and_then(|v| v.as_ref().as_local().cloned());
                     (dir, m, name_from_manifest, version_from_manifest)
                 } else {
                     let target_version = cratesio::find_best_version(
