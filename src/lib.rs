@@ -95,14 +95,17 @@ pub fn run_rustdoc(
 
     info!("Generating rustdoc JSON using rustdoc-json crate...");
 
-    let json_path = crate_dir
+    let json_output_path = crate_dir
         .join("target/doc")
         .join(format!("{}.json", crate_name));
 
     // Avoid regenerating if exists
-    if json_path.exists() {
-        info!("rustdoc JSON already exists at: {}", json_path.display());
-        return Ok(json_path);
+    if json_output_path.exists() {
+        info!(
+            "rustdoc JSON already exists at: {}",
+            json_output_path.display()
+        );
+        return Ok(json_output_path);
     }
 
     let mut builder = Builder::default()
@@ -143,11 +146,11 @@ pub fn run_rustdoc(
             eprintln!("{:?}", e); // Print the error itself
 
             // Try to read potential rustdoc output if the file exists but is invalid
-            if json_path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&json_path) {
+            if json_output_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&json_output_path) {
                     eprintln!(
                         "\n--- Potential content of {}: ---\n{}",
-                        json_path.display(),
+                        json_output_path.display(),
                         content
                     );
                 }
@@ -776,9 +779,10 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
 /// comment, otherwise someone will make the mistake of adding implementation
 /// state to this struct.
 #[derive(Debug, Clone)]
-struct NormalizedTraitImpl {
+struct NormalizedTraitImpl<'a> {
     trait_id: Id,
     /// Generics of the trait path itself (e.g., `<'a>` in `Trait<'a>`).
+    /// This `Generics` is from `rustdoc_types` and its internal `CowStr` will have lifetime 'a.
     trait_generics: Generics,
     is_auto: bool,
     is_unsafe_impl: bool,
@@ -794,9 +798,12 @@ struct NormalizedTraitImpl {
     /// type, as opposed to common trait implementations for a crate / module.
     /// This link helps track what items have been printed so far.
     impl_id: Option<Id>,
+    // PhantomData to make 'a used, if not used by other fields directly.
+    // Not strictly necessary if `trait_generics` correctly implies 'a.
+    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl PartialEq for NormalizedTraitImpl {
+impl<'a> PartialEq for NormalizedTraitImpl<'a> {
     /// Compares two NormalizedTraitImpl instances for equality
     fn eq(&self, other: &Self) -> bool {
         self.trait_id == other.trait_id
@@ -808,9 +815,9 @@ impl PartialEq for NormalizedTraitImpl {
             && self.is_negative == other.is_negative
     }
 }
-impl Eq for NormalizedTraitImpl {}
+impl<'a> Eq for NormalizedTraitImpl<'a> {}
 
-impl Hash for NormalizedTraitImpl {
+impl<'a> Hash for NormalizedTraitImpl<'a> {
     /// Hashes the NormalizedTraitImpl instance.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.trait_id.hash(state);
@@ -931,9 +938,9 @@ fn generic_args_to_generics(args_opt: Option<Box<GenericArgs>>, krate: &Crate) -
     }
 }
 
-impl NormalizedTraitImpl {
+impl<'a> NormalizedTraitImpl<'a> {
     /// Creates a NormalizedTraitImpl from a rustdoc_types::Impl and the krate context.
-    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &Crate) -> Self {
+    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &'a Crate) -> Self<'a> {
         let trait_path_str = format_id_path_canonical(&trait_path.id, krate);
         let cleaned_trait_path = clean_trait_path(&trait_path_str);
 
@@ -1023,11 +1030,15 @@ impl NormalizedTraitImpl {
             is_negative: imp.is_negative,
             cleaned_path_for_display: display_path_with_generics,
             impl_id,
+            _phantom: std::marker::PhantomData,
         }
     }
 
     /// Retrieves the `Impl` struct from the crate index if `impl_id` is Some.
-    fn get_impl_data<'krate>(&self, krate: &'krate Crate) -> Option<(&'krate Impl, Id)> {
+    fn get_impl_data<'krate_borrow>(
+        &self,
+        krate: &'krate_borrow Crate,
+    ) -> Option<(&'krate_borrow Impl, Id)> {
         self.impl_id
             .and_then(|id| krate.index.get(&id))
             .and_then(|item| match &item.inner {
@@ -1575,9 +1586,9 @@ pub struct Printer<'a> {
     module_tree: ModuleTree,
     doc_path: Vec<usize>,
     current_module_path: Vec<String>,
-    crate_common_traits: HashSet<NormalizedTraitImpl>,
+    crate_common_traits: HashSet<NormalizedTraitImpl<'a>>,
     all_type_ids_with_impls: HashSet<Id>,
-    module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl>>,
+    module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl<'a>>>,
 }
 
 impl<'a> Printer<'a> {
@@ -1697,7 +1708,7 @@ impl<'a> Printer<'a> {
 
         let (crate_common_traits, all_type_ids_with_impls) = Self::calculate_crate_common_traits(
             self.krate,
-            &self.selected_ids.clone(), // Clone selected_ids here
+            &self.selected_ids, // Pass reference directly
             self.no_common_traits,
         );
         self.crate_common_traits = crate_common_traits;
@@ -1708,11 +1719,11 @@ impl<'a> Printer<'a> {
     }
 
     /// Pre-calculates common traits for the entire crate.
-    fn calculate_crate_common_traits(
-        krate: &'a Crate,
-        selected_ids: &'a HashSet<Id>, // Keep as reference
+    fn calculate_crate_common_traits<'krate_lifetime>(
+        krate: &'krate_lifetime Crate,
+        selected_ids: &HashSet<Id>, // Accept any lifetime for the HashSet ref
         no_common_traits: bool,
-    ) -> (HashSet<NormalizedTraitImpl>, HashSet<Id>) {
+    ) -> (HashSet<NormalizedTraitImpl<'krate_lifetime>>, HashSet<Id>) {
         let mut all_type_ids_with_impls = HashSet::new();
         if no_common_traits {
             // Still calculate all_type_ids_with_impls for other logic if needed
@@ -1782,7 +1793,7 @@ impl<'a> Printer<'a> {
     }
 
     /// Calculates common traits for a specific module.
-    fn calculate_module_common_traits(&self, module_id: &Id) -> HashSet<NormalizedTraitImpl> {
+    fn calculate_module_common_traits(&self, module_id: &Id) -> HashSet<NormalizedTraitImpl<'a>> {
         if self.no_common_traits {
             return HashSet::new();
         }
@@ -2810,7 +2821,7 @@ impl<'a> Printer<'a> {
     /// Note: when formatting lists of traits for a specific item, we can expect
     /// `all_traits_for_item` to only contains traits that are implemented for the
     /// target item so there's no need to filter again by a target `Id`
-    fn format_trait_list(&mut self, traits_to_format: &[NormalizedTraitImpl]) -> String {
+    fn format_trait_list(&mut self, traits_to_format: &[NormalizedTraitImpl<'a>]) -> String {
         if traits_to_format.is_empty() {
             return String::new();
         }
