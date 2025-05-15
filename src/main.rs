@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use cargo_manifest::Manifest;
 use clap::Parser;
 use rustdoc_markdown::{
@@ -37,14 +37,14 @@ enum Command {
 
 #[derive(Parser, Debug)]
 struct PrintCommand {
-    /// Name of the crate on crates.io
+    /// Name of the crate on crates.io or from local manifest
     crate_name: String,
 
-    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*")
+    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*"). Ignored if --manifest is used.
     #[arg(default_value = "*")]
     crate_version: String,
 
-    /// Include prerelease versions when selecting the latest
+    /// Include prerelease versions when selecting the latest. Ignored if --manifest is used.
     #[arg(long)]
     include_prerelease: bool,
 
@@ -93,18 +93,22 @@ struct PrintCommand {
     /// Do not include an "Examples Appendix" section.
     #[arg(long)]
     no_examples: bool,
+
+    /// Path to the Cargo.toml manifest file. If provided, crates.io will not be queried.
+    #[arg(long)]
+    manifest: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
 struct DumpGraphCommand {
-    /// Name of the crate on crates.io
+    /// Name of the crate on crates.io or from local manifest
     crate_name: String,
 
-    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*")
+    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*"). Ignored if --manifest is used.
     #[arg(default_value = "*")]
     crate_version: String,
 
-    /// Include prerelease versions when selecting the latest
+    /// Include prerelease versions when selecting the latest. Ignored if --manifest is used.
     #[arg(long)]
     include_prerelease: bool,
 
@@ -152,6 +156,10 @@ struct DumpGraphCommand {
     /// or *after* graph filtering if --to-id is used.
     #[arg(long = "path")]
     paths: Vec<String>,
+
+    /// Path to the Cargo.toml manifest file. If provided, crates.io will not be queried.
+    #[arg(long)]
+    manifest: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -177,34 +185,77 @@ async fn main() -> Result<()> {
 
     match args.command {
         Command::Print(print_args) => {
-            let target_version = cratesio::find_best_version(
-                &client,
-                &print_args.crate_name,
-                &print_args.crate_version,
-                print_args.include_prerelease,
-            )
-            .await?;
-
-            info!(
-                "Selected version {} for crate {}",
-                target_version.num, target_version.crate_name
-            );
-
-            let build_path = PathBuf::from(print_args.build_dir);
-            std::fs::create_dir_all(&build_path).with_context(|| {
-                format!("Failed to create build directory: {}", build_path.display())
-            })?;
-
-            let crate_dir =
-                cratesio::download_and_unpack_crate(&client, &target_version, &build_path).await?;
-
-            let manifest_path = crate_dir.join("Cargo.toml");
-            let manifest: Manifest = Manifest::from_path(&manifest_path).with_context(|| {
-                format!(
-                    "Failed to read or parse Cargo.toml: {}",
-                    manifest_path.display()
-                )
-            })?;
+            let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) =
+                if let Some(manifest_path) = &print_args.manifest {
+                    info!(
+                        "Using local manifest: {}",
+                        manifest_path.canonicalize()?.display()
+                    );
+                    let m_path = manifest_path.canonicalize()?;
+                    let dir = m_path
+                        .parent()
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Could not get parent directory of manifest: {}",
+                                m_path.display()
+                            )
+                        })?
+                        .to_path_buf();
+                    let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
+                        format!("Failed to read or parse Cargo.toml: {}", m_path.display())
+                    })?;
+                    let name_from_manifest = m
+                        .package
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Manifest is missing [package] table"))?
+                        .name
+                        .clone();
+                    if name_from_manifest != print_args.crate_name {
+                        return Err(anyhow!(
+                            "Crate name mismatch: command line '{}' vs manifest '{}'",
+                            print_args.crate_name,
+                            name_from_manifest
+                        ));
+                    }
+                    // Version is not fetched from crates.io, so it's not directly available here.
+                    // We can get it from the manifest if needed for other parts.
+                    let version_from_manifest = m
+                        .package
+                        .as_ref()
+                        .and_then(|p| p.version.as_ref())
+                        .and_then(|v| v.as_local())
+                        .cloned();
+                    (dir, m, name_from_manifest, version_from_manifest)
+                } else {
+                    let target_version = cratesio::find_best_version(
+                        &client,
+                        &print_args.crate_name,
+                        &print_args.crate_version,
+                        print_args.include_prerelease,
+                    )
+                    .await?;
+                    info!(
+                        "Selected version {} for crate {}",
+                        target_version.num, target_version.crate_name
+                    );
+                    let build_path = PathBuf::from(&print_args.build_dir);
+                    std::fs::create_dir_all(&build_path).with_context(|| {
+                        format!("Failed to create build directory: {}", build_path.display())
+                    })?;
+                    let dir =
+                        cratesio::download_and_unpack_crate(&client, &target_version, &build_path)
+                            .await?;
+                    let m_path = dir.join("Cargo.toml");
+                    let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
+                        format!("Failed to read or parse Cargo.toml: {}", m_path.display())
+                    })?;
+                    (
+                        dir,
+                        m,
+                        target_version.crate_name.clone(),
+                        Some(target_version.num.clone()),
+                    )
+                };
 
             let readme_content = if print_args.no_readme {
                 None
@@ -218,7 +269,6 @@ async fn main() -> Result<()> {
                 } else {
                     None
                 };
-                // Clone readme_file_path before it's moved by and_then
                 readme_file_path
                     .clone()
                     .and_then(|path| fs::read_to_string(&path).ok())
@@ -267,10 +317,9 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let actual_crate_name = &target_version.crate_name;
             let json_output_path = run_rustdoc(
                 &crate_dir,
-                actual_crate_name,
+                &actual_crate_name_from_manifest,
                 print_args.features.as_deref(),
                 print_args.no_default_features,
                 print_args.target.as_deref(),
@@ -286,7 +335,7 @@ async fn main() -> Result<()> {
             })?;
             info!(
                 "Loaded rustdoc JSON for {} v{}",
-                actual_crate_name,
+                actual_crate_name_from_manifest,
                 krate.crate_version.as_deref().unwrap_or("?")
             );
 
@@ -330,26 +379,79 @@ async fn main() -> Result<()> {
             }
         }
         Command::DumpGraph(dump_args) => {
-            let target_version = cratesio::find_best_version(
-                &client,
-                &dump_args.crate_name,
-                &dump_args.crate_version,
-                dump_args.include_prerelease,
-            )
-            .await?;
+            let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) =
+                if let Some(manifest_path) = &dump_args.manifest {
+                    info!(
+                        "Using local manifest: {}",
+                        manifest_path.canonicalize()?.display()
+                    );
+                    let m_path = manifest_path.canonicalize()?;
+                    let dir = m_path
+                        .parent()
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "Could not get parent directory of manifest: {}",
+                                m_path.display()
+                            )
+                        })?
+                        .to_path_buf();
+                    let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
+                        format!("Failed to read or parse Cargo.toml: {}", m_path.display())
+                    })?;
+                    let name_from_manifest = m
+                        .package
+                        .as_ref()
+                        .ok_or_else(|| anyhow!("Manifest is missing [package] table"))?
+                        .name
+                        .clone();
+                    if name_from_manifest != dump_args.crate_name {
+                        return Err(anyhow!(
+                            "Crate name mismatch: command line '{}' vs manifest '{}'",
+                            dump_args.crate_name,
+                            name_from_manifest
+                        ));
+                    }
+                    let version_from_manifest = m
+                        .package
+                        .as_ref()
+                        .and_then(|p| p.version.as_ref())
+                        .and_then(|v| v.as_local())
+                        .cloned();
+                    (dir, m, name_from_manifest, version_from_manifest)
+                } else {
+                    let target_version = cratesio::find_best_version(
+                        &client,
+                        &dump_args.crate_name,
+                        &dump_args.crate_version,
+                        dump_args.include_prerelease,
+                    )
+                    .await?;
+                    info!(
+                        "Selected version {} for crate {}",
+                        target_version.num, target_version.crate_name
+                    );
+                    let build_path = PathBuf::from(&dump_args.build_dir);
+                    std::fs::create_dir_all(&build_path).with_context(|| {
+                        format!("Failed to create build directory: {}", build_path.display())
+                    })?;
+                    let dir =
+                        cratesio::download_and_unpack_crate(&client, &target_version, &build_path)
+                            .await?;
+                    let m_path = dir.join("Cargo.toml");
+                    let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
+                        format!("Failed to read or parse Cargo.toml: {}", m_path.display())
+                    })?;
+                    (
+                        dir,
+                        m,
+                        target_version.crate_name.clone(),
+                        Some(target_version.num.clone()),
+                    )
+                };
 
-            let build_path = PathBuf::from(dump_args.build_dir);
-            std::fs::create_dir_all(&build_path).with_context(|| {
-                format!("Failed to create build directory: {}", build_path.display())
-            })?;
-
-            let crate_dir =
-                cratesio::download_and_unpack_crate(&client, &target_version, &build_path).await?;
-
-            let actual_crate_name = &target_version.crate_name;
             let json_output_path = run_rustdoc(
                 &crate_dir,
-                actual_crate_name,
+                &actual_crate_name_from_manifest,
                 dump_args.features.as_deref(),
                 dump_args.no_default_features,
                 dump_args.target.as_deref(),
