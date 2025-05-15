@@ -1,9 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use cargo_manifest::Manifest;
 use clap::Parser;
-use rustdoc_markdown::{
-    cratesio, generate_documentation, graph, run_rustdoc, NIGHTLY_RUST_VERSION,
-}; // Use the library's Printer and GraphDumper
+use rustdoc_markdown::{cratesio, graph, run_rustdoc, Printer, NIGHTLY_RUST_VERSION}; // Use the library's Printer
 use rustdoc_types::{Crate, Id, ItemEnum};
 use std::collections::HashSet;
 use tracing_subscriber::EnvFilter;
@@ -185,6 +183,14 @@ async fn main() -> Result<()> {
 
     match args.command {
         Command::Print(print_args) => {
+            let build_dir_path = PathBuf::from(&print_args.build_dir);
+            std::fs::create_dir_all(&build_dir_path).with_context(|| {
+                format!(
+                    "Failed to create build directory: {}",
+                    build_dir_path.display()
+                )
+            })?;
+
             let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) =
                 if let Some(manifest_path) = &print_args.manifest {
                     info!(
@@ -217,8 +223,6 @@ async fn main() -> Result<()> {
                             name_from_manifest
                         ));
                     }
-                    // Version is not fetched from crates.io, so it's not directly available here.
-                    // We can get it from the manifest if needed for other parts.
                     let version_from_manifest = m
                         .package
                         .as_ref()
@@ -237,13 +241,13 @@ async fn main() -> Result<()> {
                         "Selected version {} for crate {}",
                         target_version.num, target_version.crate_name
                     );
-                    let build_path = PathBuf::from(&print_args.build_dir);
-                    std::fs::create_dir_all(&build_path).with_context(|| {
-                        format!("Failed to create build directory: {}", build_path.display())
-                    })?;
-                    let dir =
-                        cratesio::download_and_unpack_crate(&client, &target_version, &build_path)
-                            .await?;
+
+                    let dir = cratesio::download_and_unpack_crate(
+                        &client,
+                        &target_version,
+                        &build_dir_path,
+                    )
+                    .await?;
                     let m_path = dir.join("Cargo.toml");
                     let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
                         format!("Failed to read or parse Cargo.toml: {}", m_path.display())
@@ -255,66 +259,6 @@ async fn main() -> Result<()> {
                         Some(target_version.num.clone()),
                     )
                 };
-
-            let readme_content = if print_args.no_readme {
-                None
-            } else {
-                let readme_md_path = crate_dir.join("README.md");
-                let readme_path = crate_dir.join("README");
-                let readme_file_path = if readme_md_path.exists() {
-                    Some(readme_md_path)
-                } else if readme_path.exists() {
-                    Some(readme_path)
-                } else {
-                    None
-                };
-                readme_file_path
-                    .clone()
-                    .and_then(|path| fs::read_to_string(&path).ok())
-                    .or_else(|| {
-                        if readme_file_path.is_some() {
-                            warn!("Failed to read README.");
-                        } else {
-                            info!("No README found.");
-                        }
-                        None
-                    })
-            };
-
-            let mut examples_readme_content: Option<String> = None;
-            let mut examples_content: Option<Vec<(String, String)>> = None;
-            if !print_args.no_examples {
-                let examples_dir = crate_dir.join("examples");
-                if examples_dir.is_dir() {
-                    let ex_readme_md_path = examples_dir.join("README.md");
-                    let ex_readme_path = examples_dir.join("README");
-                    examples_readme_content = ex_readme_md_path
-                        .exists()
-                        .then_some(ex_readme_md_path)
-                        .or_else(|| ex_readme_path.exists().then_some(ex_readme_path))
-                        .and_then(|p| fs::read_to_string(p).ok());
-
-                    let mut found_examples = Vec::new();
-                    if let Ok(entries) = fs::read_dir(&examples_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
-                                if let Some(filename_str) =
-                                    path.file_name().and_then(|n| n.to_str())
-                                {
-                                    if let Ok(content) = fs::read_to_string(&path) {
-                                        found_examples.push((filename_str.to_string(), content));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !found_examples.is_empty() {
-                        found_examples.sort_by(|a, b| a.0.cmp(&b.0));
-                        examples_content = Some(found_examples);
-                    }
-                }
-            }
 
             let json_output_path = run_rustdoc(
                 &crate_dir,
@@ -338,18 +282,82 @@ async fn main() -> Result<()> {
                 krate.crate_version.as_deref().unwrap_or("?")
             );
 
-            let documentation = generate_documentation(
-                &manifest,
-                &krate,
-                readme_content,
-                examples_readme_content,
-                examples_content,
-                &print_args.paths,
-                print_args.include_other,
-                print_args.template,
-                print_args.no_common_traits,
-                print_args.no_examples,
-            )?;
+            let mut printer = Printer::new(&manifest, &krate, build_dir_path);
+
+            if !print_args.paths.is_empty() {
+                printer = printer.paths(&print_args.paths);
+            }
+            if !print_args.no_readme {
+                let readme_md_path = crate_dir.join("README.md");
+                let readme_path = crate_dir.join("README");
+                let readme_file_to_read = if readme_md_path.exists() {
+                    Some(readme_md_path)
+                } else if readme_path.exists() {
+                    Some(readme_path)
+                } else {
+                    None
+                };
+
+                if let Some(path) = readme_file_to_read {
+                    match fs::read_to_string(&path) {
+                        Ok(content) => printer = printer.readme(content),
+                        Err(_) => warn!("Failed to read README at {}", path.display()),
+                    }
+                } else {
+                    info!("No README found in crate root.");
+                }
+            }
+
+            if !print_args.no_examples {
+                let examples_dir = crate_dir.join("examples");
+                if examples_dir.is_dir() {
+                    let ex_readme_md_path = examples_dir.join("README.md");
+                    let ex_readme_path = examples_dir.join("README");
+                    if let Some(path) = ex_readme_md_path
+                        .exists()
+                        .then_some(ex_readme_md_path)
+                        .or_else(|| ex_readme_path.exists().then_some(ex_readme_path))
+                    {
+                        if let Ok(content) = fs::read_to_string(path) {
+                            printer = printer.examples_readme(content);
+                        }
+                    }
+
+                    if let Ok(entries) = fs::read_dir(&examples_dir) {
+                        let mut found_examples = Vec::new();
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                                if let Some(filename_str) =
+                                    path.file_name().and_then(|n| n.to_str())
+                                {
+                                    if let Ok(content) = fs::read_to_string(&path) {
+                                        found_examples.push((filename_str.to_string(), content));
+                                    }
+                                }
+                            }
+                        }
+                        if !found_examples.is_empty() {
+                            found_examples.sort_by(|a, b| a.0.cmp(&b.0));
+                            for (name, content) in found_examples {
+                                printer = printer.example(name, content);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if print_args.include_other {
+                printer = printer.include_other();
+            }
+            if print_args.template {
+                printer = printer.template_mode();
+            }
+            if print_args.no_common_traits {
+                printer = printer.no_common_traits();
+            }
+
+            let documentation = printer.print()?;
 
             if let Some(output_file_path) = print_args.output {
                 info!(
@@ -378,6 +386,14 @@ async fn main() -> Result<()> {
             }
         }
         Command::DumpGraph(dump_args) => {
+            let build_dir_path = PathBuf::from(&dump_args.build_dir);
+            std::fs::create_dir_all(&build_dir_path).with_context(|| {
+                format!(
+                    "Failed to create build directory: {}",
+                    build_dir_path.display()
+                )
+            })?;
+
             let (crate_dir, _manifest, actual_crate_name_from_manifest, _target_version_num) =
                 if let Some(manifest_path) = &dump_args.manifest {
                     info!(
@@ -428,13 +444,13 @@ async fn main() -> Result<()> {
                         "Selected version {} for crate {}",
                         target_version.num, target_version.crate_name
                     );
-                    let build_path = PathBuf::from(&dump_args.build_dir);
-                    std::fs::create_dir_all(&build_path).with_context(|| {
-                        format!("Failed to create build directory: {}", build_path.display())
-                    })?;
-                    let dir =
-                        cratesio::download_and_unpack_crate(&client, &target_version, &build_path)
-                            .await?;
+
+                    let dir = cratesio::download_and_unpack_crate(
+                        &client,
+                        &target_version,
+                        &build_dir_path,
+                    )
+                    .await?;
                     let m_path = dir.join("Cargo.toml");
                     let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
                         format!("Failed to read or parse Cargo.toml: {}", m_path.display())

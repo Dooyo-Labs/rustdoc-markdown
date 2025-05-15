@@ -3,7 +3,7 @@
 #![allow(clippy::cognitive_complexity)] // Allow complex functions for now
 
 use anyhow::{bail, Result};
-use cargo_manifest::{FeatureSet, Manifest};
+use cargo_manifest::{FeatureSet, Manifest as CargoManifest}; // Renamed Manifest to CargoManifest
 use graph::{Edge, IdGraph, ResolvedModule};
 use rustdoc_json::Builder;
 use rustdoc_types::{
@@ -12,7 +12,7 @@ use rustdoc_types::{
     Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
 };
 use std::collections::{HashMap, HashSet}; // Use HashMap instead of BTreeMap where needed
-use std::fmt::Write as _;
+use std::fmt::Write as FmtWrite; // Use FmtWrite alias
 use std::hash::{Hash, Hasher};
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tracing::{debug, info, trace, warn};
@@ -38,6 +38,44 @@ struct CrateManifestData {
     rust_version: Option<String>,
     edition: Option<String>,
     features: FeatureSet, // Using cargo-manifest's FeatureSet
+}
+
+impl CrateManifestData {
+    fn from_cargo_manifest(manifest: &CargoManifest) -> Self {
+        let package_data = manifest.package.as_ref();
+        CrateManifestData {
+            description: package_data
+                .and_then(|p| p.description.as_ref())
+                .and_then(|d| d.as_ref().as_local())
+                .cloned(),
+            homepage: package_data
+                .and_then(|p| p.homepage.as_ref())
+                .and_then(|h| h.as_ref().as_local())
+                .cloned(),
+            repository: package_data
+                .and_then(|p| p.repository.as_ref())
+                .and_then(|r| r.as_ref().as_local())
+                .cloned(),
+            categories: package_data
+                .and_then(|p| p.categories.as_ref())
+                .and_then(|c| c.as_ref().as_local())
+                .cloned()
+                .unwrap_or_default(),
+            license: package_data
+                .and_then(|p| p.license.as_ref())
+                .and_then(|l| l.as_ref().as_local())
+                .cloned(),
+            rust_version: package_data
+                .and_then(|p| p.rust_version.as_ref())
+                .and_then(|rv| rv.as_ref().as_local())
+                .cloned(),
+            edition: package_data
+                .and_then(|p| p.edition.as_ref())
+                .and_then(|e| e.as_ref().as_local())
+                .map(|e| e.as_str().to_string()),
+            features: manifest.features.clone().unwrap_or_default(),
+        }
+    }
 }
 
 pub fn run_rustdoc(
@@ -1513,72 +1551,160 @@ struct ModuleTree {
     top_level_modules: Vec<Id>,
 }
 
+/// `Printer` is responsible for generating Markdown documentation from a `rustdoc_types::Crate`.
+///
+/// It uses a builder pattern for configuration.
 pub struct Printer<'a> {
     krate: &'a Crate,
-    manifest: &'a CrateManifestData, // Add field for manifest data
-    readme_content: Option<String>,  // Add field for README content
+    manifest_data: CrateManifestData,
+    build_dir: PathBuf, // Added build_dir
+    // Builder options
+    paths: Vec<String>,
+    readme_content: Option<String>,
     examples_readme_content: Option<String>,
-    examples_content: Option<Vec<(String, String)>>,
-    selected_ids: &'a HashSet<Id>,
-    resolved_modules: &'a HashMap<Id, ResolvedModule>, // Add resolved module index
-    graph: &'a IdGraph,                                // Add graph reference
+    examples: Vec<(String, String)>, // Store multiple examples
     include_other: bool,
-    template_mode: bool,      // New flag for template mode
-    no_common_traits: bool,   // New flag for disabling common traits
-    no_examples: bool,        // New flag for disabling examples
-    printed_ids: HashSet<Id>, // Stores IDs that have had their primary definition printed
+    template_mode: bool,
+    no_common_traits: bool,
+    // Internal state
+    selected_ids: HashSet<Id>,
+    resolved_modules: HashMap<Id, ResolvedModule>,
+    graph: IdGraph,
+    printed_ids: HashSet<Id>,
     output: String,
-    module_tree: ModuleTree, // Add module tree
-    // Tracks the current path in the document structure (e.g., [1, 2, 1] -> 1.2.1)
+    module_tree: ModuleTree,
     doc_path: Vec<usize>,
-    current_module_path: Vec<String>, // Tracks the current module's string path
+    current_module_path: Vec<String>,
     crate_common_traits: HashSet<NormalizedTraitImpl>,
     all_type_ids_with_impls: HashSet<Id>,
     module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl>>,
 }
 
 impl<'a> Printer<'a> {
-    #[allow(clippy::too_many_arguments)] // Allow more arguments for constructor
-    fn new(
-        krate: &'a Crate,
-        manifest: &'a CrateManifestData, // Accept manifest data
-        readme_content: Option<String>,  // Accept README content
-        examples_readme_content: Option<String>,
-        examples_content: Option<Vec<(String, String)>>,
-        selected_ids: &'a HashSet<Id>,
-        resolved_modules: &'a HashMap<Id, ResolvedModule>, // Accept resolved modules
-        graph: &'a IdGraph,                                // Add graph parameter
-        include_other: bool,
-        template_mode: bool,    // Add template mode flag
-        no_common_traits: bool, // Add no_common_traits flag
-        no_examples: bool,      // Add no_examples flag
-    ) -> Self {
-        let module_tree = Self::build_module_tree(krate);
-        let (crate_common_traits, all_type_ids_with_impls) =
-            Self::calculate_crate_common_traits(krate, selected_ids, no_common_traits);
-
+    /// Creates a new `Printer` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `manifest`: The parsed `Cargo.toml` data for the crate.
+    /// * `krate`: The `rustdoc_types::Crate` data produced by rustdoc.
+    /// * `build_dir`: The directory used for rustdoc JSON generation and other build artifacts.
+    pub fn new(manifest: &'a CargoManifest, krate: &'a Crate, build_dir: PathBuf) -> Self {
         Printer {
             krate,
-            manifest,
-            readme_content,
-            examples_readme_content,
-            examples_content,
-            selected_ids,
-            resolved_modules,
-            graph,
-            include_other,
-            template_mode,
-            no_common_traits,
-            no_examples,
+            manifest_data: CrateManifestData::from_cargo_manifest(manifest),
+            build_dir,
+            paths: Vec::new(),
+            readme_content: None,
+            examples_readme_content: None,
+            examples: Vec::new(),
+            include_other: false,
+            template_mode: false,
+            no_common_traits: false,
+            selected_ids: HashSet::new(), // Will be populated by print()
+            resolved_modules: HashMap::new(), // Will be populated by print()
+            graph: IdGraph::default(),    // Will be populated by print()
             printed_ids: HashSet::new(),
             output: String::new(),
-            module_tree,
+            module_tree: Self::build_module_tree(krate), // Initial build based on krate
             doc_path: Vec::new(),
             current_module_path: vec![],
-            crate_common_traits,
-            all_type_ids_with_impls,
-            module_common_traits: HashMap::new(),
+            crate_common_traits: HashSet::new(), // Will be populated by print()
+            all_type_ids_with_impls: HashSet::new(), // Will be populated by print()
+            module_common_traits: HashMap::new(), // Will be populated during printing
         }
+    }
+
+    /// Sets the item path filters for documentation generation.
+    ///
+    /// Items matching these paths (and their dependencies) will be included.
+    /// Paths starting with `::` imply the root of the current crate.
+    /// Matches are prefix-based (e.g., "::style" matches "::style::TextStyle").
+    /// If no paths are provided, all items are considered for selection.
+    pub fn paths(mut self, paths: &[String]) -> Self {
+        self.paths = paths.to_vec();
+        self
+    }
+
+    /// Adds README content to be included in the documentation.
+    ///
+    /// The content should be a string containing the Markdown text of the README.
+    pub fn readme(mut self, content: String) -> Self {
+        self.readme_content = Some(content);
+        self
+    }
+
+    /// Adds an example to be included in the "Examples Appendix".
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: The filename or identifier for the example (e.g., "simple.rs").
+    /// * `content`: The Rust code content of the example.
+    pub fn example(mut self, name: String, content: String) -> Self {
+        self.examples.push((name, content));
+        self
+    }
+
+    /// Adds the content of `examples/README.md` to be included before other examples.
+    pub fn examples_readme(mut self, content: String) -> Self {
+        self.examples_readme_content = Some(content);
+        self
+    }
+
+    /// Includes items that don't fit standard categories in a final "Other" section.
+    ///
+    /// By default, such items are logged as warnings and not included.
+    pub fn include_other(mut self) -> Self {
+        self.include_other = true;
+        self
+    }
+
+    /// Enables template mode.
+    ///
+    /// In template mode, instead of item documentation, Mustache-like markers
+    /// (e.g., `{{MISSING_DOCS_1_2_1}}`) are inserted. This is useful for
+    /// identifying where documentation is present or missing.
+    pub fn template_mode(mut self) -> Self {
+        self.template_mode = true;
+        self
+    }
+
+    /// Disables the "Common Traits" sections.
+    ///
+    /// When disabled, all implemented traits for each item will be listed directly
+    /// with that item, rather than being summarized at the crate or module level.
+    pub fn no_common_traits(mut self) -> Self {
+        self.no_common_traits = true;
+        self
+    }
+
+    /// Generates the Markdown documentation based on the configured options.
+    ///
+    /// This method consumes the `Printer` and returns the generated Markdown as a `String`.
+    pub fn print(mut self) -> Result<String> {
+        self.resolved_modules = graph::build_resolved_module_index(self.krate);
+        let (selected_ids, graph) =
+            graph::select_items(self.krate, &self.paths, &self.resolved_modules)?;
+        self.selected_ids = selected_ids;
+        self.graph = graph;
+
+        info!(
+            "Generating documentation for {} selected items.",
+            self.selected_ids.len()
+        );
+        if self.selected_ids.is_empty() && self.examples.is_empty() {
+            return Ok("No items selected for documentation and no examples found.".to_string());
+        }
+
+        let (crate_common_traits, all_type_ids_with_impls) = Self::calculate_crate_common_traits(
+            self.krate,
+            &self.selected_ids,
+            self.no_common_traits,
+        );
+        self.crate_common_traits = crate_common_traits;
+        self.all_type_ids_with_impls = all_type_ids_with_impls;
+
+        // The finalize method consumes self and returns the String
+        Ok(self.finalize())
     }
 
     /// Pre-calculates common traits for the entire crate.
@@ -3464,19 +3590,20 @@ impl<'a> Printer<'a> {
     fn clone_with_new_output(&self) -> Self {
         Printer {
             krate: self.krate,
-            manifest: self.manifest,
+            manifest_data: self.manifest_data.clone(),
+            build_dir: self.build_dir.clone(),
+            paths: self.paths.clone(),
             readme_content: self.readme_content.clone(),
             examples_readme_content: self.examples_readme_content.clone(),
-            examples_content: self.examples_content.clone(),
-            selected_ids: self.selected_ids,
-            resolved_modules: self.resolved_modules,
-            graph: self.graph,
+            examples: self.examples.clone(),
             include_other: self.include_other,
             template_mode: self.template_mode,
             no_common_traits: self.no_common_traits,
-            no_examples: self.no_examples,
+            selected_ids: self.selected_ids.clone(), // Clone relevant fields
+            resolved_modules: self.resolved_modules.clone(),
+            graph: self.graph.clone(),
             printed_ids: self.printed_ids.clone(),
-            output: String::new(),
+            output: String::new(), // New output buffer
             module_tree: self.module_tree.clone(),
             doc_path: self.doc_path.clone(),
             current_module_path: self.current_module_path.clone(),
@@ -3614,7 +3741,7 @@ impl<'a> Printer<'a> {
         self.push_level();
 
         // Print Crate Description (if available) - NEW
-        if let Some(desc) = &self.manifest.description {
+        if let Some(desc) = &self.manifest_data.description {
             writeln!(self.output, "{}\n", desc).unwrap();
         }
 
@@ -3630,27 +3757,27 @@ impl<'a> Printer<'a> {
         .unwrap();
 
         // Use simple list format for manifest details
-        if let Some(hp) = &self.manifest.homepage {
+        if let Some(hp) = &self.manifest_data.homepage {
             writeln!(self.output, "- Homepage: <{}>", hp).unwrap();
         }
-        if let Some(repo) = &self.manifest.repository {
+        if let Some(repo) = &self.manifest_data.repository {
             writeln!(self.output, "- Repository: <{}>", repo).unwrap();
         }
-        if !self.manifest.categories.is_empty() {
+        if !self.manifest_data.categories.is_empty() {
             writeln!(
                 self.output,
                 "- Categories: {}",
-                self.manifest.categories.join(", ")
+                self.manifest_data.categories.join(", ")
             )
             .unwrap();
         }
-        if let Some(lic) = &self.manifest.license {
+        if let Some(lic) = &self.manifest_data.license {
             writeln!(self.output, "- License: {}", lic).unwrap();
         }
-        if let Some(rv) = &self.manifest.rust_version {
+        if let Some(rv) = &self.manifest_data.rust_version {
             writeln!(self.output, "- rust-version: `{}`", rv).unwrap();
         }
-        if let Some(ed) = &self.manifest.edition {
+        if let Some(ed) = &self.manifest_data.edition {
             writeln!(self.output, "- edition: `{}`", ed).unwrap();
         }
         writeln!(self.output).unwrap(); // Add a newline after the list
@@ -3668,11 +3795,11 @@ impl<'a> Printer<'a> {
         .unwrap();
 
         // List features or state None
-        if self.manifest.features.is_empty() {
+        if self.manifest_data.features.is_empty() {
             writeln!(self.output, "- None").unwrap();
         } else {
             // Sort features for consistent output
-            let mut sorted_features: Vec<_> = self.manifest.features.keys().collect();
+            let mut sorted_features: Vec<_> = self.manifest_data.features.keys().collect();
             sorted_features.sort_unstable();
             for feature_name in sorted_features {
                 // TODO: Maybe show what features a feature enables? Requires more parsing.
@@ -3786,7 +3913,7 @@ impl<'a> Printer<'a> {
 
         // --- Handle "Other" Items ---
         let mut unprinted_ids = Vec::new();
-        for id in self.selected_ids {
+        for id in &self.selected_ids {
             if !self.printed_ids.contains(id) {
                 // Skip impl items and use items as they are handled implicitly or ignored
                 // Also skip struct fields as they are handled within their containers
@@ -3912,133 +4039,40 @@ impl<'a> Printer<'a> {
         }
 
         // --- Examples Appendix ---
-        if !self.no_examples {
-            // Clone examples_content to avoid borrow checker issues
-            let examples_content_cloned = self.examples_content.clone();
+        if !self.examples.is_empty() || self.examples_readme_content.is_some() {
+            let examples_section_level = self.get_current_header_level(); // Should be 2
+            let header_prefix = self.get_header_prefix();
+            writeln!(
+                self.output,
+                "\n{} {} Examples Appendix\n",
+                "#".repeat(examples_section_level),
+                header_prefix
+            )
+            .unwrap();
+            self.push_level(); // Push for H3 example headers
 
-            if let Some(examples) = examples_content_cloned {
-                if !examples.is_empty() || self.examples_readme_content.is_some() {
-                    let examples_section_level = self.get_current_header_level(); // Should be 2
-                    let header_prefix = self.get_header_prefix();
-                    writeln!(
-                        self.output,
-                        "\n{} {} Examples Appendix\n",
-                        "#".repeat(examples_section_level),
-                        header_prefix
-                    )
-                    .unwrap();
-                    self.push_level(); // Push for H3 example headers
-
-                    if let Some(readme) = &self.examples_readme_content {
-                        let adjusted_readme =
-                            adjust_markdown_headers(readme, examples_section_level);
-                        writeln!(self.output, "{}\n", adjusted_readme).unwrap();
-                    }
-
-                    for (filename, content) in examples {
-                        let example_header_level = self.get_current_header_level(); // Should be 3
-                        let example_prefix = self.get_header_prefix();
-                        writeln!(
-                            self.output,
-                            "{} {} `{}`\n",
-                            "#".repeat(example_header_level),
-                            example_prefix,
-                            filename
-                        )
-                        .unwrap();
-                        writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
-                        self.post_increment_current_level(); // Increment H3 counter for next example
-                    }
-                    self.pop_level(); // Pop H3 example level
-                    self.post_increment_current_level(); // Increment H2 counter for next top-level section
-                }
+            if let Some(readme) = &self.examples_readme_content {
+                let adjusted_readme = adjust_markdown_headers(readme, examples_section_level);
+                writeln!(self.output, "{}\n", adjusted_readme).unwrap();
             }
-        }
 
+            for (filename, content) in &self.examples {
+                let example_header_level = self.get_current_header_level(); // Should be 3
+                let example_prefix = self.get_header_prefix();
+                writeln!(
+                    self.output,
+                    "{} {} `{}`\n",
+                    "#".repeat(example_header_level),
+                    example_prefix,
+                    filename
+                )
+                .unwrap();
+                writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
+                self.post_increment_current_level(); // Increment H3 counter for next example
+            }
+            self.pop_level(); // Pop H3 example level
+            self.post_increment_current_level(); // Increment H2 counter for next top-level section
+        }
         self.output
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn generate_documentation(
-    manifest: &Manifest,
-    krate: &Crate,
-    readme_content: Option<String>,
-    examples_readme_content: Option<String>,
-    examples_content: Option<Vec<(String, String)>>,
-    paths: &[String],
-    include_other: bool,
-    template_mode: bool,
-    no_common_traits: bool,
-    no_examples: bool,
-) -> Result<String> {
-    let package_data = manifest.package.as_ref().unwrap();
-    let manifest_data = CrateManifestData {
-        description: package_data
-            .description
-            .as_ref()
-            .and_then(|d| d.as_ref().as_local())
-            .cloned(),
-        homepage: package_data
-            .homepage
-            .as_ref()
-            .and_then(|h| h.as_ref().as_local())
-            .cloned(),
-        repository: package_data
-            .repository
-            .as_ref()
-            .and_then(|r| r.as_ref().as_local())
-            .cloned(),
-        categories: package_data
-            .categories
-            .as_ref()
-            .and_then(|c| c.as_ref().as_local())
-            .cloned()
-            .unwrap_or_default(),
-        license: package_data
-            .license
-            .as_ref()
-            .and_then(|l| l.as_ref().as_local())
-            .cloned(),
-        rust_version: package_data
-            .rust_version
-            .as_ref()
-            .and_then(|rv| rv.as_ref().as_local())
-            .cloned(),
-        edition: package_data
-            .edition
-            .as_ref()
-            .and_then(|e| e.as_ref().as_local())
-            .map(|e| e.as_str().to_string()),
-        features: manifest.features.clone().unwrap_or_default(),
-    };
-
-    let resolved_modules = graph::build_resolved_module_index(krate);
-    let (selected_ids, graph) = graph::select_items(krate, paths, &resolved_modules)?;
-
-    info!(
-        "Generating documentation for {} selected items.",
-        selected_ids.len()
-    );
-    if selected_ids.is_empty() && examples_content.as_ref().is_none_or(|e| e.is_empty()) {
-        return Ok("No items selected for documentation and no examples found.".to_string());
-    }
-
-    let printer = Printer::new(
-        krate,
-        &manifest_data,
-        readme_content,
-        examples_readme_content,
-        examples_content,
-        &selected_ids,
-        &resolved_modules,
-        &graph,
-        include_other,
-        template_mode,
-        no_common_traits,
-        no_examples,
-    );
-    let output = printer.finalize();
-
-    Ok(output)
 }
