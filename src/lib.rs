@@ -1568,7 +1568,6 @@ struct ModuleTree {
 pub struct Printer<'a> {
     krate: &'a Crate,
     manifest_data: CrateManifestData,
-    build_dir: PathBuf, // Added build_dir
     // Builder options
     paths: Vec<String>,
     readme_content: Option<String>,
@@ -1599,11 +1598,10 @@ impl<'a> Printer<'a> {
     /// * `manifest`: The parsed `Cargo.toml` data for the crate.
     /// * `krate`: The `rustdoc_types::Crate` data produced by rustdoc.
     /// * `build_dir`: The directory used for rustdoc JSON generation and other build artifacts.
-    pub fn new(manifest: &'a CargoManifest, krate: &'a Crate, build_dir: PathBuf) -> Self {
+    pub fn new(manifest: &'a CargoManifest, krate: &'a Crate) -> Self {
         Printer {
             krate,
             manifest_data: CrateManifestData::from_cargo_manifest(manifest),
-            build_dir,
             paths: Vec::new(),
             readme_content: None,
             examples_readme_content: None,
@@ -3609,7 +3607,6 @@ impl<'a> Printer<'a> {
         Printer {
             krate: self.krate,
             manifest_data: self.manifest_data.clone(),
-            build_dir: self.build_dir.clone(),
             paths: self.paths.clone(),
             readme_content: self.readme_content.clone(),
             examples_readme_content: self.examples_readme_content.clone(),

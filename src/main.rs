@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
                 krate.crate_version.as_deref().unwrap_or("?")
             );
 
-            let mut printer = Printer::new(&manifest, &krate, build_dir_path);
+            let mut printer = Printer::new(&manifest, &krate);
 
             if !print_args.paths.is_empty() {
                 printer = printer.paths(&print_args.paths);
