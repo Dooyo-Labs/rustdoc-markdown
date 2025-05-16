@@ -779,7 +779,7 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
 /// comment, otherwise someone will make the mistake of adding implementation
 /// state to this struct.
 #[derive(Debug, Clone)]
-struct NormalizedTraitImpl<'a> {
+struct FormattedTraitImpl {
     trait_id: Id,
     /// Generics of the trait path itself (e.g., `<'a>` in `Trait<'a>`).
     /// This `Generics` is from `rustdoc_types` and its internal `CowStr` will have lifetime 'a.
@@ -798,13 +798,10 @@ struct NormalizedTraitImpl<'a> {
     /// type, as opposed to common trait implementations for a crate / module.
     /// This link helps track what items have been printed so far.
     impl_id: Option<Id>,
-    // PhantomData to make 'a used, if not used by other fields directly.
-    // Not strictly necessary if `trait_generics` correctly implies 'a.
-    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> PartialEq for NormalizedTraitImpl<'a> {
-    /// Compares two NormalizedTraitImpl instances for equality.
+impl PartialEq for FormattedTraitImpl {
+    /// Compares two FormattedTraitImpl instances for equality.
     /// For common trait identification, `impl_id` and `cleaned_path_for_display` are ignored.
     fn eq(&self, other: &Self) -> bool {
         self.trait_id == other.trait_id
@@ -816,10 +813,10 @@ impl<'a> PartialEq for NormalizedTraitImpl<'a> {
             && self.is_negative == other.is_negative
     }
 }
-impl<'a> Eq for NormalizedTraitImpl<'a> {}
+impl Eq for FormattedTraitImpl {}
 
-impl<'a> Hash for NormalizedTraitImpl<'a> {
-    /// Hashes the NormalizedTraitImpl instance.
+impl Hash for FormattedTraitImpl {
+    /// Hashes the FormattedTraitImpl instance.
     /// For common trait identification, `impl_id` and `cleaned_path_for_display` are ignored.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.trait_id.hash(state);
@@ -962,9 +959,9 @@ fn trait_impl_has_associated_items(imp: &Impl, krate: &Crate) -> bool {
     })
 }
 
-impl<'a> NormalizedTraitImpl<'a> {
-    /// Creates a NormalizedTraitImpl from a rustdoc_types::Impl and the krate context.
-    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &'a Crate) -> Self {
+impl FormattedTraitImpl {
+    /// Creates a FormattedTraitImpl from a rustdoc_types::Impl and the krate context.
+    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &Crate) -> Self {
         let trait_path_str = format_id_path_canonical(&trait_path.id, krate);
         let cleaned_trait_path = clean_trait_path(&trait_path_str);
 
@@ -1098,7 +1095,7 @@ impl<'a> NormalizedTraitImpl<'a> {
             }
         }
 
-        NormalizedTraitImpl {
+        FormattedTraitImpl {
             trait_id: trait_path.id,
             trait_generics: generic_args_to_generics(trait_path.args.clone(), krate),
             is_auto: imp.is_synthetic,
@@ -1108,7 +1105,6 @@ impl<'a> NormalizedTraitImpl<'a> {
             is_negative: imp.is_negative,
             cleaned_path_for_display: display_path_with_generics,
             impl_id,
-            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -1669,9 +1665,9 @@ pub struct Printer<'a> {
     module_tree: ModuleTree,
     doc_path: Vec<usize>,
     current_module_path: Vec<String>,
-    crate_common_traits: HashSet<NormalizedTraitImpl<'a>>,
+    crate_common_traits: HashSet<FormattedTraitImpl>,
     all_type_ids_with_impls: HashSet<Id>,
-    module_common_traits: HashMap<Id, HashSet<NormalizedTraitImpl<'a>>>,
+    module_common_traits: HashMap<Id, HashSet<FormattedTraitImpl>>,
 }
 
 impl<'a> Printer<'a> {
@@ -1816,7 +1812,7 @@ impl<'a> Printer<'a> {
         krate: &'krate_lifetime Crate,
         selected_ids: &HashSet<Id>, // Accept any lifetime for the HashSet ref
         no_common_traits: bool,
-    ) -> (HashSet<NormalizedTraitImpl<'krate_lifetime>>, HashSet<Id>) {
+    ) -> (HashSet<FormattedTraitImpl>, HashSet<Id>) {
         let mut all_type_ids_with_impls = HashSet::new();
         if no_common_traits {
             // Still calculate all_type_ids_with_impls for other logic if needed
@@ -1832,7 +1828,7 @@ impl<'a> Printer<'a> {
             return (HashSet::new(), all_type_ids_with_impls);
         }
 
-        let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
+        let mut trait_counts: HashMap<FormattedTraitImpl, usize> = HashMap::new();
         for item in krate.index.values() {
             if let ItemEnum::Impl(imp) = &item.inner {
                 if let Some(for_type_id) = get_type_id(&imp.for_) {
@@ -1840,7 +1836,7 @@ impl<'a> Printer<'a> {
                         all_type_ids_with_impls.insert(for_type_id);
                         if let Some(trait_path) = &imp.trait_ {
                             let norm_impl =
-                                NormalizedTraitImpl::from_impl(imp, None, trait_path, krate);
+                                FormattedTraitImpl::from_impl(imp, None, trait_path, krate);
                             *trait_counts.entry(norm_impl).or_insert(0) += 1;
                         }
                     }
@@ -1886,7 +1882,7 @@ impl<'a> Printer<'a> {
     }
 
     /// Calculates common traits for a specific module.
-    fn calculate_module_common_traits(&self, module_id: &Id) -> HashSet<NormalizedTraitImpl<'a>> {
+    fn calculate_module_common_traits(&self, module_id: &Id) -> HashSet<FormattedTraitImpl> {
         if self.no_common_traits {
             return HashSet::new();
         }
@@ -1924,14 +1920,14 @@ impl<'a> Printer<'a> {
                 return module_common_traits;
             }
 
-            let mut trait_counts: HashMap<NormalizedTraitImpl, usize> = HashMap::new();
+            let mut trait_counts: HashMap<FormattedTraitImpl, usize> = HashMap::new();
             for item_id in &module_types_considered {
                 for krate_item in self.krate.index.values() {
                     if let ItemEnum::Impl(imp) = &krate_item.inner {
                         if let Some(for_id) = get_type_id(&imp.for_) {
                             if for_id == *item_id {
                                 if let Some(trait_path) = &imp.trait_ {
-                                    let norm_impl = NormalizedTraitImpl::from_impl(
+                                    let norm_impl = FormattedTraitImpl::from_impl(
                                         imp, None, trait_path, self.krate,
                                     );
                                     *trait_counts.entry(norm_impl).or_insert(0) += 1;
@@ -2905,16 +2901,16 @@ impl<'a> Printer<'a> {
         }
     }
 
-    /// Helper to categorize and format a list of NormalizedTraitImpls for display.
+    /// Helper to categorize and format a list of FormattedTraitImpls for display.
     ///
     /// Note: when formatting lists of common traits we can expect
-    /// `NormalizedTraitImpl::get_impl` to return `None` while common traits are
+    /// `FormattedTraitImpl::get_impl` to return `None` while common traits are
     /// not associated with any specific implementation.
     ///
     /// Note: when formatting lists of traits for a specific item, we can expect
     /// `all_traits_for_item` to only contains traits that are implemented for the
     /// target item so there's no need to filter again by a target `Id`
-    fn format_trait_list(&mut self, traits_to_format: &[NormalizedTraitImpl<'a>]) -> String {
+    fn format_trait_list(&mut self, traits_to_format: &[FormattedTraitImpl]) -> String {
         if traits_to_format.is_empty() {
             return String::new();
         }
@@ -3107,14 +3103,14 @@ impl<'a> Printer<'a> {
         }
 
         // --- Trait Impls ---
-        let trait_impl_data: Vec<NormalizedTraitImpl> = item_specific_impl_data
+        let trait_impl_data: Vec<FormattedTraitImpl> = item_specific_impl_data
             .iter()
             .filter_map(|(impl_item, imp)| {
                 if self.printed_ids.contains(&impl_item.id) {
                     return None; // Skip already printed impls
                 }
                 imp.trait_.as_ref().map(|tp| {
-                    NormalizedTraitImpl::from_impl(imp, Some(impl_item.id), tp, self.krate)
+                    FormattedTraitImpl::from_impl(imp, Some(impl_item.id), tp, self.krate)
                 })
             })
             .collect();
@@ -3783,7 +3779,7 @@ impl<'a> Printer<'a> {
                 self.module_common_traits
                     .insert(module_id, mod_common.clone()); // Store for later use
 
-                let displayable_module_common: Vec<NormalizedTraitImpl> = mod_common
+                let displayable_module_common: Vec<FormattedTraitImpl> = mod_common
                     .iter()
                     .filter(|nt| !self.crate_common_traits.contains(nt)) // Only those not in crate common
                     .cloned()
@@ -3954,7 +3950,7 @@ impl<'a> Printer<'a> {
             .unwrap();
             writeln!(self.output, "The following traits are commonly implemented by types in this crate. Unless otherwise noted, you can assume these traits are implemented:\n").unwrap();
 
-            let sorted_common_traits: Vec<NormalizedTraitImpl> = {
+            let sorted_common_traits: Vec<FormattedTraitImpl> = {
                 let mut traits: Vec<_> = self.crate_common_traits.iter().cloned().collect();
                 traits.sort_by_key(|t| t.cleaned_path_for_display.clone());
                 traits
