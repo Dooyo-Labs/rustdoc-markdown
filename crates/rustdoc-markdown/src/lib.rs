@@ -787,6 +787,19 @@ fn format_generics_where_only(predicates: &[WherePredicate], krate: &Crate) -> S
 
 // --- Structured Printing Logic ---
 
+/// Category of a trait implementation for display purposes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum TraitImplCategory {
+    /// Simple, non-generic, non-blanket, non-auto impls.
+    Simple,
+    /// Impls with generics, associated items, or other complexities.
+    GenericOrComplex,
+    /// Auto traits (e.g., Send, Sync).
+    Auto,
+    /// Blanket implementations.
+    Blanket,
+}
+
 /// Represents a normalized trait implementation for comparison and storage.
 ///
 /// Apart from the optional `impl_id`, this trait description is decoupled
@@ -800,15 +813,12 @@ struct FormattedTraitImpl {
     /// Generics of the trait path itself (e.g., `<'a>` in `Trait<'a>`).
     /// This `Generics` is from `rustdoc_types` and its internal `CowStr` will have lifetime 'a.
     trait_generics: Generics,
-    is_auto: bool,
     is_unsafe_impl: bool,
-    is_blanket: bool,
-    is_passthrough_generic_impl: bool,
     is_negative: bool,
-    /// A user-friendly, cleaned string representation of the trait including its generics,
-    /// e.g., "Debug", "Iterator<Item = u32>". Used for display in lists.
-    /// Also includes '!' prefix for negative impls.
-    cleaned_path_for_display: String,
+    /// The category this trait implementation falls into.
+    category: TraitImplCategory,
+    /// The pre-formatted Markdown list entry for this trait.
+    formatted_markdown_list_entry: String,
     /// Optionally link back to the real Impl item in the krate index.
     /// This is useful when representing implementation details for a specific
     /// type, as opposed to common trait implementations for a crate / module.
@@ -818,31 +828,27 @@ struct FormattedTraitImpl {
 
 impl PartialEq for FormattedTraitImpl {
     /// Compares two FormattedTraitImpl instances for equality.
-    /// For common trait identification, `impl_id` and `cleaned_path_for_display` are ignored.
+    /// For common trait identification, `impl_id` and `formatted_markdown_list_entry` are ignored.
     fn eq(&self, other: &Self) -> bool {
         self.trait_id == other.trait_id
             && self.trait_generics == other.trait_generics // Compare trait generics structure
-            && self.is_auto == other.is_auto
             && self.is_unsafe_impl == other.is_unsafe_impl
-            && self.is_blanket == other.is_blanket
-            && self.is_passthrough_generic_impl == other.is_passthrough_generic_impl
             && self.is_negative == other.is_negative
+            && self.category == other.category // Compare category
     }
 }
 impl Eq for FormattedTraitImpl {}
 
 impl Hash for FormattedTraitImpl {
     /// Hashes the FormattedTraitImpl instance.
-    /// For common trait identification, `impl_id` and `cleaned_path_for_display` are ignored.
+    /// For common trait identification, `impl_id` and `formatted_markdown_list_entry` are ignored.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.trait_id.hash(state);
         self.trait_generics.hash(state); // Hash trait generics structure
-        self.is_auto.hash(state);
         self.is_unsafe_impl.hash(state);
-        self.is_blanket.hash(state);
-        self.is_passthrough_generic_impl.hash(state);
         self.is_negative.hash(state);
-        // Do not hash cleaned_path_for_display or impl_id for common trait grouping
+        self.category.hash(state); // Hash category
+                                   // Do not hash formatted_markdown_list_entry or impl_id for common trait grouping
     }
 }
 
@@ -977,7 +983,13 @@ fn trait_impl_has_associated_items(imp: &Impl, krate: &Crate) -> bool {
 
 impl FormattedTraitImpl {
     /// Creates a FormattedTraitImpl from a rustdoc_types::Impl and the krate context.
-    fn from_impl(imp: &Impl, impl_id: Option<Id>, trait_path: &Path, krate: &Crate) -> Self {
+    fn from_impl(
+        imp: &Impl,
+        impl_id: Option<Id>,
+        trait_path: &Path,
+        krate: &Crate,
+        printer: &Printer, // Pass printer for generate_impl_trait_block
+    ) -> Self {
         let trait_path_str = format_id_path_canonical(&trait_path.id, krate);
         let cleaned_trait_path = clean_trait_path(&trait_path_str);
 
@@ -997,45 +1009,15 @@ impl FormattedTraitImpl {
             }
         );
 
-        // Determine if the implementation is generic but the trait is not generic and all
-        // parameters are passed through to the `for_` type with no additional constraints.
-        //
-        // E.g. we want to flag trait implementations like:
-        //
-        // ```
-        // impl<'a, A, B> SomeTrait for SomeType<'a, A, B> {}
-        // ```
-        //
-        // But notably shouldn't flag a trait with associated types like:
-        //
-        // ```
-        // impl<'gc> deref::Deref for foo::Bar<'gc> {
-        //     type Target = dyn foo::Baz<'gc> + 'gc;
-        // }
-        // ```
-        //
-        // For these identity cases that pass their impl parameters through to the `for_` type, the
-        // generic parameters aren't important information that needs to be shown in the
-        // documentation.
-        //
-        // If all implementations of the trait are like this, it's not necessary to show the details
-        // of the `impl` params, and it's enough to just list the trait name. In this case we use
-        // 'simple' formatting when listing trait implementations.
-        //
-        // To reduce complexity, we don't currently try and understand the details of parameters
-        // with default types and if there are `where` clauses then the `impl` and `for_` type
-        // where clauses need to match exactly.
         let mut is_passthrough_generic_impl = false;
-        if trait_path.args.as_ref()
-            .is_none_or(|ga| matches!(ga.as_ref(), GenericArgs::AngleBracketed { args, constraints } if args.is_empty() && constraints.is_empty()) )
-            && !trait_impl_has_associated_items(imp, krate)
+        if trait_path.args.as_ref().is_none_or(|ga| {
+            matches!(ga.as_ref(), GenericArgs::AngleBracketed { args, constraints } if args.is_empty() && constraints.is_empty())
+        }) && !trait_impl_has_associated_items(imp, krate)
         {
             if let Type::ResolvedPath(for_path) = &imp.for_ {
                 let impl_params: HashMap<&String, &GenericParamDef> =
                     imp.generics.params.iter().map(|p| (&p.name, p)).collect();
-
                 let mut for_path_args_match_impl_params = true;
-
                 let for_type_id = for_path.id;
                 if let Some(for_type_item) = krate.index.get(&for_type_id) {
                     if let Some(for_generics) = get_trait_for_type_generics(for_type_item) {
@@ -1043,12 +1025,6 @@ impl FormattedTraitImpl {
                             if let GenericArgs::AngleBracketed { args: for_args, .. } =
                                 for_args_box.as_ref()
                             {
-                                // Note: We don't try and deal with default parameters here.
-                                //
-                                // Note: we don't want to overlook the case where the `for_` path takes
-                                // more arguments than the `impl` params (e.g. could be passed a `'static` lifetime)
-                                // because that information could be important to show in the documentation and
-                                // would be lost if we just say it's a passthrough impl.
                                 if for_generics.params.len() == for_args.len()
                                     && for_generics.params.len() == impl_params.len()
                                     && for_generics.where_predicates == imp.generics.where_predicates
@@ -1061,22 +1037,17 @@ impl FormattedTraitImpl {
                                             GenericArg::Type(Type::Generic(param)) => Some(param),
                                             _ => None,
                                         };
-
                                         if let Some(for_arg_name) = for_arg_name {
                                             if let Some(impl_param) = impl_params.get(for_arg_name)
                                             {
                                                 match (&impl_param.kind, &for_param.kind) {
                                                     (rustdoc_types::GenericParamDefKind::Lifetime { outlives: impl_outlives }, rustdoc_types::GenericParamDefKind::Lifetime { outlives: for_outlives }) => {
-                                                        // Check if the lifetime bounds are the same
                                                         if impl_outlives != for_outlives {
-                                                            // The mismatch could be important to show in the documentation
                                                             for_path_args_match_impl_params = false;
                                                         }
                                                     },
                                                     (rustdoc_types::GenericParamDefKind::Type { bounds: impl_bounds, .. }, rustdoc_types::GenericParamDefKind::Type { bounds: for_bounds, .. }) => {
-                                                        // Check if the bounds are the same
                                                         if impl_bounds != for_bounds {
-                                                            // The mismatch could be important to show in the documentation
                                                             for_path_args_match_impl_params = false;
                                                         }
                                                     },
@@ -1096,15 +1067,12 @@ impl FormattedTraitImpl {
                                         }
                                     }
                                 } else {
-                                    // Since there could be defaults there could be a different number of args
-                                    // but we don't try to match them here.
-                                    for_path_args_match_impl_params = false; // Different number of args
+                                    for_path_args_match_impl_params = false;
                                 }
                             } else {
-                                for_path_args_match_impl_params = false; // For path has non-angle-bracketed args
+                                for_path_args_match_impl_params = false;
                             }
                         } else {
-                            // For path has no args, impl must also have no params
                             if !impl_params.is_empty() {
                                 for_path_args_match_impl_params = false;
                             }
@@ -1115,9 +1083,63 @@ impl FormattedTraitImpl {
                 } else {
                     for_path_args_match_impl_params = false;
                 }
-
                 if for_path_args_match_impl_params && imp.generics.where_predicates.is_empty() {
                     is_passthrough_generic_impl = true;
+                }
+            }
+        }
+
+        let category = if imp.is_synthetic {
+            TraitImplCategory::Auto
+        } else if imp.blanket_impl.is_some() {
+            TraitImplCategory::Blanket
+        } else if is_passthrough_generic_impl && !trait_impl_has_associated_items(imp, krate) {
+            TraitImplCategory::Simple
+        } else {
+            TraitImplCategory::GenericOrComplex
+        };
+
+        let mut list_entry = String::new();
+        match category {
+            TraitImplCategory::Simple | TraitImplCategory::Auto => {
+                write!(list_entry, "- `{}`", display_path_with_generics).unwrap();
+            }
+            TraitImplCategory::GenericOrComplex => {
+                // Need a mutable clone of printer to call generate_impl_trait_block
+                let mut temp_printer = printer.clone_with_new_output();
+                if let Some(impl_block_str) = temp_printer.generate_impl_trait_block(imp) {
+                    if !impl_block_str.trim_end_matches("{\n}").trim().is_empty() {
+                        writeln!(list_entry, "- `{}`", display_path_with_generics).unwrap();
+                        writeln!(list_entry).unwrap();
+                        let full_code_block = format!("```rust\n{}\n```", impl_block_str);
+                        let indented_block = indent_string(&full_code_block, 4);
+                        write!(list_entry, "{}\n", indented_block).unwrap(); // Keep trailing newline from indent
+                    } else {
+                        write!(list_entry, "- `{}`", display_path_with_generics).unwrap();
+                    }
+                } else {
+                    write!(list_entry, "- `{}`", display_path_with_generics).unwrap();
+                }
+            }
+            TraitImplCategory::Blanket => {
+                let where_clause =
+                    format_generics_where_only(&imp.generics.where_predicates, krate);
+                if !where_clause.is_empty() {
+                    if where_clause.lines().count() == 1 {
+                        write!(
+                            list_entry,
+                            "- `{}` (`{}`)",
+                            display_path_with_generics, where_clause,
+                        )
+                        .unwrap();
+                    } else {
+                        writeln!(list_entry, "- `{}`", display_path_with_generics).unwrap();
+                        let code_block = format!("```rust\n{}\n```", where_clause);
+                        let indented_block = indent_string(&code_block, 4);
+                        write!(list_entry, "\n{}\n", indented_block).unwrap(); // Keep trailing newline
+                    }
+                } else {
+                    write!(list_entry, "- `{}`", display_path_with_generics).unwrap();
                 }
             }
         }
@@ -1125,12 +1147,10 @@ impl FormattedTraitImpl {
         FormattedTraitImpl {
             trait_id: trait_path.id,
             trait_generics: generic_args_to_generics(trait_path.args.clone(), krate),
-            is_auto: imp.is_synthetic,
             is_unsafe_impl: imp.is_unsafe,
-            is_blanket: imp.blanket_impl.is_some(),
-            is_passthrough_generic_impl,
             is_negative: imp.is_negative,
-            cleaned_path_for_display: display_path_with_generics,
+            category,
+            formatted_markdown_list_entry: list_entry.trim_end().to_string(), // Trim trailing newline for consistency
             impl_id,
         }
     }
@@ -1149,6 +1169,7 @@ impl FormattedTraitImpl {
     }
 
     /// Checks if the trait (referenced by trait_id) has any associated types or consts.
+    #[allow(dead_code)] // Potentially useful later
     fn has_associated_items(&self, krate: &Crate) -> bool {
         if let Some(trait_item) = krate.index.get(&self.trait_id) {
             if let ItemEnum::Trait(trait_data) = &trait_item.inner {
@@ -1929,6 +1950,7 @@ impl<'a> Printer<'a> {
             self.krate,
             &self.selected_ids, // Pass reference directly
             self.no_common_traits,
+            self, // Pass self for FormattedTraitImpl::from_impl
         );
         self.crate_common_traits = crate_common_traits;
         self.all_type_ids_with_impls = all_type_ids_with_impls;
@@ -1942,6 +1964,7 @@ impl<'a> Printer<'a> {
         krate: &'krate_lifetime Crate,
         selected_ids: &HashSet<Id>, // Accept any lifetime for the HashSet ref
         no_common_traits: bool,
+        printer: &Printer, // Pass printer for FormattedTraitImpl::from_impl
     ) -> (HashSet<FormattedTraitImpl>, HashSet<Id>) {
         let mut all_type_ids_with_impls = HashSet::new();
         if no_common_traits {
@@ -1965,8 +1988,9 @@ impl<'a> Printer<'a> {
                     if selected_ids.contains(&for_type_id) {
                         all_type_ids_with_impls.insert(for_type_id);
                         if let Some(trait_path) = &imp.trait_ {
-                            let norm_impl =
-                                FormattedTraitImpl::from_impl(imp, None, trait_path, krate);
+                            let norm_impl = FormattedTraitImpl::from_impl(
+                                imp, None, trait_path, krate, printer,
+                            );
                             *trait_counts.entry(norm_impl).or_insert(0) += 1;
                         }
                     }
@@ -1995,14 +2019,14 @@ impl<'a> Printer<'a> {
                 common_traits_set.insert(norm_impl.clone());
                 debug!(
                     "Identified crate-common trait: {:?} (implemented by {} of {} types)",
-                    norm_impl.cleaned_path_for_display,
+                    norm_impl.formatted_markdown_list_entry, // Use formatted entry for debug
                     count,
                     all_type_ids_with_impls.len()
                 );
             } else {
                 trace!(
                     "Trait {:?} not common enough ({} of {} types)",
-                    norm_impl.cleaned_path_for_display,
+                    norm_impl.formatted_markdown_list_entry, // Use formatted entry for debug
                     count,
                     all_type_ids_with_impls.len()
                 );
@@ -2058,7 +2082,7 @@ impl<'a> Printer<'a> {
                             if for_id == *item_id {
                                 if let Some(trait_path) = &imp.trait_ {
                                     let norm_impl = FormattedTraitImpl::from_impl(
-                                        imp, None, trait_path, self.krate,
+                                        imp, None, trait_path, self.krate, self,
                                     );
                                     *trait_counts.entry(norm_impl).or_insert(0) += 1;
                                 }
@@ -2080,7 +2104,7 @@ impl<'a> Printer<'a> {
                         debug!(
                             "Identified module-specific common trait for {:?}: {:?} (implemented by {} of {} module types)",
                             self.krate.paths.get(module_id).map(|p|p.path.join("::")).unwrap_or_default(),
-                            norm_impl.cleaned_path_for_display,
+                            norm_impl.formatted_markdown_list_entry, // Use formatted entry
                             count,
                             module_types_with_impls_count
                         );
@@ -2093,7 +2117,7 @@ impl<'a> Printer<'a> {
                             .get(module_id)
                             .map(|p| p.path.join("::"))
                             .unwrap_or_default(),
-                        norm_impl.cleaned_path_for_display,
+                        norm_impl.formatted_markdown_list_entry, // Use formatted entry
                         count,
                         module_types_with_impls_count
                     );
@@ -3125,14 +3149,6 @@ impl<'a> Printer<'a> {
     }
 
     /// Helper to categorize and format a list of FormattedTraitImpls for display.
-    ///
-    /// Note: when formatting lists of common traits we can expect
-    /// `FormattedTraitImpl::get_impl` to return `None` while common traits are
-    /// not associated with any specific implementation.
-    ///
-    /// Note: when formatting lists of traits for a specific item, we can expect
-    /// `all_traits_for_item` to only contains traits that are implemented for the
-    /// target item so there's no need to filter again by a target `Id`
     fn format_trait_list(&mut self, traits_to_format: &[FormattedTraitImpl]) -> String {
         if traits_to_format.is_empty() {
             return String::new();
@@ -3145,145 +3161,55 @@ impl<'a> Printer<'a> {
         let mut blanket_impls = Vec::new();
 
         for norm_trait in traits_to_format {
-            if norm_trait.is_auto {
-                auto_traits.push(norm_trait);
-            } else if norm_trait.is_blanket {
-                blanket_impls.push(norm_trait);
-            } else {
-                let is_simple_display = norm_trait.is_passthrough_generic_impl
-                    && !norm_trait.has_associated_items(self.krate);
-                if is_simple_display {
-                    simple_impls.push(norm_trait);
-                } else {
-                    generic_or_complex_impls.push(norm_trait);
-                }
+            match norm_trait.category {
+                TraitImplCategory::Simple => simple_impls.push(norm_trait),
+                TraitImplCategory::GenericOrComplex => generic_or_complex_impls.push(norm_trait),
+                TraitImplCategory::Auto => auto_traits.push(norm_trait),
+                TraitImplCategory::Blanket => blanket_impls.push(norm_trait),
             }
         }
 
-        // Sort each category
-        simple_impls.sort_by_key(|t| &t.cleaned_path_for_display);
-        generic_or_complex_impls.sort_by_key(|t| &t.cleaned_path_for_display);
-        auto_traits.sort_by_key(|t| &t.cleaned_path_for_display);
-        blanket_impls.sort_by_key(|t| &t.cleaned_path_for_display);
+        // Sort each category by the pre-formatted list entry string
+        simple_impls.sort_by_key(|t| &t.formatted_markdown_list_entry);
+        generic_or_complex_impls.sort_by_key(|t| &t.formatted_markdown_list_entry);
+        auto_traits.sort_by_key(|t| &t.formatted_markdown_list_entry);
+        blanket_impls.sort_by_key(|t| &t.formatted_markdown_list_entry);
 
         self.push_level();
         let mut preceding_section = false;
 
-        if !simple_impls.is_empty() {
-            for norm_trait in simple_impls {
-                writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
-                if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id, self.get_header_prefix());
-                    for assoc_item_id in &trait_impl.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids
-                                .insert(*assoc_item_id, self.get_header_prefix());
-                        }
+        let mut print_section =
+            |traits: &[&FormattedTraitImpl], current_output: &mut String, _section_name: &str| {
+                if !traits.is_empty() {
+                    if preceding_section {
+                        writeln!(current_output).unwrap();
                     }
-                }
-                preceding_section = true;
-                self.post_increment_current_level();
-            }
-        }
-
-        if !generic_or_complex_impls.is_empty() {
-            if preceding_section {
-                writeln!(output).unwrap();
-            }
-            for norm_trait in generic_or_complex_impls {
-                if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    if let Some(impl_block_str) = self.generate_impl_trait_block(trait_impl) {
-                        if !impl_block_str.trim_end_matches("{\n}").trim().is_empty() {
-                            writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display)
-                                .unwrap();
-                            writeln!(output).unwrap();
-                            let full_code_block = format!("```rust\n{}\n```", impl_block_str);
-                            let indented_block = indent_string(&full_code_block, 4);
-                            writeln!(output, "{}\n", indented_block).unwrap();
-                        } else {
-                            writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display)
-                                .unwrap();
-                        }
-                    } else {
-                        writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
-                    }
-                    self.printed_ids.insert(impl_id, self.get_header_prefix());
-                    for assoc_item_id in &trait_impl.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids
-                                .insert(*assoc_item_id, self.get_header_prefix());
-                        }
-                    }
-                } else {
-                    writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
-                }
-                preceding_section = true;
-                self.post_increment_current_level();
-            }
-        }
-
-        if !auto_traits.is_empty() {
-            if preceding_section {
-                writeln!(output).unwrap();
-            }
-            for norm_trait in auto_traits {
-                writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
-                if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id, self.get_header_prefix());
-                    for assoc_item_id in &trait_impl.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids
-                                .insert(*assoc_item_id, self.get_header_prefix());
-                        }
-                    }
-                }
-                preceding_section = true;
-                self.post_increment_current_level();
-            }
-        }
-
-        if !blanket_impls.is_empty() {
-            if preceding_section {
-                writeln!(output).unwrap();
-            }
-            for norm_trait in blanket_impls {
-                let where_clause = if let Some((trait_impl, _impl_id)) =
-                    &norm_trait.get_impl_data(self.krate)
-                {
-                    format_generics_where_only(&trait_impl.generics.where_predicates, self.krate)
-                } else {
-                    String::new()
-                };
-                if !where_clause.is_empty() {
-                    if where_clause.lines().count() == 1 {
+                    for norm_trait in traits {
                         writeln!(
-                            output,
-                            "- `{}` (`{}`)",
-                            norm_trait.cleaned_path_for_display, where_clause,
+                            current_output,
+                            "{}",
+                            norm_trait.formatted_markdown_list_entry
                         )
                         .unwrap();
-                    } else {
-                        writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
-                        let code_block = format!("```rust\n{}\n```", where_clause);
-                        let indented_block = indent_string(&code_block, 4);
-                        writeln!(output, "\n{}\n", indented_block).unwrap();
-                    }
-                } else {
-                    writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
-                }
-                if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id, self.get_header_prefix());
-                    for assoc_item_id in &trait_impl.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids
-                                .insert(*assoc_item_id, self.get_header_prefix());
+                        if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
+                            self.printed_ids.insert(impl_id, self.get_header_prefix());
+                            for assoc_item_id in &trait_impl.items {
+                                if self.selected_ids.contains(assoc_item_id) {
+                                    self.printed_ids
+                                        .insert(*assoc_item_id, self.get_header_prefix());
+                                }
+                            }
                         }
+                        self.post_increment_current_level();
                     }
+                    preceding_section = true;
                 }
-                // preceding_section = true; // Not strictly needed if it's the last section
-                self.post_increment_current_level();
-            }
-        }
+            };
+
+        print_section(&simple_impls, &mut output, "Simple");
+        print_section(&generic_or_complex_impls, &mut output, "Generic or Complex");
+        print_section(&auto_traits, &mut output, "Auto");
+        print_section(&blanket_impls, &mut output, "Blanket");
 
         self.pop_level();
         output
@@ -3337,7 +3263,7 @@ impl<'a> Printer<'a> {
                     return None; // Skip already printed impls
                 }
                 imp.trait_.as_ref().map(|tp| {
-                    FormattedTraitImpl::from_impl(imp, Some(impl_item.id), tp, self.krate)
+                    FormattedTraitImpl::from_impl(imp, Some(impl_item.id), tp, self.krate, self)
                 })
             })
             .collect();
@@ -3412,7 +3338,17 @@ impl<'a> Printer<'a> {
             if !missing_module_common.is_empty() {
                 let mut sorted_missing_common_traits: Vec<String> = missing_module_common
                     .iter()
-                    .map(|nt| nt.cleaned_path_for_display.clone())
+                    .map(|nt| {
+                        // Use the pre-formatted entry, but extract the `<code>` part
+                        // This is a bit hacky, ideally we'd have the cleaned path separately
+                        let path_part = nt
+                            .formatted_markdown_list_entry
+                            .split_once("`")
+                            .and_then(|(_, rest)| rest.split_once("`"))
+                            .map(|(path, _)| path)
+                            .unwrap_or(&nt.formatted_markdown_list_entry);
+                        path_part.to_string()
+                    })
                     .collect();
                 sorted_missing_common_traits.sort_unstable();
                 writeln!(
@@ -3560,28 +3496,22 @@ impl<'a> Printer<'a> {
     }
 
     /// Generates the full code block string for a trait impl, including associated items.
-    /// Returns None if the impl block was already printed.
+    /// Returns None if the impl block was already printed or is effectively empty.
     /// Skips methods within the impl block.
     fn generate_impl_trait_block(&mut self, imp: &Impl) -> Option<String> {
-        // Caller should handle printed_ids check for the impl_id itself.
-        // This function focuses on generating the block string.
-
         let mut code = String::new();
-        let impl_header = self.format_impl_decl(imp); // Get the potentially multi-line header
+        let impl_header = self.format_impl_decl(imp);
+        writeln!(code, "{} {{", impl_header).unwrap();
 
-        writeln!(code, "{} {{", impl_header).unwrap(); // Add opening brace
-
-        // Process associated items (excluding methods)
         let mut assoc_items_content = String::new();
         let mut has_printable_assoc_items = false;
+        let original_doc_path = self.doc_path.clone(); // Save original path
 
-        self.push_level(); // Level for items inside the impl block display
+        self.push_level();
         for assoc_item_id in &imp.items {
             if !self.selected_ids.contains(assoc_item_id) {
-                continue; // Skip unselected items
+                continue;
             }
-            // Mark as printed *now* to avoid it being picked up by "Other"
-            // Only mark if not already printed elsewhere with a different prefix.
             if !self.printed_ids.contains_key(assoc_item_id) {
                 self.printed_ids
                     .insert(*assoc_item_id, self.get_header_prefix());
@@ -3591,14 +3521,18 @@ impl<'a> Printer<'a> {
                 match &assoc_item.inner {
                     ItemEnum::AssocConst { type_, value, .. } => {
                         has_printable_assoc_items = true;
+                        self.doc_path = original_doc_path.clone(); // Reset for each item
+                        self.doc_path.push(1); // Simulate being under a new header for template marker
                         let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
                             format!("\n    // {}", self.get_template_marker())
                         } else {
                             "".to_string()
                         };
+                        self.doc_path.pop(); // Restore
+
                         write!(
                             assoc_items_content,
-                            "    {}const {}: {}", // Add attributes for assoc const
+                            "    {}const {}: {}",
                             format_attributes(&assoc_item.attrs),
                             assoc_item.name.as_deref().unwrap_or("_"),
                             format_type(type_, self.krate)
@@ -3610,18 +3544,21 @@ impl<'a> Printer<'a> {
                             write!(assoc_items_content, ";{}", assoc_item_docs).unwrap();
                         }
                         writeln!(assoc_items_content).unwrap();
-                        self.post_increment_current_level();
                     }
                     ItemEnum::AssocType { bounds, type_, .. } => {
                         has_printable_assoc_items = true;
+                        self.doc_path = original_doc_path.clone();
+                        self.doc_path.push(1);
                         let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
                             format!("\n    // {}", self.get_template_marker())
                         } else {
                             "".to_string()
                         };
+                        self.doc_path.pop();
+
                         write!(
                             assoc_items_content,
-                            "    {}type {}", // Add attributes for assoc type
+                            "    {}type {}",
                             format_attributes(&assoc_item.attrs),
                             assoc_item.name.as_deref().unwrap_or("_")
                         )
@@ -3640,41 +3577,30 @@ impl<'a> Printer<'a> {
                         }
                         write!(assoc_items_content, ";{}", assoc_item_docs).unwrap();
                         writeln!(assoc_items_content).unwrap();
-                        self.post_increment_current_level();
                     }
-                    ItemEnum::Function(_) => {
-                        // Skip methods, but mark as printed
-                        if !self.printed_ids.contains_key(assoc_item_id) {
-                            self.printed_ids
-                                .insert(*assoc_item_id, self.get_header_prefix());
-                        }
-                        // Don't increment level for skipped items
-                    }
-                    _ => {} // Ignore others
+                    _ => {}
                 }
             }
         }
         self.pop_level();
+        self.doc_path = original_doc_path; // Restore original path fully
 
         if has_printable_assoc_items {
-            if impl_header.contains('\n') {
+            if impl_header.contains('\n') && !assoc_items_content.starts_with('\n') {
                 writeln!(code).unwrap();
             }
             write!(code, "{}", assoc_items_content).unwrap();
-            if !code.ends_with('\n') {
+            if !code.ends_with('\n') && !assoc_items_content.is_empty() {
                 writeln!(code).unwrap();
             }
         } else if impl_header.contains('\n') {
-            writeln!(code).unwrap(); // Ensure newline before closing brace if header was multi-line
+            writeln!(code).unwrap();
         }
 
-        write!(code, "}}").unwrap(); // Add closing brace
-
-        // If the block is effectively empty after skipping methods, return None to suppress it.
+        write!(code, "}}").unwrap();
         if !has_printable_assoc_items {
             return None;
         }
-
         Some(code)
     }
 
@@ -4249,7 +4175,7 @@ impl<'a> Printer<'a> {
 
             let sorted_common_traits: Vec<FormattedTraitImpl> = {
                 let mut traits: Vec<_> = self.crate_common_traits.iter().cloned().collect();
-                traits.sort_by_key(|t| t.cleaned_path_for_display.clone());
+                traits.sort_by_key(|t| t.formatted_markdown_list_entry.clone());
                 traits
             };
 
