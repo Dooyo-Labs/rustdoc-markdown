@@ -1790,7 +1790,7 @@ pub struct Printer<'a> {
     selected_ids: HashSet<Id>,
     resolved_modules: HashMap<Id, ResolvedModule>,
     graph: IdGraph,
-    printed_ids: HashSet<Id>,
+    printed_ids: HashMap<Id, String>, // Stores ID and the header prefix where it was first printed
     output: String,
     module_tree: ModuleTree,
     doc_path: Vec<usize>,
@@ -1821,7 +1821,7 @@ impl<'a> Printer<'a> {
             selected_ids: HashSet::new(), // Will be populated by print()
             resolved_modules: HashMap::new(), // Will be populated by print()
             graph: IdGraph::default(),    // Will be populated by print()
-            printed_ids: HashSet::new(),
+            printed_ids: HashMap::new(),  // Changed to HashMap
             output: String::new(),
             module_tree: Self::build_module_tree(krate), // Initial build based on krate
             doc_path: Vec::new(),
@@ -2283,9 +2283,10 @@ impl<'a> Printer<'a> {
 
     /// Prints the details of a single selected item.
     /// Manages the doc_path stack for the item's header.
+    /// Returns true if full details were printed, false if a cross-reference was printed or skipped.
     fn print_item_details(&mut self, id: &Id) -> bool {
-        if !self.selected_ids.contains(id) || !self.printed_ids.insert(*id) {
-            return false; // Skip unselected or already printed items
+        if !self.selected_ids.contains(id) {
+            return false; // Skip unselected items
         }
 
         let Some(item) = self.krate.index.get(id) else {
@@ -2302,6 +2303,27 @@ impl<'a> Printer<'a> {
         let item_header_level = self.get_current_header_level();
         let header_prefix = self.get_header_prefix();
         let declaration = generate_item_declaration(item, self.krate, &self.current_module_path);
+
+        if let Some(existing_prefix) = self.printed_ids.get(id) {
+            // Item already printed, print cross-reference instead of full details
+            // This case is primarily for when print_item_details is called directly
+            // (e.g., from print_items_of_kind) for an item that was already
+            // printed via a different module path.
+            writeln!(
+                self.output,
+                "\n{} {} `{}` (See section {} for details)\n",
+                "#".repeat(item_header_level),
+                header_prefix,
+                declaration,
+                existing_prefix
+            )
+            .unwrap();
+            // Do not push/pop level or print further details for cross-referenced item
+            return false; // Indicate that full details were not printed
+        }
+
+        // Store the prefix *before* printing details, as this is its first detailed print
+        self.printed_ids.insert(*id, header_prefix.clone());
 
         // Print Header (e.g. `### 1.1.1: `declaration``)
         writeln!(
@@ -2389,7 +2411,7 @@ impl<'a> Printer<'a> {
 
         self.pop_level();
 
-        true
+        true // Full details were printed
     }
 
     /// Checks if any selected field within a struct has documentation or if template mode is on.
@@ -2431,16 +2453,16 @@ impl<'a> Printer<'a> {
                     (self.template_mode && item.docs.is_some()) || has_docs(item);
                 if field_has_printable_docs {
                     // Check if it's already printed to avoid double counting
-                    if !self.printed_ids.contains(field_id) {
+                    if !self.printed_ids.contains_key(field_id) {
                         has_printable_field = true;
                     }
                 } else {
                     // Mark non-printable field as printed immediately
-                    self.printed_ids.insert(*field_id);
+                    self.printed_ids.insert(*field_id, self.get_header_prefix());
                 }
             } else {
                 // If item doesn't exist in index but ID was present, mark it printed to avoid issues
-                self.printed_ids.insert(*field_id);
+                self.printed_ids.insert(*field_id, self.get_header_prefix());
             }
         }
 
@@ -2484,14 +2506,14 @@ impl<'a> Printer<'a> {
                 let field_has_printable_docs =
                     (self.template_mode && item.docs.is_some()) || has_docs(item);
                 if field_has_printable_docs {
-                    if !self.printed_ids.contains(field_id) {
+                    if !self.printed_ids.contains_key(field_id) {
                         has_printable_field = true;
                     }
                 } else {
-                    self.printed_ids.insert(*field_id);
+                    self.printed_ids.insert(*field_id, self.get_header_prefix());
                 }
             } else {
-                self.printed_ids.insert(*field_id);
+                self.printed_ids.insert(*field_id, self.get_header_prefix());
             }
         }
 
@@ -2525,7 +2547,7 @@ impl<'a> Printer<'a> {
     /// Prints the details for a single struct field, only if it has printable documentation.
     /// Returns true if the field was printed, false otherwise.
     fn print_field_details(&mut self, field_id: &Id) -> bool {
-        if !self.selected_ids.contains(field_id) || self.printed_ids.contains(field_id) {
+        if !self.selected_ids.contains(field_id) || self.printed_ids.contains_key(field_id) {
             return false; // Skip unselected or already printed
         }
 
@@ -2539,13 +2561,13 @@ impl<'a> Printer<'a> {
                 return false;
             }
 
+            let header_prefix = self.get_header_prefix();
             // Mark as printed *before* printing details
-            self.printed_ids.insert(*field_id);
+            self.printed_ids.insert(*field_id, header_prefix.clone());
 
             if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_");
                 let field_header_level = self.get_current_header_level();
-                let header_prefix = self.get_header_prefix();
 
                 // Header: e.g., ##### 1.1.1.1: `field_name`
                 writeln!(
@@ -2566,14 +2588,14 @@ impl<'a> Printer<'a> {
             }
         }
         // Mark as printed even if item lookup failed (shouldn't happen ideally)
-        self.printed_ids.insert(*field_id);
+        self.printed_ids.insert(*field_id, self.get_header_prefix());
         false
     }
 
     /// Prints the details for a single enum variant field, only if it has printable documentation.
     /// Returns true if the field was printed, false otherwise.
     fn print_variant_field_details(&mut self, field_id: &Id) -> bool {
-        if !self.selected_ids.contains(field_id) || self.printed_ids.contains(field_id) {
+        if !self.selected_ids.contains(field_id) || self.printed_ids.contains_key(field_id) {
             return false; // Skip unselected or already printed
         }
 
@@ -2586,14 +2608,13 @@ impl<'a> Printer<'a> {
                 // If no docs, the ID should already be marked printed in print_variant_details
                 return false;
             }
-
+            let header_prefix = self.get_header_prefix();
             // Mark as printed *before* printing details
-            self.printed_ids.insert(*field_id);
+            self.printed_ids.insert(*field_id, header_prefix.clone());
 
             if let ItemEnum::StructField(_field_type) = &item.inner {
                 let name = item.name.as_deref().unwrap_or("_"); // Might be _ for tuple fields
                 let field_header_level = self.get_current_header_level();
-                let header_prefix = self.get_header_prefix();
 
                 // Header: e.g., ###### 1.1.1.1.1: `field_name`
                 // Use field index for tuple fields if name is "_" (name is often '0', '1' etc.)
@@ -2623,7 +2644,7 @@ impl<'a> Printer<'a> {
             }
         }
         // Mark as printed even if item lookup failed
-        self.printed_ids.insert(*field_id);
+        self.printed_ids.insert(*field_id, self.get_header_prefix());
         false
     }
 
@@ -2699,31 +2720,34 @@ impl<'a> Printer<'a> {
                                         || has_docs(f_item)
                                 });
                             if field_has_printable_docs {
-                                if !self.printed_ids.contains(&field_id) {
+                                if !self.printed_ids.contains_key(&field_id) {
                                     variant_has_printable_field = true;
                                 }
                             } else {
-                                self.printed_ids.insert(field_id); // Mark non-printable field printed
+                                self.printed_ids.insert(field_id, self.get_header_prefix());
+                                // Mark non-printable field printed
                             }
                         } else {
                             // Mark unselected field id printed if present
-                            self.printed_ids.insert(field_id);
+                            self.printed_ids.insert(field_id, self.get_header_prefix());
                         }
                     }
                 }
 
                 if variant_has_printable_docs || variant_has_printable_field {
                     // Check if the variant itself is already printed to avoid double counting
-                    if !self.printed_ids.contains(variant_id) {
+                    if !self.printed_ids.contains_key(variant_id) {
                         has_printable_variant_or_field = true;
                     }
                 } else {
                     // Mark non-printable variant (with no printable fields) as printed immediately
-                    self.printed_ids.insert(*variant_id);
+                    self.printed_ids
+                        .insert(*variant_id, self.get_header_prefix());
                 }
             } else {
                 // If item doesn't exist in index but ID was present, mark it printed
-                self.printed_ids.insert(*variant_id);
+                self.printed_ids
+                    .insert(*variant_id, self.get_header_prefix());
             }
         }
 
@@ -2765,8 +2789,16 @@ impl<'a> Printer<'a> {
     /// Prints the details for a single enum variant. Includes variant docs and docs for its fields if present.
     /// Returns true if the variant was printed (because it or its fields had printable docs), false otherwise.
     fn print_variant_details(&mut self, variant_id: &Id) -> bool {
-        if !self.selected_ids.contains(variant_id) || self.printed_ids.contains(variant_id) {
-            return false; // Skip unselected or already printed
+        if !self.selected_ids.contains(variant_id) {
+            // If already printed, do not print full details again.
+            // Cross-referencing for variants re-exported in other modules is not typical.
+            // If a variant is listed in a module, it's usually because its enum is listed.
+            if self.printed_ids.contains_key(variant_id) {
+                return false;
+            }
+        } else if self.printed_ids.contains_key(variant_id) {
+            // Already printed, skip
+            return false;
         }
 
         if let Some(item) = self.krate.index.get(variant_id) {
@@ -2794,31 +2826,32 @@ impl<'a> Printer<'a> {
                             self.krate.index.get(field_id).is_some_and(|f_item| {
                                 (self.template_mode && f_item.docs.is_some()) || has_docs(f_item)
                             });
-                        if field_has_printable_docs && !self.printed_ids.contains(field_id) {
+                        if field_has_printable_docs && !self.printed_ids.contains_key(field_id) {
                             printable_fields.push(*field_id);
                         } else {
                             // Mark unselected or non-printable field printed
-                            self.printed_ids.insert(*field_id);
+                            self.printed_ids.insert(*field_id, self.get_header_prefix());
                         }
                     } else {
                         // Mark unselected field printed
-                        self.printed_ids.insert(*field_id);
+                        self.printed_ids.insert(*field_id, self.get_header_prefix());
                     }
                 }
 
                 // Only print the variant if it has printable docs OR it has printable fields to print
                 if !variant_has_printable_docs && printable_fields.is_empty() {
                     // Mark variant as printed if skipped
-                    self.printed_ids.insert(*variant_id);
+                    self.printed_ids
+                        .insert(*variant_id, self.get_header_prefix());
                     return false;
                 }
 
+                let header_prefix = self.get_header_prefix();
                 // Mark as printed *before* printing details
-                self.printed_ids.insert(*variant_id);
+                self.printed_ids.insert(*variant_id, header_prefix.clone());
 
                 let signature = format_variant_signature(item, variant_data, self.krate);
                 let variant_header_level = self.get_current_header_level();
-                let header_prefix = self.get_header_prefix();
 
                 // Header: e.g., ##### 1.1.1.1: `VariantSignature`
                 writeln!(
@@ -2869,7 +2902,8 @@ impl<'a> Printer<'a> {
             }
         }
         // Mark as printed even if item lookup failed
-        self.printed_ids.insert(*variant_id);
+        self.printed_ids
+            .insert(*variant_id, self.get_header_prefix());
         false
     }
 
@@ -2886,7 +2920,11 @@ impl<'a> Printer<'a> {
                 continue;
             }
             // Mark the item as printed now, regardless of docs, to prevent it from going to "Other"
-            self.printed_ids.insert(*item_id);
+            // Only mark if not already printed elsewhere with a different prefix.
+            // This is tricky because an assoc item's "primary" print location is under its trait.
+            if !self.printed_ids.contains_key(item_id) {
+                self.printed_ids.insert(*item_id, self.get_header_prefix());
+            }
 
             if let Some(assoc_item) = self.krate.index.get(item_id) {
                 let item_has_printable_docs =
@@ -3135,10 +3173,11 @@ impl<'a> Printer<'a> {
             for norm_trait in simple_impls {
                 writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id);
+                    self.printed_ids.insert(impl_id, self.get_header_prefix());
                     for assoc_item_id in &trait_impl.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
                         }
                     }
                 }
@@ -3168,10 +3207,11 @@ impl<'a> Printer<'a> {
                     } else {
                         writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                     }
-                    self.printed_ids.insert(impl_id);
+                    self.printed_ids.insert(impl_id, self.get_header_prefix());
                     for assoc_item_id in &trait_impl.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
                         }
                     }
                 } else {
@@ -3189,10 +3229,11 @@ impl<'a> Printer<'a> {
             for norm_trait in auto_traits {
                 writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id);
+                    self.printed_ids.insert(impl_id, self.get_header_prefix());
                     for assoc_item_id in &trait_impl.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
                         }
                     }
                 }
@@ -3231,10 +3272,11 @@ impl<'a> Printer<'a> {
                     writeln!(output, "- `{}`", norm_trait.cleaned_path_for_display).unwrap();
                 }
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id);
+                    self.printed_ids.insert(impl_id, self.get_header_prefix());
                     for assoc_item_id in &trait_impl.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
                         }
                     }
                 }
@@ -3280,7 +3322,7 @@ impl<'a> Printer<'a> {
 
         if !inherent_impl_items.is_empty() {
             for (impl_item, imp) in inherent_impl_items {
-                if self.printed_ids.contains(&impl_item.id) {
+                if self.printed_ids.contains_key(&impl_item.id) {
                     continue;
                 }
                 self.print_impl_block_details(impl_item, imp);
@@ -3291,7 +3333,7 @@ impl<'a> Printer<'a> {
         let trait_impl_data: Vec<FormattedTraitImpl> = item_specific_impl_data
             .iter()
             .filter_map(|(impl_item, imp)| {
-                if self.printed_ids.contains(&impl_item.id) {
+                if self.printed_ids.contains_key(&impl_item.id) {
                     return None; // Skip already printed impls
                 }
                 imp.trait_.as_ref().map(|tp| {
@@ -3344,10 +3386,11 @@ impl<'a> Printer<'a> {
             } else {
                 // Mark common trait impl as printed (and its items)
                 if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id);
+                    self.printed_ids.insert(impl_id, self.get_header_prefix());
                     for assoc_item_id in &trait_impl.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
                         }
                     }
                 }
@@ -3440,10 +3483,12 @@ impl<'a> Printer<'a> {
                     write!(self.output, "{}", temp_printer.output).unwrap();
 
                     // Mark the impl_item ID and its associated items as printed
-                    self.printed_ids.insert(impl_item.id);
+                    self.printed_ids
+                        .insert(impl_item.id, self.get_header_prefix());
                     for assoc_item_id in &imp.items {
                         if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids.insert(*assoc_item_id);
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
                         }
                     }
 
@@ -3536,7 +3581,11 @@ impl<'a> Printer<'a> {
                 continue; // Skip unselected items
             }
             // Mark as printed *now* to avoid it being picked up by "Other"
-            self.printed_ids.insert(*assoc_item_id);
+            // Only mark if not already printed elsewhere with a different prefix.
+            if !self.printed_ids.contains_key(assoc_item_id) {
+                self.printed_ids
+                    .insert(*assoc_item_id, self.get_header_prefix());
+            }
 
             if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
                 match &assoc_item.inner {
@@ -3595,7 +3644,10 @@ impl<'a> Printer<'a> {
                     }
                     ItemEnum::Function(_) => {
                         // Skip methods, but mark as printed
-                        self.printed_ids.insert(*assoc_item_id);
+                        if !self.printed_ids.contains_key(assoc_item_id) {
+                            self.printed_ids
+                                .insert(*assoc_item_id, self.get_header_prefix());
+                        }
                         // Don't increment level for skipped items
                     }
                     _ => {} // Ignore others
@@ -3629,15 +3681,21 @@ impl<'a> Printer<'a> {
     /// Prints the details of a specific impl block (header, associated items).
     /// Handles template mode for the impl block's docs.
     fn print_impl_block_details(&mut self, impl_item: &Item, imp: &Impl) {
+        let header_prefix = self.get_header_prefix();
         // Mark as printed *now* before printing details
-        if !self.printed_ids.insert(impl_item.id) {
+        if self
+            .printed_ids
+            .insert(impl_item.id, header_prefix.clone())
+            .is_some()
+        {
+            // Already printed with a (potentially different) prefix, skip full details.
+            // This case should ideally be caught by the caller, but as a safeguard.
             return;
         }
 
         // Increment level counter for this impl block
         self.post_increment_current_level();
         let impl_header_level = self.get_current_header_level();
-        let header_prefix = self.get_header_prefix();
         let impl_header = self.format_impl_decl(imp);
 
         // Print the impl block header (e.g. #### 1.1.1: `impl ...`)
@@ -3645,8 +3703,8 @@ impl<'a> Printer<'a> {
             self.output,
             "{} {} `{}`\n", // Add newline after header
             "#".repeat(impl_header_level),
-            header_prefix,
-            impl_header.trim() // Trim potential trailing space if no where clause added
+            header_prefix,      // Use the stored/current prefix
+            impl_header.trim()  // Trim potential trailing space if no where clause added
         )
         .unwrap();
 
@@ -3684,19 +3742,25 @@ impl<'a> Printer<'a> {
         if !assoc_consts.is_empty() {
             for id in assoc_consts {
                 self.print_associated_item_summary(id);
-                self.printed_ids.insert(*id); // Mark printed here too
+                if !self.printed_ids.contains_key(id) {
+                    self.printed_ids.insert(*id, self.get_header_prefix());
+                }
             }
         }
         if !assoc_types.is_empty() {
             for id in assoc_types {
                 self.print_associated_item_summary(id);
-                self.printed_ids.insert(*id); // Mark printed here too
+                if !self.printed_ids.contains_key(id) {
+                    self.printed_ids.insert(*id, self.get_header_prefix());
+                }
             }
         }
         if !assoc_fns.is_empty() {
             for id in assoc_fns {
                 self.print_associated_item_summary(id);
-                self.printed_ids.insert(*id); // Mark printed here too
+                if !self.printed_ids.contains_key(id) {
+                    self.printed_ids.insert(*id, self.get_header_prefix());
+                }
             }
         }
 
@@ -3733,8 +3797,17 @@ impl<'a> Printer<'a> {
         self.push_level();
         // Print item details
         for id in items_to_print {
-            // Print item details using the detail printer (increments/decrements its level)
+            // print_item_details now returns true if full details were printed
             if self.print_item_details(id) {
+                self.post_increment_current_level();
+            } else {
+                // If it was a cross-reference or skipped, we still need to increment
+                // the counter for the list item itself if we decide to print a list item.
+                // For now, print_item_details handles the cross-ref header.
+                // If we change print_module_contents to print list items for cross-refs,
+                // then this post_increment might need adjustment.
+                // For now, if print_item_details printed a cross-ref header,
+                // it means an "item" was output, so we increment.
                 self.post_increment_current_level();
             }
         }
@@ -3746,27 +3819,48 @@ impl<'a> Printer<'a> {
     /// Prints the non-module contents of a specific module (identified by its ID).
     /// Uses the `resolved_modules` index to get the list of items.
     fn print_module_contents(&mut self, module_id: &Id) {
-        // Get the resolved items for this module
         if let Some(resolved_module) = self.resolved_modules.get(module_id) {
-            // Group selected items by kind within this module's *resolved* items
             let mut items_by_kind: HashMap<ItemKind, Vec<Id>> = HashMap::new();
+            let mut cross_referenced_items: Vec<(Id, String, String)> = Vec::new(); // (Id, Declaration, Prefix)
+
             for id in &resolved_module.items {
-                // Check if the item is selected and hasn't been printed yet
-                if !self.selected_ids.contains(id) || self.printed_ids.contains(id) {
+                if !self.selected_ids.contains(id) {
                     continue;
                 }
-                // Get the item kind from the main krate index
+
+                if let Some(existing_prefix) = self.printed_ids.get(id) {
+                    if let Some(item) = self.krate.index.get(id) {
+                        // Only add to cross-reference list if it's a kind we'd normally list directly
+                        if !matches!(
+                            item.inner,
+                            ItemEnum::Impl(_)
+                                | ItemEnum::Use { .. }
+                                | ItemEnum::StructField(_)
+                                | ItemEnum::Variant(_) // Variants are part of enums
+                                | ItemEnum::AssocConst { .. } // Assoc items are part of traits/impls
+                                | ItemEnum::AssocType { .. }
+                                | ItemEnum::Module(_)
+                        ) {
+                            let decl = generate_item_declaration(
+                                item,
+                                self.krate,
+                                &self.current_module_path,
+                            );
+                            cross_referenced_items.push((*id, decl, existing_prefix.clone()));
+                        }
+                    }
+                    continue; // Skip adding to items_by_kind if already printed
+                }
+
                 if let Some(kind) = self.get_item_kind(id) {
-                    // Skip kinds handled implicitly or that shouldn't be grouped here
-                    // Also skip Module kind explicitly, as they are handled by the main loop.
                     match kind {
                         ItemKind::Impl
-                        | ItemKind::Variant
-                        | ItemKind::StructField
-                        | ItemKind::AssocConst
-                        | ItemKind::AssocType
-                        | ItemKind::Use
-                        | ItemKind::Module => continue, // Skip modules, impls, variants etc. here
+                        | ItemEnum::Variant(_) // Handled by Enum
+                        | ItemEnum::StructField(_) // Handled by Struct/Union/Variant
+                        | ItemEnum::AssocConst { .. } // Handled by Trait/Impl
+                        | ItemEnum::AssocType { .. } // Handled by Trait/Impl
+                        | ItemEnum::Use // Resolved, not printed directly
+                        | ItemEnum::Module => continue, // Handled by main loop
                         _ => {}
                     }
                     items_by_kind.entry(kind).or_default().push(*id);
@@ -3777,13 +3871,12 @@ impl<'a> Printer<'a> {
             for ids in items_by_kind.values_mut() {
                 ids.sort_by_key(|id| self.krate.index.get(id).and_then(|item| item.name.clone()));
             }
+            cross_referenced_items.sort_by_key(|(_, decl, _)| decl.clone());
 
-            // Defined printing order for sections WITHIN a module
             let print_order = [
-                (ItemKind::Macro, "Macros"), // Includes ProcMacros displayed as Macro
+                (ItemKind::Macro, "Macros"),
                 (ItemKind::ProcAttribute, "Attribute Macros"),
                 (ItemKind::ProcDerive, "Derive Macros"),
-                // Submodules are NOT printed here anymore
                 (ItemKind::Struct, "Structs"),
                 (ItemKind::Enum, "Enums"),
                 (ItemKind::Union, "Unions"),
@@ -3795,26 +3888,42 @@ impl<'a> Printer<'a> {
                 (ItemKind::Constant, "Constants"),
                 (ItemKind::ExternCrate, "External Crates"),
                 (ItemKind::ExternType, "External Types"),
-                (ItemKind::Primitive, "Primitives"), // Unlikely unless re-exported
+                (ItemKind::Primitive, "Primitives"),
             ];
-
-            // Push a level for the sections within the module
-            //self.push_level();
 
             for (kind, header_name) in print_order {
                 if let Some(ids) = items_by_kind.get(&kind) {
                     if ids.is_empty() {
                         continue;
-                    } // Skip empty sections
-
-                    // print_items_of_kind will increment the level for the section header
-                    // and push/pop a level for the items inside it
+                    }
                     if self.print_items_of_kind(ids, kind, header_name) {
                         self.post_increment_current_level();
                     }
                 }
             }
-            //self.pop_level(); // Pop the section level
+
+            // Print cross-referenced items at the end of the module's direct items
+            if !cross_referenced_items.is_empty() {
+                let re_exports_header_level = self.get_current_header_level();
+                let re_exports_prefix = self.get_header_prefix();
+                writeln!(
+                    self.output,
+                    "\n{} {} Re-exports\n",
+                    "#".repeat(re_exports_header_level),
+                    re_exports_prefix
+                )
+                .unwrap();
+                for (_id, declaration, original_prefix) in cross_referenced_items {
+                    writeln!(
+                        self.output,
+                        "- `{}` (See section {} for details)",
+                        declaration, original_prefix
+                    )
+                    .unwrap();
+                }
+                writeln!(self.output).unwrap(); // Add a blank line after the list
+                self.post_increment_current_level();
+            }
         } else {
             warn!(
                 "Could not find resolved module data for ID: {:?}",
@@ -3908,10 +4017,8 @@ impl<'a> Printer<'a> {
 
     /// Recursive function to print modules and their contents depth-first.
     fn print_module_recursive(&mut self, module_id: Id) {
-        // Skip if not selected or already printed (except root module)
-        if module_id != self.krate.root
-            && (!self.selected_ids.contains(&module_id) || self.printed_ids.contains(&module_id))
-        {
+        // Skip if not selected. If already printed, we still need to list its re-exports.
+        if module_id != self.krate.root && !self.selected_ids.contains(&module_id) {
             return;
         }
 
@@ -3952,8 +4059,11 @@ impl<'a> Printer<'a> {
             )
             .unwrap();
 
-            // Mark module as printed only AFTER printing its header
-            self.printed_ids.insert(module_id);
+            // Mark module as printed only AFTER printing its header, if not already printed
+            // This ensures the first time a module is encountered, its prefix is stored.
+            if !self.printed_ids.contains_key(&module_id) {
+                self.printed_ids.insert(module_id, header_prefix.clone());
+            }
 
             self.push_level();
 
@@ -4207,7 +4317,7 @@ impl<'a> Printer<'a> {
         // --- Handle "Other" Items ---
         let mut unprinted_ids = Vec::new();
         for id in &self.selected_ids {
-            if !self.printed_ids.contains(id) {
+            if !self.printed_ids.contains_key(id) {
                 // Skip impl items and use items as they are handled implicitly or ignored
                 // Also skip struct fields as they are handled within their containers
                 // Also skip Modules as they are handled explicitly above
@@ -4226,7 +4336,7 @@ impl<'a> Printer<'a> {
                     else if item.name.is_none()
                         || matches!(item.inner, ItemEnum::StructField(_) | ItemEnum::Module(_))
                     {
-                        self.printed_ids.insert(*id);
+                        self.printed_ids.insert(*id, "SKIPPED_OTHER".to_string());
                     }
                 } else {
                     // ID selected but not in index - treat as unprinted for "Other"
