@@ -1950,7 +1950,7 @@ impl<'a> Printer<'a> {
             self.krate,
             &self.selected_ids, // Pass reference directly
             self.no_common_traits,
-            self, // Pass self for FormattedTraitImpl::from_impl
+            &self, // Pass self for FormattedTraitImpl::from_impl
         );
         self.crate_common_traits = crate_common_traits;
         self.all_type_ids_with_impls = all_type_ids_with_impls;
