@@ -787,7 +787,7 @@ struct FormattedTraitImpl {
     is_auto: bool,
     is_unsafe_impl: bool,
     is_blanket: bool,
-    is_effectively_blanket: bool,
+    is_passthrough_generic_impl: bool,
     is_negative: bool,
     /// A user-friendly, cleaned string representation of the trait including its generics,
     /// e.g., "Debug", "Iterator<Item = u32>". Used for display in lists.
@@ -809,7 +809,7 @@ impl PartialEq for FormattedTraitImpl {
             && self.is_auto == other.is_auto
             && self.is_unsafe_impl == other.is_unsafe_impl
             && self.is_blanket == other.is_blanket
-            && self.is_effectively_blanket == other.is_effectively_blanket
+            && self.is_passthrough_generic_impl == other.is_passthrough_generic_impl
             && self.is_negative == other.is_negative
     }
 }
@@ -824,7 +824,7 @@ impl Hash for FormattedTraitImpl {
         self.is_auto.hash(state);
         self.is_unsafe_impl.hash(state);
         self.is_blanket.hash(state);
-        self.is_effectively_blanket.hash(state);
+        self.is_passthrough_generic_impl.hash(state);
         self.is_negative.hash(state);
         // Do not hash cleaned_path_for_display or impl_id for common trait grouping
     }
@@ -981,24 +981,35 @@ impl FormattedTraitImpl {
             }
         );
 
-        // Determine if it's effectively a blanket implementation for the `for_` type, by checking
-        // if the trait has no args and all `impl` params are passed to the `for_` path and have no
-        // constraints or else they exactly match the constraints of the `for_` type parameters.
+        // Determine if the implementation is generic but the trait is not generic and all
+        // parameters are passed through to the `for_` type with no additional constraints.
         //
-        // If all implementations of the trait are like this, it's not necessary to show the details
-        // of the `impl` params, and it's enough to just list the trait name.
-        //
-        // The goal is to recognise trait implementations like:
+        // E.g. we want to flag trait implementations like:
         //
         // ```
         // impl<'a, A, B> SomeTrait for SomeType<'a, A, B> {}
         // ```
         //
-        // where the trait itself has no generic parameters and there isn't really anything notable
-        // about the `impl<>` parameters since they are all just passed to the `for` type.
+        // But notably shouldn't flag a trait with associated types like:
         //
-        // In this case we use 'simple' formatting when listing trait implementations.
-        let mut is_effectively_blanket = false;
+        // ```
+        // impl<'gc> deref::Deref for foo::Bar<'gc> {
+        //     type Target = dyn foo::Baz<'gc> + 'gc;
+        // }
+        // ```
+        //
+        // For these identity cases that pass their impl parameters through to the `for_` type, the
+        // generic parameters aren't important information that needs to be shown in the
+        // documentation.
+        //
+        // If all implementations of the trait are like this, it's not necessary to show the details
+        // of the `impl` params, and it's enough to just list the trait name. In this case we use
+        // 'simple' formatting when listing trait implementations.
+        //
+        // To reduce complexity, we don't currently try and understand the details of parameters
+        // with default types and if there are `where` clauses then the `impl` and `for_` type
+        // where clauses need to match exactly.
+        let mut is_passthrough_generic_impl = false;
         if trait_path.args.as_ref()
             .is_none_or(|ga| matches!(ga.as_ref(), GenericArgs::AngleBracketed { args, constraints } if args.is_empty() && constraints.is_empty()) )
             && !trait_impl_has_associated_items(imp, krate)
@@ -1021,7 +1032,7 @@ impl FormattedTraitImpl {
                                 // Note: we don't want to overlook the case where the `for_` path takes
                                 // more arguments than the `impl` params (e.g. could be passed a `'static` lifetime)
                                 // because that information could be important to show in the documentation and
-                                // would be lost if we just say it's a blanket impl.
+                                // would be lost if we just say it's a passthrough impl.
                                 if for_generics.params.len() == for_args.len()
                                     && for_generics.params.len() == impl_params.len()
                                     && for_generics.where_predicates == imp.generics.where_predicates
@@ -1090,7 +1101,7 @@ impl FormattedTraitImpl {
                 }
 
                 if for_path_args_match_impl_params && imp.generics.where_predicates.is_empty() {
-                    is_effectively_blanket = true;
+                    is_passthrough_generic_impl = true;
                 }
             }
         }
@@ -1101,7 +1112,7 @@ impl FormattedTraitImpl {
             is_auto: imp.is_synthetic,
             is_unsafe_impl: imp.is_unsafe,
             is_blanket: imp.blanket_impl.is_some(),
-            is_effectively_blanket,
+            is_passthrough_generic_impl,
             is_negative: imp.is_negative,
             cleaned_path_for_display: display_path_with_generics,
             impl_id,
@@ -2927,7 +2938,7 @@ impl<'a> Printer<'a> {
             } else if norm_trait.is_blanket {
                 blanket_impls.push(norm_trait);
             } else {
-                let is_simple_display = norm_trait.is_effectively_blanket
+                let is_simple_display = norm_trait.is_passthrough_generic_impl
                     && !norm_trait.has_associated_items(self.krate);
                 if is_simple_display {
                     simple_impls.push(norm_trait);
