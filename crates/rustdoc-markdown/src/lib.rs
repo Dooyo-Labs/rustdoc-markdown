@@ -9,7 +9,7 @@ use rustdoc_json::Builder;
 use rustdoc_types::{
     Abi, Constant, Crate, Discriminant, Enum, Function, GenericArg, GenericArgs, GenericBound,
     GenericParamDef, Generics, Id, Impl, Item, ItemEnum, ItemKind, Path, PolyTrait, Primitive,
-    Struct, StructKind, Term, Trait, Type, Variant, VariantKind, WherePredicate,
+    Struct, StructKind, Term, Trait, Type, Union, Variant, VariantKind, WherePredicate,
 };
 use std::collections::{HashMap, HashSet}; // Use HashMap instead of BTreeMap where needed
 use std::fmt::Write as FmtWrite; // Use FmtWrite alias
@@ -182,6 +182,22 @@ pub(crate) fn get_type_id(ty: &Type) -> Option<Id> {
 }
 
 // --- Formatting Helpers ---
+
+/// Formats a list of attributes, filtering out derive attributes.
+/// Returns a string like `#[attr1] #[attr2] ` (with a trailing space if not empty).
+fn format_attributes(attrs: &[String]) -> String {
+    let filtered_attrs: Vec<String> = attrs
+        .iter()
+        .filter(|attr| !attr.starts_with("#[derive("))
+        .cloned()
+        .collect();
+
+    if filtered_attrs.is_empty() {
+        String::new()
+    } else {
+        format!("{} ", filtered_attrs.join(" "))
+    }
+}
 
 /// Helper to check if an item has non-empty documentation.
 fn has_docs(item: &Item) -> bool {
@@ -1216,8 +1232,9 @@ fn generate_item_declaration(item: &Item, krate: &Crate, current_module_path: &[
             )
         }
         ItemEnum::Function(f) => {
-            // Simplified version for the header: no attrs, no where clause
+            // Simplified version for the header: no where clause, but include attributes
             let mut code = String::new();
+            write!(code, "{}", format_attributes(&item.attrs)).unwrap(); // Add attributes
             write!(code, "fn {}", name).unwrap();
             // Include only param generics here
             write!(
@@ -1287,7 +1304,13 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
         .as_deref()
         .expect("Struct item should have a name");
     let mut code = String::new();
-    write!(code, "pub struct {}", name).unwrap();
+    write!(
+        code,
+        "{}pub struct {}",
+        format_attributes(&item.attrs),
+        name
+    )
+    .unwrap();
     // Use full generics here, including where clause
     let generics_str = format_generics_full(&s.generics, krate);
     let where_is_multiline = generics_str.contains("where\n");
@@ -1311,7 +1334,8 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                         let field_name = field_item.name.as_deref().unwrap_or("_");
                         writeln!(
                             code,
-                            "    pub {}: {},",
+                            "    {}pub {}: {},",
+                            format_attributes(&field_item.attrs),
                             field_name,
                             format_type(field_type, krate)
                         )
@@ -1335,7 +1359,11 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                         .and_then(|id| krate.index.get(id))
                         .and_then(|field_item| {
                             if let ItemEnum::StructField(field_type) = &field_item.inner {
-                                Some(format!("pub {}", format_type(field_type, krate)))
+                                Some(format!(
+                                    "{}pub {}",
+                                    format_attributes(&field_item.attrs),
+                                    format_type(field_type, krate)
+                                ))
                             } else {
                                 None
                             }
@@ -1363,7 +1391,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
 fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Enum item should have a name");
     let mut code = String::new();
-    write!(code, "pub enum {}", name).unwrap();
+    write!(code, "{}pub enum {}", format_attributes(&item.attrs), name).unwrap();
     let generics_str = format_generics_full(&e.generics, krate);
     write!(code, "{}", generics_str).unwrap();
     write!(code, " {{").unwrap();
@@ -1377,7 +1405,7 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
                 write!(
                     code,
                     "    {}",
-                    format_variant_definition(variant_item, variant_data, krate)
+                    format_variant_definition(variant_item, variant_data, krate) // Pass variant_item
                 )
                 .unwrap();
                 // Add discriminant if present
@@ -1396,10 +1424,49 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
     code
 }
 
+/// Generates the `union { ... }` code block.
+fn generate_union_code_block(item: &Item, u: &Union, krate: &Crate) -> String {
+    let name = item.name.as_deref().expect("Union item should have a name");
+    let mut code = String::new();
+    write!(code, "{}pub union {}", format_attributes(&item.attrs), name).unwrap();
+    let generics_str = format_generics_full(&u.generics, krate);
+    write!(code, "{}", generics_str).unwrap();
+    write!(code, " {{").unwrap();
+
+    if !u.fields.is_empty() {
+        writeln!(code).unwrap();
+    }
+    for field_id in &u.fields {
+        if let Some(field_item) = krate.index.get(field_id) {
+            if let ItemEnum::StructField(field_type) = &field_item.inner {
+                let field_name = field_item.name.as_deref().unwrap_or("_");
+                writeln!(
+                    code,
+                    "    {}pub {}: {},",
+                    format_attributes(&field_item.attrs),
+                    field_name,
+                    format_type(field_type, krate)
+                )
+                .unwrap();
+            }
+        }
+    }
+    if !u.fields.is_empty() && !code.ends_with('\n') {
+        writeln!(code).unwrap();
+    }
+    write!(code, "}}").unwrap();
+    code
+}
+
 /// Generates the full trait declaration code block.
 fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Trait item should have a name");
     let mut code = String::new();
+
+    // Attributes for the trait itself are not typically shown here, but on the `pub trait` line.
+    // However, `format_attributes` is for non-derive. If other attributes are common, they could be added.
+    // For now, sticking to `pub auto/unsafe trait ...`
+    write!(code, "{}", format_attributes(&item.attrs)).unwrap();
 
     if t.is_auto {
         write!(code, "pub auto ").unwrap();
@@ -1458,7 +1525,8 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                     ItemEnum::AssocConst { type_, value, .. } => {
                         write!(
                             code,
-                            "    const {}: {}",
+                            "    {}const {}: {}",
+                            format_attributes(&assoc_item.attrs),
                             assoc_item.name.as_deref().unwrap_or("_"),
                             format_type(type_, krate)
                         )
@@ -1473,7 +1541,8 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                     ItemEnum::AssocType { bounds, type_, .. } => {
                         write!(
                             code,
-                            "    type {}",
+                            "    {}type {}",
+                            format_attributes(&assoc_item.attrs),
                             assoc_item.name.as_deref().unwrap_or("_")
                         )
                         .unwrap();
@@ -1501,7 +1570,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                         writeln!(
                             code,
                             "    {};",
-                            generate_function_code_block(assoc_item, f, krate)
+                            generate_function_code_block(assoc_item, f, krate) // Attributes handled by generate_function_code_block
                         )
                         .unwrap();
                     }
@@ -1523,7 +1592,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
     let mut code = String::new();
 
     // Attributes/Keywords
-    // TODO: Add visibility? Assume pub for now.
+    write!(code, "{}", format_attributes(&item.attrs)).unwrap(); // Add attributes
     write!(code, "pub ").unwrap();
     if f.header.is_const {
         write!(code, "const ").unwrap();
@@ -1584,8 +1653,9 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
 /// Formats a single enum variant's definition for the code block.
 fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String {
     let name = item.name.as_deref().unwrap_or("{Unnamed}");
+    let attrs_str = format_attributes(&item.attrs);
     match &v.kind {
-        VariantKind::Plain => name.to_string(),
+        VariantKind::Plain => format!("{}{}", attrs_str, name),
         VariantKind::Tuple(fields) => {
             // fields_stripped ignored
             let types: Vec<String> = fields
@@ -1596,14 +1666,18 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                         .and_then(|id| krate.index.get(id))
                         .and_then(|field_item| {
                             if let ItemEnum::StructField(ty) = &field_item.inner {
-                                Some(format_type(ty, krate))
+                                Some(format!(
+                                    "{}{}", // No pub for tuple variant fields
+                                    format_attributes(&field_item.attrs),
+                                    format_type(ty, krate)
+                                ))
                             } else {
                                 None
                             }
                         })
                 })
                 .collect();
-            format!("{}({})", name, types.join(", "))
+            format!("{}{}({})", attrs_str, name, types.join(", "))
         }
         VariantKind::Struct { fields, .. } => {
             // fields_stripped ignored
@@ -1613,7 +1687,57 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                     krate.index.get(id).and_then(|field_item| {
                         if let ItemEnum::StructField(ty) = &field_item.inner {
                             let field_name = field_item.name.as_deref().unwrap_or("_");
+                            Some(format!(
+                                "{}{}: {}", // No pub for struct variant fields
+                                format_attributes(&field_item.attrs),
+                                field_name,
+                                format_type(ty, krate)
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            format!("{}{}{{ {} }}", attrs_str, name, fields_str.join(", "))
+        }
+    }
+}
+
+/// Formats an enum variant's signature for the `#####` header.
+fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
+    // Similar to definition but potentially simpler, without pub, maybe add discriminant visually
+    // Attributes are NOT included in the Hx header for variants.
+    let name = item.name.as_deref().unwrap_or("{Unnamed}");
+    let mut sig = match &v.kind {
+        VariantKind::Plain => name.to_string(),
+        VariantKind::Tuple(fields) => {
+            let types: Vec<String> = fields
+                .iter()
+                .filter_map(|opt_id| {
+                    opt_id
+                        .as_ref()
+                        .and_then(|id| krate.index.get(id))
+                        .and_then(|field_item| {
+                            if let ItemEnum::StructField(ty) = &field_item.inner {
+                                Some(format_type(ty, krate)) // No attributes here
+                            } else {
+                                None
+                            }
+                        })
+                })
+                .collect();
+            format!("{}({})", name, types.join(", "))
+        }
+        VariantKind::Struct { fields, .. } => {
+            let fields_str: Vec<String> = fields
+                .iter()
+                .filter_map(|id| {
+                    krate.index.get(id).and_then(|field_item| {
+                        if let ItemEnum::StructField(ty) = &field_item.inner {
+                            let field_name = field_item.name.as_deref().unwrap_or("_");
                             Some(format!("{}: {}", field_name, format_type(ty, krate)))
+                        // No attributes here
                         } else {
                             None
                         }
@@ -1622,13 +1746,8 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                 .collect();
             format!("{} {{ {} }}", name, fields_str.join(", "))
         }
-    }
-}
+    };
 
-/// Formats an enum variant's signature for the `#####` header.
-fn format_variant_signature(item: &Item, v: &Variant, krate: &Crate) -> String {
-    // Similar to definition but potentially simpler, without pub, maybe add discriminant visually
-    let mut sig = format_variant_definition(item, v, krate);
     if let Some(discr) = &v.discriminant {
         // Use format_discriminant_expr
         write!(sig, " = {}", format_discriminant_expr(discr)).unwrap();
@@ -2200,13 +2319,15 @@ impl<'a> Printer<'a> {
         let code_block = match &item.inner {
             ItemEnum::Struct(s) => Some(generate_struct_code_block(item, s, self.krate)),
             ItemEnum::Enum(e) => Some(generate_enum_code_block(item, e, self.krate)),
+            ItemEnum::Union(u) => Some(generate_union_code_block(item, u, self.krate)),
             ItemEnum::Trait(t) => Some(generate_trait_code_block(item, t, self.krate)),
             ItemEnum::Function(f) => {
                 // Check if function has attrs or where clause
                 let has_attrs = f.header.is_const
                     || f.header.is_async
                     || f.header.is_unsafe
-                    || !matches!(f.header.abi, Abi::Rust);
+                    || !matches!(f.header.abi, Abi::Rust)
+                    || !item.attrs.is_empty(); // Check item.attrs for function attributes
                 let has_where = !f.generics.where_predicates.is_empty();
                 if has_attrs || has_where {
                     Some(generate_function_code_block(item, f, self.krate))
@@ -2243,6 +2364,7 @@ impl<'a> Printer<'a> {
         match &item.inner {
             ItemEnum::Struct(s) => self.print_struct_fields(item, s),
             ItemEnum::Enum(e) => self.print_enum_variants(item, e),
+            ItemEnum::Union(u) => self.print_union_fields(item, u),
             ItemEnum::Trait(t) => self.print_trait_associated_items(item, t),
             // Add other kinds requiring detailed sections if necessary
             _ => {}
@@ -2346,6 +2468,57 @@ impl<'a> Printer<'a> {
         }
         self.pop_level(); // Pop the field item level
 
+        self.post_increment_current_level();
+    }
+
+    /// Prints the "Fields" section for a union, only if needed.
+    fn print_union_fields(&mut self, _item: &Item, u: &Union) {
+        let all_field_ids: Vec<Id> = u.fields.clone();
+        let mut has_printable_field = false;
+
+        for field_id in &all_field_ids {
+            if !self.selected_ids.contains(field_id) {
+                continue;
+            }
+            if let Some(item) = self.krate.index.get(field_id) {
+                let field_has_printable_docs =
+                    (self.template_mode && item.docs.is_some()) || has_docs(item);
+                if field_has_printable_docs {
+                    if !self.printed_ids.contains(field_id) {
+                        has_printable_field = true;
+                    }
+                } else {
+                    self.printed_ids.insert(*field_id);
+                }
+            } else {
+                self.printed_ids.insert(*field_id);
+            }
+        }
+
+        if !has_printable_field && !u.has_stripped_fields {
+            return;
+        }
+
+        let fields_header_level = self.get_current_header_level();
+        let header_prefix = self.get_header_prefix();
+        writeln!(
+            self.output,
+            "{} {} Fields\n",
+            "#".repeat(fields_header_level),
+            header_prefix
+        )
+        .unwrap();
+
+        self.push_level();
+        for field_id in &all_field_ids {
+            if self.print_field_details(field_id) {
+                self.post_increment_current_level();
+            }
+        }
+        if u.has_stripped_fields {
+            writeln!(self.output, "_[Private fields hidden]_").unwrap();
+        }
+        self.pop_level();
         self.post_increment_current_level();
     }
 
@@ -2833,7 +3006,8 @@ impl<'a> Printer<'a> {
                 let has_attrs = f.header.is_const
                     || f.header.is_async
                     || f.header.is_unsafe
-                    || !matches!(f.header.abi, Abi::Rust);
+                    || !matches!(f.header.abi, Abi::Rust)
+                    || !item.attrs.is_empty(); // Check item.attrs for function attributes
                 let has_where = !f.generics.where_predicates.is_empty();
                 if has_attrs || has_where {
                     let code = generate_function_code_block(item, f, self.krate);
@@ -3375,7 +3549,8 @@ impl<'a> Printer<'a> {
                         };
                         write!(
                             assoc_items_content,
-                            "    const {}: {}",
+                            "    {}const {}: {}", // Add attributes for assoc const
+                            format_attributes(&assoc_item.attrs),
                             assoc_item.name.as_deref().unwrap_or("_"),
                             format_type(type_, self.krate)
                         )
@@ -3397,7 +3572,8 @@ impl<'a> Printer<'a> {
                         };
                         write!(
                             assoc_items_content,
-                            "    type {}",
+                            "    {}type {}", // Add attributes for assoc type
+                            format_attributes(&assoc_item.attrs),
                             assoc_item.name.as_deref().unwrap_or("_")
                         )
                         .unwrap();
