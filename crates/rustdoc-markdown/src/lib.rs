@@ -3855,12 +3855,12 @@ impl<'a> Printer<'a> {
                 if let Some(kind) = self.get_item_kind(id) {
                     match kind {
                         ItemKind::Impl
-                        | ItemEnum::Variant(_) // Handled by Enum
-                        | ItemEnum::StructField(_) // Handled by Struct/Union/Variant
-                        | ItemEnum::AssocConst { .. } // Handled by Trait/Impl
-                        | ItemEnum::AssocType { .. } // Handled by Trait/Impl
-                        | ItemEnum::Use // Resolved, not printed directly
-                        | ItemEnum::Module => continue, // Handled by main loop
+                        | ItemKind::Variant // Handled by Enum
+                        | ItemKind::StructField // Handled by Struct/Union/Variant
+                        | ItemKind::AssocConst // Handled by Trait/Impl
+                        | ItemKind::AssocType // Handled by Trait/Impl
+                        | ItemKind::Use // Resolved, not printed directly
+                        | ItemKind::Module => continue, // Handled by main loop
                         _ => {}
                     }
                     items_by_kind.entry(kind).or_default().push(*id);
