@@ -4607,41 +4607,49 @@ impl<'a> Printer<'a> {
         }
 
         // --- Examples Appendix ---
-        if let Some(extra) = &self.crate_extra {
-            if !extra.examples.is_empty() || extra.examples_readme_content.is_some() {
-                let examples_section_level = self.get_current_header_level(); // Should be 2
-                let header_prefix = self.get_header_prefix();
+        // Clone the necessary data from self.crate_extra before the loop
+        let examples_readme_content_clone = self
+            .crate_extra
+            .as_ref()
+            .and_then(|extra| extra.examples_readme_content.clone());
+        let examples_clone = self
+            .crate_extra
+            .as_ref()
+            .map_or_else(Vec::new, |extra| extra.examples.clone());
+
+        if !examples_clone.is_empty() || examples_readme_content_clone.is_some() {
+            let examples_section_level = self.get_current_header_level(); // Should be 2
+            let header_prefix = self.get_header_prefix();
+            writeln!(
+                self.output,
+                "\n{} {} Examples Appendix\n",
+                "#".repeat(examples_section_level),
+                header_prefix
+            )
+            .unwrap();
+            self.push_level(); // Push for H3 example headers
+
+            if let Some(readme) = examples_readme_content_clone {
+                let adjusted_readme = adjust_markdown_headers(&readme, examples_section_level);
+                writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+            }
+
+            for (filename, content) in &examples_clone {
+                let example_header_level = self.get_current_header_level(); // Should be 3
+                let example_prefix = self.get_header_prefix();
                 writeln!(
                     self.output,
-                    "\n{} {} Examples Appendix\n",
-                    "#".repeat(examples_section_level),
-                    header_prefix
+                    "{} {} `{}`\n",
+                    "#".repeat(example_header_level),
+                    example_prefix,
+                    filename
                 )
                 .unwrap();
-                self.push_level(); // Push for H3 example headers
-
-                if let Some(readme) = &extra.examples_readme_content {
-                    let adjusted_readme = adjust_markdown_headers(readme, examples_section_level);
-                    writeln!(self.output, "{}\n", adjusted_readme).unwrap();
-                }
-
-                for (filename, content) in &extra.examples {
-                    let example_header_level = self.get_current_header_level(); // Should be 3
-                    let example_prefix = self.get_header_prefix();
-                    writeln!(
-                        self.output,
-                        "{} {} `{}`\n",
-                        "#".repeat(example_header_level),
-                        example_prefix,
-                        filename
-                    )
-                    .unwrap();
-                    writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
-                    self.post_increment_current_level(); // Increment H3 counter for next example
-                }
-                self.pop_level(); // Pop H3 example level
-                self.post_increment_current_level(); // Increment H2 counter for next top-level section
+                writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
+                self.post_increment_current_level(); // Increment H3 counter for next example
             }
+            self.pop_level(); // Pop H3 example level
+            self.post_increment_current_level(); // Increment H2 counter for next top-level section
         }
         self.output
     }
