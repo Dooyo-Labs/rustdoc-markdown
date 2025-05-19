@@ -2492,6 +2492,11 @@ impl<'a> Printer<'a> {
             all_type_ids_with_impls.len()
         );
 
+        if all_type_ids_with_impls.len() < 2 {
+            debug!("Too few trait implementations, skipping crate 'Common Traits'");
+            return (HashSet::new(), all_type_ids_with_impls);
+        }
+
         let mut common_traits_set = HashSet::new();
         if all_type_ids_with_impls.is_empty() {
             return (common_traits_set, all_type_ids_with_impls);
