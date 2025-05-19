@@ -1605,6 +1605,38 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
     code
 }
 
+/// Helper to format an impl block or trait impl declaration line.
+fn format_impl_decl(imp: &Impl, krate: &Crate) -> String {
+    let mut decl = String::new();
+    if imp.is_unsafe {
+        write!(decl, "unsafe ").unwrap();
+    }
+    write!(decl, "impl").unwrap();
+
+    // Add generics params <...>
+    let generics_params = format_generics_params_only(&imp.generics.params, krate);
+    if !generics_params.is_empty() {
+        write!(decl, "{}", generics_params).unwrap();
+    }
+
+    // Add Trait for Type
+    if let Some(trait_path) = &imp.trait_ {
+        write!(decl, " {} for", format_path(trait_path, krate)).unwrap();
+    }
+    write!(decl, " {}", format_type(&imp.for_, krate)).unwrap();
+
+    // Add where clause
+    let where_clause = format_generics_where_only(&imp.generics.where_predicates, krate);
+    if !where_clause.is_empty() {
+        if where_clause.contains('\n') {
+            write!(decl, "\n  {}", where_clause).unwrap(); // Multiline where
+        } else {
+            write!(decl, " {}", where_clause).unwrap(); // Single line where
+        }
+    }
+    decl
+}
+
 /// Generates the full function signature for a code block.
 fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Function should have a name");
@@ -3461,58 +3493,20 @@ impl<'a> Printer<'a> {
         decl
     }
 
-    /// Helper to format an impl block or trait impl declaration line.
-    fn format_impl_decl(&self, imp: &Impl) -> String {
-        let mut decl = String::new();
-        if imp.is_unsafe {
-            write!(decl, "unsafe ").unwrap();
-        }
-        write!(decl, "impl").unwrap();
-
-        // Add generics params <...>
-        let generics_params = format_generics_params_only(&imp.generics.params, self.krate);
-        if !generics_params.is_empty() {
-            write!(decl, "{}", generics_params).unwrap();
-        }
-
-        // Add Trait for Type
-        if let Some(trait_path) = &imp.trait_ {
-            write!(decl, " {} for", format_path(trait_path, self.krate)).unwrap();
-        }
-        write!(decl, " {}", format_type(&imp.for_, self.krate)).unwrap();
-
-        // Add where clause
-        let where_clause = format_generics_where_only(&imp.generics.where_predicates, self.krate);
-        if !where_clause.is_empty() {
-            if where_clause.contains('\n') {
-                write!(decl, "\n  {}", where_clause).unwrap(); // Multiline where
-            } else {
-                write!(decl, " {}", where_clause).unwrap(); // Single line where
-            }
-        }
-        decl
-    }
-
     /// Generates the full code block string for a trait impl, including associated items.
     /// Returns None if the impl block was already printed or is effectively empty.
     /// Skips methods within the impl block.
     fn generate_impl_trait_block(&mut self, imp: &Impl) -> Option<String> {
         let mut code = String::new();
-        let impl_header = self.format_impl_decl(imp);
+        let impl_header = format_impl_decl(imp, self.krate);
         writeln!(code, "{} {{", impl_header).unwrap();
 
         let mut assoc_items_content = String::new();
         let mut has_printable_assoc_items = false;
 
+        // Note: we assume that the caller already checked that the given Impl is selected
+        // for printing so we don't also check the individual items.
         for assoc_item_id in &imp.items {
-            if !self.selected_ids.contains(assoc_item_id) {
-                continue;
-            }
-            if !self.printed_ids.contains_key(assoc_item_id) {
-                self.printed_ids
-                    .insert(*assoc_item_id, self.get_header_prefix());
-            }
-
             if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
                 match &assoc_item.inner {
                     ItemEnum::AssocConst { type_, value, .. } => {
@@ -3598,7 +3592,7 @@ impl<'a> Printer<'a> {
         // Increment level counter for this impl block
         self.post_increment_current_level();
         let impl_header_level = self.get_current_header_level();
-        let impl_header = self.format_impl_decl(imp);
+        let impl_header = format_impl_decl(imp, self.krate);
 
         // Print the impl block header (e.g. #### 1.1.1: `impl ...`)
         writeln!(
@@ -3963,7 +3957,9 @@ impl<'a> Printer<'a> {
 
             // Mark module as printed only AFTER printing its header, if not already printed
             // This ensures the first time a module is encountered, its prefix is stored.
-            self.printed_ids.entry(module_id).or_insert_with(|| header_prefix.clone());
+            self.printed_ids
+                .entry(module_id)
+                .or_insert_with(|| header_prefix.clone());
 
             self.push_level();
 
