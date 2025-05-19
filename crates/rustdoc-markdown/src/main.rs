@@ -36,20 +36,20 @@ enum Command {
 #[derive(Parser, Debug)]
 struct PrintCommand {
     /// Name of the crate on crates.io or from local manifest.
-    /// If using --manifest, this must match the package name in Cargo.toml.
+    /// If using --manifest or --git, this must match the package name in Cargo.toml.
     crate_name: String,
 
     /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*").
-    /// Ignored if --manifest is used. Defaults to the latest suitable version.
+    /// Ignored if --manifest or --git is used. Defaults to the latest suitable version.
     #[arg(default_value = "*")]
     crate_version: String,
 
     /// Include prerelease versions when selecting the latest version from crates.io.
-    /// Ignored if --manifest is used.
+    /// Ignored if --manifest or --git is used.
     #[arg(long)]
     include_prerelease: bool,
 
-    /// Build directory for crate documentation artifacts (e.g., downloaded crate source, rustdoc JSON).
+    /// Build directory for crate documentation artifacts (e.g., downloaded crate source, rustdoc JSON, cloned git repos).
     #[arg(long, default_value = ".ai/docs/rust/build")]
     build_dir: String,
 
@@ -105,8 +105,16 @@ struct PrintCommand {
     /// Path to the Cargo.toml manifest file of a local crate.
     /// If provided, crates.io will not be queried, and the specified crate will be documented.
     /// The `crate_name` argument must match the `[package].name` in this manifest.
-    #[arg(long)]
+    /// Mutually exclusive with --git.
+    #[arg(long, conflicts_with = "git_url")]
     manifest: Option<PathBuf>,
+
+    /// URL of a Git repository to clone for documentation.
+    /// If provided, crates.io will not be queried. The default branch will be used.
+    /// The `crate_name` argument must match the `[package].name` in the located Cargo.toml.
+    /// Mutually exclusive with --manifest.
+    #[arg(long, conflicts_with = "manifest")]
+    git_url: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -172,6 +180,17 @@ struct DumpGraphCommand {
     manifest: Option<PathBuf>,
 }
 
+/// Extracts the repository name from a Git URL.
+/// e.g., "https://github.com/user/repo.git" -> "repo"
+/// e.g., "git@github.com:user/repo.git" -> "repo"
+fn repo_name_from_url(url: &str) -> Result<String> {
+    let path = url
+        .split('/')
+        .last()
+        .ok_or_else(|| anyhow!("Could not extract repository name from URL: {}", url))?;
+    Ok(path.trim_end_matches(".git").to_string())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging: default to 'info' if RUST_LOG is not set, write to stderr
@@ -200,7 +219,7 @@ async fn main() -> Result<()> {
                 )
             })?;
 
-            let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) =
+            let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) = {
                 if let Some(manifest_path) = &print_args.manifest {
                     info!(
                         "Using local manifest: {}",
@@ -216,7 +235,7 @@ async fn main() -> Result<()> {
                             )
                         })?
                         .to_path_buf();
-                    let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
+                    let m = Manifest::from_path(&m_path).with_context(|| {
                         format!("Failed to read or parse Cargo.toml: {}", m_path.display())
                     })?;
                     let name_from_manifest = m
@@ -238,7 +257,132 @@ async fn main() -> Result<()> {
                         .and_then(|p| p.version.as_ref())
                         .and_then(|v| v.as_ref().as_local().cloned());
                     (dir, m, name_from_manifest, version_from_manifest)
+                } else if let Some(git_url) = &print_args.git_url {
+                    let repo_name = repo_name_from_url(git_url)?;
+                    let repo_clone_target_dir = build_dir_path.join(&repo_name);
+
+                    if repo_clone_target_dir.exists() {
+                        info!(
+                            "Repository already cloned at: {}",
+                            repo_clone_target_dir.display()
+                        );
+                    } else {
+                        info!(
+                            "Cloning repository '{}' into '{}'...",
+                            git_url,
+                            repo_clone_target_dir.display()
+                        );
+                        git2::Repository::clone(git_url, &repo_clone_target_dir).with_context(
+                            || format!("Failed to clone repository from URL: {}", git_url),
+                        )?;
+                        info!("Successfully cloned repository.");
+                    }
+
+                    let root_manifest_path = repo_clone_target_dir.join("Cargo.toml");
+                    if !root_manifest_path.exists() {
+                        return Err(anyhow!(
+                            "Cargo.toml not found at the root of the cloned repository: {}",
+                            root_manifest_path.display()
+                        ));
+                    }
+
+                    let root_manifest =
+                        Manifest::from_path(&root_manifest_path).with_context(|| {
+                            format!(
+                                "Failed to read or parse root Cargo.toml: {}",
+                                root_manifest_path.display()
+                            )
+                        })?;
+
+                    if let Some(workspace) = &root_manifest.workspace {
+                        info!(
+                            "Repository is a workspace. Searching for package '{}'...",
+                            print_args.crate_name
+                        );
+                        let mut found_member_manifest_path = None;
+                        let mut found_member_dir = None;
+
+                        for member_glob in &workspace.members {
+                            // Basic glob handling: assume direct paths or simple wildcards like "*"
+                            // For simplicity, we'll just try to resolve direct paths for now.
+                            // A more robust solution would use a glob matching library.
+                            let member_path = repo_clone_target_dir.join(member_glob);
+                            if member_path.is_dir() {
+                                let member_manifest_path = member_path.join("Cargo.toml");
+                                if member_manifest_path.exists() {
+                                    let member_manifest = Manifest::from_path(
+                                        &member_manifest_path,
+                                    )
+                                    .with_context(|| {
+                                        format!(
+                                            "Failed to parse member manifest: {}",
+                                            member_manifest_path.display()
+                                        )
+                                    })?;
+                                    if let Some(pkg) = &member_manifest.package {
+                                        if pkg.name == print_args.crate_name {
+                                            found_member_manifest_path = Some(member_manifest_path);
+                                            found_member_dir = Some(member_path);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if let (Some(m_path), Some(dir)) =
+                            (found_member_manifest_path, found_member_dir)
+                        {
+                            info!(
+                                "Found package '{}' in workspace at: {}",
+                                print_args.crate_name,
+                                dir.display()
+                            );
+                            let m = Manifest::from_path(&m_path).with_context(|| {
+                                format!("Failed to parse member manifest: {}", m_path.display())
+                            })?;
+                            let version_from_manifest = m
+                                .package
+                                .as_ref()
+                                .and_then(|p| p.version.as_ref())
+                                .and_then(|v| v.as_ref().as_local().cloned());
+                            (dir, m, print_args.crate_name.clone(), version_from_manifest)
+                        } else {
+                            return Err(anyhow!(
+                                "Package '{}' not found in workspace members of repository '{}'",
+                                print_args.crate_name,
+                                git_url
+                            ));
+                        }
+                    } else if let Some(pkg) = &root_manifest.package {
+                        // Root is a single package
+                        if pkg.name == print_args.crate_name {
+                            info!("Using root package '{}' from repository.", pkg.name);
+                            let version_from_manifest = pkg
+                                .version
+                                .as_ref()
+                                .and_then(|v| v.as_ref().as_local().cloned());
+                            (
+                                repo_clone_target_dir,
+                                root_manifest,
+                                pkg.name.clone(),
+                                version_from_manifest,
+                            )
+                        } else {
+                            return Err(anyhow!(
+                                "Crate name mismatch: command line '{}' vs repository root package name '{}'",
+                                print_args.crate_name,
+                                pkg.name
+                            ));
+                        }
+                    } else {
+                        return Err(anyhow!(
+                            "Root Cargo.toml in repository '{}' is neither a workspace nor a package.",
+                            git_url
+                        ));
+                    }
                 } else {
+                    // Fallback to crates.io
                     let target_version = cratesio::find_best_version(
                         &client,
                         &print_args.crate_name,
@@ -258,7 +402,7 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                     let m_path = dir.join("Cargo.toml");
-                    let m: Manifest = Manifest::from_path(&m_path).with_context(|| {
+                    let m = Manifest::from_path(&m_path).with_context(|| {
                         format!("Failed to read or parse Cargo.toml: {}", m_path.display())
                     })?;
                     (
@@ -267,7 +411,8 @@ async fn main() -> Result<()> {
                         target_version.crate_name.clone(),
                         Some(target_version.num.clone()),
                     )
-                };
+                }
+            };
 
             let krate: Crate = run_rustdoc(
                 &crate_dir,

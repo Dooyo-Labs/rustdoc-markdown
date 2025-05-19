@@ -5,3 +5,19 @@ tests:
     command: cargo build
   - name: Help
     command: cargo run -- --help
+update_docs_patterns:
+  - "crates/rustdoc-markdown/Cargo.toml": "dependencies"
+  - "crates/rustdoc-markdown/src/lib.rs": "NIGHTLY_RUST_VERSION"
+dependencies:
+  - crate: rustdoc-types
+    version_field: rustdoc-types # in Cargo.toml
+    docs_refs:
+      - NIGHTLY_RUST_VERSION # in lib.rs
+  - crate: cargo-manifest
+    version_field: cargo-manifest
+  - crate: pulldown-cmark
+    version_field: pulldown-cmark
+  - crate: pulldown-cmark-to-cmark
+    version_field: pulldown-cmark-to-cmark
+  - crate: git2 # Added git2
+    version_field: git2
