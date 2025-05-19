@@ -1103,9 +1103,7 @@ impl FormattedTraitImpl {
                 write!(list_entry, "- `{}`", display_path_with_generics).unwrap();
             }
             TraitImplCategory::GenericOrComplex => {
-                // Need a mutable clone of printer to call generate_impl_trait_block
-                let mut temp_printer = printer.clone_with_new_output();
-                if let Some(impl_block_str) = temp_printer.generate_impl_trait_block(imp) {
+                if let Some(impl_block_str) = generate_impl_trait_block(imp, printer.krate) {
                     if !impl_block_str.trim_end_matches("{\n}").trim().is_empty() {
                         writeln!(list_entry, "- `{}`", display_path_with_generics).unwrap();
                         writeln!(list_entry).unwrap();
@@ -1662,6 +1660,86 @@ fn format_impl_decl_header_only(imp: &Impl, krate: &Crate) -> String {
 
     // DO NOT add where clause here
     decl
+}
+
+/// Generates the full code block string for a trait impl, including associated items.
+/// Returns None if the impl block was already printed or is effectively empty.
+/// Skips methods within the impl block.
+fn generate_impl_trait_block(imp: &Impl, krate: &Crate) -> Option<String> {
+    let mut code = String::new();
+    let impl_header = format_impl_decl(imp, krate);
+    writeln!(code, "{} {{", impl_header).unwrap();
+
+    let mut assoc_items_content = String::new();
+    let mut has_printable_assoc_items = false;
+
+    // Note: we assume that the caller already checked that the given Impl is selected
+    // for printing so we don't also check the individual items.
+    for assoc_item_id in &imp.items {
+        if let Some(assoc_item) = krate.index.get(assoc_item_id) {
+            match &assoc_item.inner {
+                ItemEnum::AssocConst { type_, value, .. } => {
+                    has_printable_assoc_items = true;
+                    write!(
+                        assoc_items_content,
+                        "    {}const {}: {}",
+                        format_attributes(&assoc_item.attrs),
+                        assoc_item.name.as_deref().unwrap_or("_"),
+                        format_type(type_, krate)
+                    )
+                    .unwrap();
+                    if let Some(val) = value {
+                        write!(assoc_items_content, " = {};", val).unwrap();
+                    } else {
+                        write!(assoc_items_content, ";").unwrap();
+                    }
+                    writeln!(assoc_items_content).unwrap();
+                }
+                ItemEnum::AssocType { bounds, type_, .. } => {
+                    has_printable_assoc_items = true;
+                    write!(
+                        assoc_items_content,
+                        "    {}type {}",
+                        format_attributes(&assoc_item.attrs),
+                        assoc_item.name.as_deref().unwrap_or("_")
+                    )
+                    .unwrap();
+                    if !bounds.is_empty() {
+                        let bounds_str = bounds
+                            .iter()
+                            .map(|b| format_generic_bound(b, krate))
+                            .collect::<Vec<_>>()
+                            .join(" + ");
+                        write!(assoc_items_content, ": {}", bounds_str).unwrap();
+                    }
+                    if let Some(ty) = type_ {
+                        write!(assoc_items_content, " = {}", format_type(ty, krate)).unwrap();
+                    }
+                    write!(assoc_items_content, ";").unwrap();
+                    writeln!(assoc_items_content).unwrap();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if has_printable_assoc_items {
+        if impl_header.contains('\n') && !assoc_items_content.starts_with('\n') {
+            writeln!(code).unwrap();
+        }
+        write!(code, "{}", assoc_items_content).unwrap();
+        if !code.ends_with('\n') && !assoc_items_content.is_empty() {
+            writeln!(code).unwrap();
+        }
+    } else if impl_header.contains('\n') {
+        writeln!(code).unwrap();
+    }
+
+    write!(code, "}}").unwrap();
+    if !has_printable_assoc_items {
+        return None;
+    }
+    Some(code)
 }
 
 /// Generates the full function signature for a code block.
@@ -3491,89 +3569,6 @@ impl<'a> Printer<'a> {
             self.pop_level();
             self.post_increment_current_level();
         }
-    }
-
-
-
-    /// Generates the full code block string for a trait impl, including associated items.
-    /// Returns None if the impl block was already printed or is effectively empty.
-    /// Skips methods within the impl block.
-    fn generate_impl_trait_block(&mut self, imp: &Impl) -> Option<String> {
-        let mut code = String::new();
-        let impl_header = format_impl_decl(imp, self.krate);
-        writeln!(code, "{} {{", impl_header).unwrap();
-
-        let mut assoc_items_content = String::new();
-        let mut has_printable_assoc_items = false;
-
-        // Note: we assume that the caller already checked that the given Impl is selected
-        // for printing so we don't also check the individual items.
-        for assoc_item_id in &imp.items {
-            if let Some(assoc_item) = self.krate.index.get(assoc_item_id) {
-                match &assoc_item.inner {
-                    ItemEnum::AssocConst { type_, value, .. } => {
-                        has_printable_assoc_items = true;
-                        write!(
-                            assoc_items_content,
-                            "    {}const {}: {}",
-                            format_attributes(&assoc_item.attrs),
-                            assoc_item.name.as_deref().unwrap_or("_"),
-                            format_type(type_, self.krate)
-                        )
-                        .unwrap();
-                        if let Some(val) = value {
-                            write!(assoc_items_content, " = {};", val).unwrap();
-                        } else {
-                            write!(assoc_items_content, ";").unwrap();
-                        }
-                        writeln!(assoc_items_content).unwrap();
-                    }
-                    ItemEnum::AssocType { bounds, type_, .. } => {
-                        has_printable_assoc_items = true;
-                        write!(
-                            assoc_items_content,
-                            "    {}type {}",
-                            format_attributes(&assoc_item.attrs),
-                            assoc_item.name.as_deref().unwrap_or("_")
-                        )
-                        .unwrap();
-                        if !bounds.is_empty() {
-                            let bounds_str = bounds
-                                .iter()
-                                .map(|b| format_generic_bound(b, self.krate))
-                                .collect::<Vec<_>>()
-                                .join(" + ");
-                            write!(assoc_items_content, ": {}", bounds_str).unwrap();
-                        }
-                        if let Some(ty) = type_ {
-                            write!(assoc_items_content, " = {}", format_type(ty, self.krate))
-                                .unwrap();
-                        }
-                        write!(assoc_items_content, ";").unwrap();
-                        writeln!(assoc_items_content).unwrap();
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        if has_printable_assoc_items {
-            if impl_header.contains('\n') && !assoc_items_content.starts_with('\n') {
-                writeln!(code).unwrap();
-            }
-            write!(code, "{}", assoc_items_content).unwrap();
-            if !code.ends_with('\n') && !assoc_items_content.is_empty() {
-                writeln!(code).unwrap();
-            }
-        } else if impl_header.contains('\n') {
-            writeln!(code).unwrap();
-        }
-
-        write!(code, "}}").unwrap();
-        if !has_printable_assoc_items {
-            return None;
-        }
-        Some(code)
     }
 
     /// Prints the details of a specific impl block (header, associated items).
