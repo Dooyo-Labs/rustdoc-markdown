@@ -1407,7 +1407,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                         writeln!(
                             code,
                             "    {}pub {}: {},",
-                            format_attributes(&field_item.attrs), // Use multi-line attributes
+                            format_attributes_inline(&field_item.attrs), // Use multi-line attributes
                             field_name,
                             format_type(field_type, krate)
                         )
@@ -1433,7 +1433,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                             if let ItemEnum::StructField(field_type) = &field_item.inner {
                                 Some(format!(
                                     "{}pub {}",
-                                    format_attributes(&field_item.attrs), // Use multi-line attributes
+                                    format_attributes_inline(&field_item.attrs), // Use multi-line attributes
                                     format_type(field_type, krate)
                                 ))
                             } else {
@@ -1527,7 +1527,7 @@ fn generate_union_code_block(item: &Item, u: &Union, krate: &Crate) -> String {
                 writeln!(
                     code,
                     "    {}pub {}: {},",
-                    format_attributes(&field_item.attrs), // Use multi-line attributes
+                    format_attributes_inline(&field_item.attrs), // Use multi-line attributes
                     field_name,
                     format_type(field_type, krate)
                 )
@@ -1607,7 +1607,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                         write!(
                             code,
                             "    {}const {}: {}",
-                            format_attributes(&assoc_item.attrs), // Use multi-line attributes
+                            format_attributes_inline(&assoc_item.attrs), // Use multi-line attributes
                             assoc_item.name.as_deref().unwrap_or("_"),
                             format_type(type_, krate)
                         )
@@ -1623,7 +1623,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                         write!(
                             code,
                             "    {}type {}",
-                            format_attributes(&assoc_item.attrs), // Use multi-line attributes
+                            format_attributes_inline(&assoc_item.attrs), // Use multi-line attributes
                             assoc_item.name.as_deref().unwrap_or("_")
                         )
                         .unwrap();
@@ -1747,7 +1747,7 @@ fn generate_impl_trait_block(imp: &Impl, krate: &Crate) -> Option<String> {
                     write!(
                         assoc_items_content,
                         "    {}const {}: {}",
-                        format_attributes(&assoc_item.attrs), // Use multi-line attributes
+                        format_attributes_inline(&assoc_item.attrs), // Use multi-line attributes
                         assoc_item.name.as_deref().unwrap_or("_"),
                         format_type(type_, krate)
                     )
@@ -1764,7 +1764,7 @@ fn generate_impl_trait_block(imp: &Impl, krate: &Crate) -> Option<String> {
                     write!(
                         assoc_items_content,
                         "    {}type {}",
-                        format_attributes(&assoc_item.attrs), // Use multi-line attributes
+                        format_attributes_inline(&assoc_item.attrs), // Use multi-line attributes
                         assoc_item.name.as_deref().unwrap_or("_")
                     )
                     .unwrap();
@@ -1873,7 +1873,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
 /// Formats a single enum variant's definition for the code block.
 fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String {
     let name = item.name.as_deref().unwrap_or("{Unnamed}");
-    let attrs_str = format_attributes(&item.attrs); // Use multi-line attributes
+    let attrs_str = format_attributes_inline(&item.attrs); // Use multi-line attributes
     match &v.kind {
         VariantKind::Plain => format!("{}{}", attrs_str, name),
         VariantKind::Tuple(fields) => {
@@ -1887,8 +1887,8 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                         .and_then(|field_item| {
                             if let ItemEnum::StructField(ty) = &field_item.inner {
                                 Some(format!(
-                                    "{}{}",                               // No pub for tuple variant fields
-                                    format_attributes(&field_item.attrs), // Use multi-line attributes
+                                    "{}{}",                                      // No pub for tuple variant fields
+                                    format_attributes_inline(&field_item.attrs), // Use multi-line attributes
                                     format_type(ty, krate)
                                 ))
                             } else {
@@ -1908,8 +1908,8 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                         if let ItemEnum::StructField(ty) = &field_item.inner {
                             let field_name = field_item.name.as_deref().unwrap_or("_");
                             Some(format!(
-                                "{}{}: {}",                           // No pub for struct variant fields
-                                format_attributes(&field_item.attrs), // Use multi-line attributes
+                                "{}{}: {}",                                  // No pub for struct variant fields
+                                format_attributes_inline(&field_item.attrs), // Use multi-line attributes
                                 field_name,
                                 format_type(ty, krate)
                             ))
