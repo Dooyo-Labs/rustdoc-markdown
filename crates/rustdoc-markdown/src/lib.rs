@@ -1637,6 +1637,33 @@ fn format_impl_decl(imp: &Impl, krate: &Crate) -> String {
     decl
 }
 
+/// Helper to format only the header part of an impl declaration (e.g., `impl MyTrait for MyStruct<T>`)
+fn format_impl_decl_header_only(imp: &Impl, krate: &Crate) -> String {
+    let mut decl = String::new();
+    if imp.is_unsafe {
+        write!(decl, "unsafe ").unwrap();
+    }
+    write!(decl, "impl").unwrap();
+
+    // Add generics params <...> to the impl block itself (not the trait part)
+    let generics_params = format_generics_params_only(&imp.generics.params, krate);
+    if !generics_params.is_empty() {
+        write!(decl, "{}", generics_params).unwrap();
+    }
+
+    // Add Trait (if it's a trait impl)
+    if let Some(trait_path) = &imp.trait_ {
+        // For trait impl header, format trait_path with its own generics
+        write!(decl, " {} for", format_path(trait_path, krate)).unwrap();
+    }
+
+    // Add Type it's for
+    write!(decl, " {}", format_type(&imp.for_, krate)).unwrap();
+
+    // DO NOT add where clause here
+    decl
+}
+
 /// Generates the full function signature for a code block.
 fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Function should have a name");
@@ -3422,7 +3449,7 @@ impl<'a> Printer<'a> {
             self.push_level();
             for impl_item in implementors {
                 if let ItemEnum::Impl(imp) = &impl_item.inner {
-                    let impl_header_only = self.format_impl_decl_header_only(imp);
+                    let impl_header_only = format_impl_decl_header_only(imp, self.krate);
                     let impl_header_level = self.get_current_header_level();
                     let impl_prefix = self.get_header_prefix();
 
@@ -3466,32 +3493,7 @@ impl<'a> Printer<'a> {
         }
     }
 
-    /// Helper to format only the header part of an impl declaration (e.g., `impl MyTrait for MyStruct<T>`)
-    fn format_impl_decl_header_only(&self, imp: &Impl) -> String {
-        let mut decl = String::new();
-        if imp.is_unsafe {
-            write!(decl, "unsafe ").unwrap();
-        }
-        write!(decl, "impl").unwrap();
 
-        // Add generics params <...> to the impl block itself (not the trait part)
-        let generics_params = format_generics_params_only(&imp.generics.params, self.krate);
-        if !generics_params.is_empty() {
-            write!(decl, "{}", generics_params).unwrap();
-        }
-
-        // Add Trait (if it's a trait impl)
-        if let Some(trait_path) = &imp.trait_ {
-            // For trait impl header, format trait_path with its own generics
-            write!(decl, " {} for", format_path(trait_path, self.krate)).unwrap();
-        }
-
-        // Add Type it's for
-        write!(decl, " {}", format_type(&imp.for_, self.krate)).unwrap();
-
-        // DO NOT add where clause here
-        decl
-    }
 
     /// Generates the full code block string for a trait impl, including associated items.
     /// Returns None if the impl block was already printed or is effectively empty.
