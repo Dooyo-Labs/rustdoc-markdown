@@ -84,6 +84,7 @@ pub fn run_rustdoc(
     features: Option<&str>,
     no_default_features: bool,
     target: Option<&str>,
+    allow_rustup: bool,
 ) -> Result<PathBuf> {
     let manifest_path = crate_dir.join("Cargo.toml");
     if !manifest_path.exists() {
@@ -91,6 +92,11 @@ pub fn run_rustdoc(
             "Cargo.toml not found in unpacked crate at {}",
             manifest_path.display()
         );
+    }
+
+    if allow_rustup {
+        // Install the required nightly toolchain
+        rustup_toolchain::install(NIGHTLY_RUST_VERSION).unwrap();
     }
 
     info!("Generating rustdoc JSON using rustdoc-json crate...");

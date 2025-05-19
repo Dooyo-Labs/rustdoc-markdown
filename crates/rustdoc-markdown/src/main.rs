@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use cargo_manifest::Manifest;
 use clap::Parser;
-use rustdoc_markdown::{cratesio, graph, run_rustdoc, Printer, NIGHTLY_RUST_VERSION}; // Use the library's Printer
+use rustdoc_markdown::{cratesio, graph, run_rustdoc, Printer};
 use rustdoc_types::{Crate, Id, ItemEnum};
 use std::collections::HashSet;
 use tracing_subscriber::EnvFilter;
@@ -169,9 +169,6 @@ async fn main() -> Result<()> {
         .with_writer(std::io::stderr) // Ensure logs go to stderr
         .init();
 
-    // Install the required nightly toolchain
-    rustup_toolchain::install(NIGHTLY_RUST_VERSION).unwrap();
-
     let args = Args::parse();
 
     let client = reqwest::Client::builder()
@@ -266,6 +263,7 @@ async fn main() -> Result<()> {
                 print_args.features.as_deref(),
                 print_args.no_default_features,
                 print_args.target.as_deref(),
+                true,
             )?;
 
             info!("Parsing rustdoc JSON: {}", json_output_path.display());
@@ -469,6 +467,7 @@ async fn main() -> Result<()> {
                 dump_args.features.as_deref(),
                 dump_args.no_default_features,
                 dump_args.target.as_deref(),
+                true,
             )?;
 
             let file = File::open(&json_output_path)?;
