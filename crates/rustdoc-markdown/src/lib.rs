@@ -981,6 +981,118 @@ fn trait_impl_has_associated_items(imp: &Impl, krate: &Crate) -> bool {
     })
 }
 
+/// Checks if an `Impl` is a "passthrough generic" implementation.
+/// This means the `impl` block's generics directly mirror the generics of the type it's for,
+/// and the `impl` doesn't introduce its own `where` clauses or complex associated type bindings
+/// on the trait path itself.
+fn is_passthrough_generic_impl_check(imp: &Impl, trait_path: &Path, krate: &Crate) -> bool {
+    // Trait path must have no args or empty angle bracketed args/constraints
+    let trait_path_is_simple = trait_path.args.as_ref().is_none_or(|ga| {
+        matches!(ga.as_ref(), GenericArgs::AngleBracketed { args, constraints } if args.is_empty() && constraints.is_empty())
+    });
+    if !trait_path_is_simple {
+        return false;
+    }
+
+    // Impl must not have associated items (types/consts)
+    if trait_impl_has_associated_items(imp, krate) {
+        return false;
+    }
+
+    // The `for_` type must be a ResolvedPath
+    let Type::ResolvedPath(for_path) = &imp.for_ else {
+        return false;
+    };
+
+    // The `for_` type item must exist and have generics
+    let Some(for_type_item) = krate.index.get(&for_path.id) else {
+        return false;
+    };
+    let Some(for_generics) = get_trait_for_type_generics(for_type_item) else {
+        return false;
+    };
+
+    // The `for_` path must have AngleBracketed args
+    let Some(for_args_box) = &for_path.args else {
+        // If for_path has no args, then impl must also have no params for passthrough
+        return imp.generics.params.is_empty() && imp.generics.where_predicates.is_empty();
+    };
+    let GenericArgs::AngleBracketed { args: for_args, .. } = for_args_box.as_ref() else {
+        return false;
+    };
+
+    // Length of generics params must match
+    if for_generics.params.len() != for_args.len()
+        || for_generics.params.len() != imp.generics.params.len()
+    {
+        return false;
+    }
+
+    // Impl's where predicates must match the for_type's where predicates
+    if for_generics.where_predicates != imp.generics.where_predicates {
+        return false;
+    }
+
+    // Each generic argument in `for_path` must correspond to a generic parameter
+    // in `imp.generics` with matching kinds and bounds.
+    let impl_params_map: HashMap<&String, &GenericParamDef> =
+        imp.generics.params.iter().map(|p| (&p.name, p)).collect();
+
+    for (for_arg, for_param_def) in for_args.iter().zip(for_generics.params.iter()) {
+        let for_arg_name = match for_arg {
+            GenericArg::Lifetime(name) => Some(name),
+            GenericArg::Type(Type::Generic(param_name)) => Some(param_name),
+            _ => return false, // For_arg is not a simple generic param
+        };
+
+        let Some(for_arg_name_str) = for_arg_name else {
+            return false;
+        };
+        let Some(impl_param_def) = impl_params_map.get(for_arg_name_str) else {
+            return false; // Impl does not have a corresponding generic param
+        };
+
+        // Compare kinds and bounds (simplified check)
+        match (&impl_param_def.kind, &for_param_def.kind) {
+            (
+                rustdoc_types::GenericParamDefKind::Lifetime {
+                    outlives: impl_outlives,
+                },
+                rustdoc_types::GenericParamDefKind::Lifetime {
+                    outlives: for_outlives,
+                },
+            ) => {
+                if impl_outlives != for_outlives {
+                    return false;
+                }
+            }
+            (
+                rustdoc_types::GenericParamDefKind::Type {
+                    bounds: impl_bounds,
+                    ..
+                },
+                rustdoc_types::GenericParamDefKind::Type {
+                    bounds: for_bounds, ..
+                },
+            ) => {
+                if impl_bounds != for_bounds {
+                    return false;
+                }
+            }
+            (
+                rustdoc_types::GenericParamDefKind::Const { .. },
+                rustdoc_types::GenericParamDefKind::Const { .. },
+            ) => {
+                // Basic check, could compare types if necessary
+            }
+            _ => return false, // Mismatched kinds
+        }
+    }
+
+    // If all checks pass, it's a passthrough generic impl
+    true
+}
+
 impl FormattedTraitImpl {
     /// Creates a FormattedTraitImpl from a rustdoc_types::Impl and the krate context.
     fn from_impl(
@@ -1009,83 +1121,7 @@ impl FormattedTraitImpl {
             }
         );
 
-        let mut is_passthrough_generic_impl = false;
-        if trait_path.args.as_ref().is_none_or(|ga| {
-            matches!(ga.as_ref(), GenericArgs::AngleBracketed { args, constraints } if args.is_empty() && constraints.is_empty())
-        }) && !trait_impl_has_associated_items(imp, krate)
-        {
-            if let Type::ResolvedPath(for_path) = &imp.for_ {
-                let impl_params: HashMap<&String, &GenericParamDef> =
-                    imp.generics.params.iter().map(|p| (&p.name, p)).collect();
-                let mut for_path_args_match_impl_params = true;
-                let for_type_id = for_path.id;
-                if let Some(for_type_item) = krate.index.get(&for_type_id) {
-                    if let Some(for_generics) = get_trait_for_type_generics(for_type_item) {
-                        if let Some(for_args_box) = &for_path.args {
-                            if let GenericArgs::AngleBracketed { args: for_args, .. } =
-                                for_args_box.as_ref()
-                            {
-                                if for_generics.params.len() == for_args.len()
-                                    && for_generics.params.len() == impl_params.len()
-                                    && for_generics.where_predicates == imp.generics.where_predicates
-                                {
-                                    for (for_arg, for_param) in
-                                        for_args.iter().zip(for_generics.params.iter())
-                                    {
-                                        let for_arg_name = match for_arg {
-                                            GenericArg::Lifetime(name) => Some(name),
-                                            GenericArg::Type(Type::Generic(param)) => Some(param),
-                                            _ => None,
-                                        };
-                                        if let Some(for_arg_name) = for_arg_name {
-                                            if let Some(impl_param) = impl_params.get(for_arg_name)
-                                            {
-                                                match (&impl_param.kind, &for_param.kind) {
-                                                    (rustdoc_types::GenericParamDefKind::Lifetime { outlives: impl_outlives }, rustdoc_types::GenericParamDefKind::Lifetime { outlives: for_outlives }) => {
-                                                        if impl_outlives != for_outlives {
-                                                            for_path_args_match_impl_params = false;
-                                                        }
-                                                    },
-                                                    (rustdoc_types::GenericParamDefKind::Type { bounds: impl_bounds, .. }, rustdoc_types::GenericParamDefKind::Type { bounds: for_bounds, .. }) => {
-                                                        if impl_bounds != for_bounds {
-                                                            for_path_args_match_impl_params = false;
-                                                        }
-                                                    },
-                                                    (rustdoc_types::GenericParamDefKind::Const { .. }, rustdoc_types::GenericParamDefKind::Const { .. }) => {},
-                                                    _ => {
-                                                        for_path_args_match_impl_params = false;
-                                                        break;
-                                                    }
-                                                }
-                                            } else {
-                                                for_path_args_match_impl_params = false;
-                                                break;
-                                            }
-                                        } else {
-                                            for_path_args_match_impl_params = false;
-                                            break;
-                                        }
-                                    }
-                                } else {
-                                    for_path_args_match_impl_params = false;
-                                }
-                            } else {
-                                for_path_args_match_impl_params = false;
-                            }
-                        } else if !impl_params.is_empty() {
-                            for_path_args_match_impl_params = false;
-                        }
-                    } else {
-                        for_path_args_match_impl_params = false;
-                    }
-                } else {
-                    for_path_args_match_impl_params = false;
-                }
-                if for_path_args_match_impl_params && imp.generics.where_predicates.is_empty() {
-                    is_passthrough_generic_impl = true;
-                }
-            }
-        }
+        let is_passthrough_generic_impl = is_passthrough_generic_impl_check(imp, trait_path, krate);
 
         let category = if imp.is_synthetic {
             TraitImplCategory::Auto
