@@ -2,7 +2,7 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::cognitive_complexity)] // Allow complex functions for now
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result}; // Add Context
 use cargo_manifest::{FeatureSet, Manifest as CargoManifest}; // Renamed Manifest to CargoManifest
 use graph::{Edge, IdGraph, ResolvedModule};
 use rustdoc_json::Builder;
@@ -14,7 +14,7 @@ use rustdoc_types::{
 use std::collections::{HashMap, HashSet}; // Use HashMap instead of BTreeMap where needed
 use std::fmt::Write as FmtWrite; // Use FmtWrite alias
 use std::hash::{Hash, Hasher};
-use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
+use std::path::Path as FilePath; // Corrected use statement
 use tracing::{debug, info, trace, warn};
 // Add fs import for CrateExtraReader
 use std::fs;
