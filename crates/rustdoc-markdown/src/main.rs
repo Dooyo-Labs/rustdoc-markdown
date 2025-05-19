@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use cargo_manifest::Manifest;
 use clap::Parser;
-use rustdoc_markdown::{cratesio, graph, run_rustdoc, Printer};
+use rustdoc_markdown::{cratesio, graph, run_rustdoc, CrateExtraReader, Printer}; // Added CrateExtraReader
 use rustdoc_types::{Crate, Id, ItemEnum};
 use std::collections::HashSet;
 use tracing_subscriber::EnvFilter;
@@ -285,65 +285,16 @@ async fn main() -> Result<()> {
             if !print_args.paths.is_empty() {
                 printer = printer.paths(&print_args.paths);
             }
-            if !print_args.no_readme {
-                let readme_md_path = crate_dir.join("README.md");
-                let readme_path = crate_dir.join("README");
-                let readme_file_to_read = if readme_md_path.exists() {
-                    Some(readme_md_path)
-                } else if readme_path.exists() {
-                    Some(readme_path)
-                } else {
-                    None
-                };
 
-                if let Some(path) = readme_file_to_read {
-                    match fs::read_to_string(&path) {
-                        Ok(content) => printer = printer.readme(content),
-                        Err(_) => warn!("Failed to read README at {}", path.display()),
-                    }
-                } else {
-                    info!("No README found in crate root.");
-                }
+            let mut extra_reader = CrateExtraReader::new();
+            if print_args.no_readme {
+                extra_reader = extra_reader.no_readme();
             }
-
-            if !print_args.no_examples {
-                let examples_dir = crate_dir.join("examples");
-                if examples_dir.is_dir() {
-                    let ex_readme_md_path = examples_dir.join("README.md");
-                    let ex_readme_path = examples_dir.join("README");
-                    if let Some(path) = ex_readme_md_path
-                        .exists()
-                        .then_some(ex_readme_md_path)
-                        .or_else(|| ex_readme_path.exists().then_some(ex_readme_path))
-                    {
-                        if let Ok(content) = fs::read_to_string(path) {
-                            printer = printer.examples_readme(content);
-                        }
-                    }
-
-                    if let Ok(entries) = fs::read_dir(&examples_dir) {
-                        let mut found_examples = Vec::new();
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
-                                if let Some(filename_str) =
-                                    path.file_name().and_then(|n| n.to_str())
-                                {
-                                    if let Ok(content) = fs::read_to_string(&path) {
-                                        found_examples.push((filename_str.to_string(), content));
-                                    }
-                                }
-                            }
-                        }
-                        if !found_examples.is_empty() {
-                            found_examples.sort_by(|a, b| a.0.cmp(&b.0));
-                            for (name, content) in found_examples {
-                                printer = printer.example(name, content);
-                            }
-                        }
-                    }
-                }
+            if print_args.no_examples {
+                extra_reader = extra_reader.no_examples();
             }
+            let crate_extra = extra_reader.read(&crate_dir)?;
+            printer = printer.crate_extra(crate_extra);
 
             if print_args.include_other {
                 printer = printer.include_other();

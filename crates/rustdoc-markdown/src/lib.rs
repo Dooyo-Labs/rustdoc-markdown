@@ -16,6 +16,8 @@ use std::fmt::Write as FmtWrite; // Use FmtWrite alias
 use std::hash::{Hash, Hasher};
 use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tracing::{debug, info, trace, warn};
+// Add fs import for CrateExtraReader
+use std::fs;
 
 // Import pulldown-cmark related items
 use pulldown_cmark::{Event, Parser as CmarkParser, Tag, TagEnd}; // Import Tag, TagEnd
@@ -25,6 +27,107 @@ pub const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 
 pub mod cratesio;
 pub mod graph;
+
+// --- CrateExtra Structures ---
+
+/// Holds extra crate information like README and examples.
+#[derive(Debug, Clone, Default)]
+pub struct CrateExtra {
+    pub readme_content: Option<String>,
+    pub examples_readme_content: Option<String>,
+    pub examples: Vec<(String, String)>, // Vec of (filename, content)
+}
+
+/// Builder for reading `CrateExtra` data.
+#[derive(Debug, Default)]
+pub struct CrateExtraReader {
+    read_readme: bool,
+    read_examples: bool,
+}
+
+impl CrateExtraReader {
+    /// Creates a new `CrateExtraReader` with default settings (read README and examples).
+    pub fn new() -> Self {
+        Self {
+            read_readme: true,
+            read_examples: true,
+        }
+    }
+
+    /// Disables reading of the crate's main README file.
+    pub fn no_readme(mut self) -> Self {
+        self.read_readme = false;
+        self
+    }
+
+    /// Disables reading of examples from the `examples/` directory.
+    pub fn no_examples(mut self) -> Self {
+        self.read_examples = false;
+        self
+    }
+
+    /// Reads the extra crate information from the given crate directory.
+    pub fn read(&self, crate_dir: &FilePath) -> Result<CrateExtra> {
+        let mut extra = CrateExtra::default();
+
+        if self.read_readme {
+            let readme_md_path = crate_dir.join("README.md");
+            let readme_path = crate_dir.join("README");
+            let readme_file_to_read = if readme_md_path.exists() {
+                Some(readme_md_path)
+            } else if readme_path.exists() {
+                Some(readme_path)
+            } else {
+                None
+            };
+
+            if let Some(path) = readme_file_to_read {
+                match fs::read_to_string(&path) {
+                    Ok(content) => extra.readme_content = Some(content),
+                    Err(_) => warn!("Failed to read README at {}", path.display()),
+                }
+            } else {
+                info!("No README found in crate root.");
+            }
+        }
+
+        if self.read_examples {
+            let examples_dir = crate_dir.join("examples");
+            if examples_dir.is_dir() {
+                let ex_readme_md_path = examples_dir.join("README.md");
+                let ex_readme_path = examples_dir.join("README");
+                if let Some(path) = ex_readme_md_path
+                    .exists()
+                    .then_some(ex_readme_md_path)
+                    .or_else(|| ex_readme_path.exists().then_some(ex_readme_path))
+                {
+                    if let Ok(content) = fs::read_to_string(path) {
+                        extra.examples_readme_content = Some(content);
+                    }
+                }
+
+                if let Ok(entries) = fs::read_dir(&examples_dir) {
+                    let mut found_examples = Vec::new();
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                            if let Some(filename_str) = path.file_name().and_then(|n| n.to_str()) {
+                                if let Ok(content) = fs::read_to_string(&path) {
+                                    found_examples.push((filename_str.to_string(), content));
+                                }
+                            }
+                        }
+                    }
+                    if !found_examples.is_empty() {
+                        found_examples.sort_by(|a, b| a.0.cmp(&b.0));
+                        extra.examples = found_examples;
+                    }
+                }
+            }
+        }
+        Ok(extra)
+    }
+}
 
 // --- Manifest Data ---
 
@@ -1996,7 +2099,7 @@ struct ModuleTree {
 ///
 /// It uses a builder pattern for configuration. The typical workflow is:
 /// 1. Create a `Printer` with `Printer::new(&manifest, &krate)`.
-/// 2. Configure it using builder methods like `paths()`, `readme()`, etc.
+/// 2. Configure it using builder methods like `paths()`, `crate_extra()`, etc.
 /// 3. Call `print()` to generate the Markdown string.
 ///
 /// The "Common Traits" feature summarizes traits frequently implemented by types within
@@ -2006,9 +2109,7 @@ pub struct Printer<'a> {
     manifest_data: CrateManifestData,
     // Builder options
     paths: Vec<String>,
-    readme_content: Option<String>,
-    examples_readme_content: Option<String>,
-    examples: Vec<(String, String)>, // Store multiple examples
+    crate_extra: Option<CrateExtra>,
     include_other: bool,
     template_mode: bool,
     no_common_traits: bool,
@@ -2038,9 +2139,7 @@ impl<'a> Printer<'a> {
             krate,
             manifest_data: CrateManifestData::from_cargo_manifest(manifest),
             paths: Vec::new(),
-            readme_content: None,
-            examples_readme_content: None,
-            examples: Vec::new(),
+            crate_extra: None,
             include_other: false,
             template_mode: false,
             no_common_traits: false,
@@ -2070,33 +2169,9 @@ impl<'a> Printer<'a> {
         self
     }
 
-    /// Adds README content to be included in the documentation.
-    ///
-    /// The content should be a string containing the Markdown text of the README.
-    /// It will be placed after the crate's manifest details and before common traits or module listings.
-    /// Headers within the README will be adjusted to fit the overall document structure.
-    pub fn readme(mut self, content: String) -> Self {
-        self.readme_content = Some(content);
-        self
-    }
-
-    /// Adds an example to be included in the "Examples Appendix".
-    ///
-    /// # Arguments
-    ///
-    /// * `name`: The filename or identifier for the example (e.g., "simple.rs").
-    /// * `content`: The Rust code content of the example.
-    ///
-    /// Examples are listed at the end of the generated documentation.
-    pub fn example(mut self, name: String, content: String) -> Self {
-        self.examples.push((name, content));
-        self
-    }
-
-    /// Adds the content of `examples/README.md` to be included before other examples
-    /// in the "Examples Appendix".
-    pub fn examples_readme(mut self, content: String) -> Self {
-        self.examples_readme_content = Some(content);
+    /// Adds `CrateExtra` data (README, examples) to be included in the documentation.
+    pub fn crate_extra(mut self, extra: CrateExtra) -> Self {
+        self.crate_extra = Some(extra);
         self
     }
 
@@ -2147,7 +2222,12 @@ impl<'a> Printer<'a> {
             "Generating documentation for {} selected items.",
             self.selected_ids.len()
         );
-        if self.selected_ids.is_empty() && self.examples.is_empty() {
+        if self.selected_ids.is_empty()
+            && self
+                .crate_extra
+                .as_ref()
+                .map_or(true, |ce| ce.examples.is_empty())
+        {
             return Ok("No items selected for documentation and no examples found.".to_string());
         }
 
@@ -4082,9 +4162,7 @@ impl<'a> Printer<'a> {
             krate: self.krate,
             manifest_data: self.manifest_data.clone(),
             paths: self.paths.clone(),
-            readme_content: self.readme_content.clone(),
-            examples_readme_content: self.examples_readme_content.clone(),
-            examples: self.examples.clone(),
+            crate_extra: self.crate_extra.clone(),
             include_other: self.include_other,
             template_mode: self.template_mode,
             no_common_traits: self.no_common_traits,
@@ -4302,23 +4380,23 @@ impl<'a> Printer<'a> {
         // Increment H2 counter for the next section (README or Common Traits)
         self.post_increment_current_level();
 
-        // Print README content if available
-        if let Some(readme) = &self.readme_content {
-            info!("Injecting README content.");
-            let section_level = self.get_current_header_level(); // Should be 2
-            let header_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "\n{} {} README\n",
-                "#".repeat(section_level),
-                header_prefix
-            )
-            .unwrap();
-            // Adjust headers starting from level 2 (since it's under the H1 crate header)
-            // Use the new adjust_markdown_headers function
-            let adjusted_readme = adjust_markdown_headers(readme, section_level);
-            writeln!(self.output, "{}\n", adjusted_readme).unwrap();
-            self.post_increment_current_level(); // Increment H2 counter
+        // Print README content if available from CrateExtra
+        if let Some(extra) = &self.crate_extra {
+            if let Some(readme) = &extra.readme_content {
+                info!("Injecting README content.");
+                let section_level = self.get_current_header_level(); // Should be 2
+                let header_prefix = self.get_header_prefix();
+                writeln!(
+                    self.output,
+                    "\n{} {} README\n",
+                    "#".repeat(section_level),
+                    header_prefix
+                )
+                .unwrap();
+                let adjusted_readme = adjust_markdown_headers(readme, section_level);
+                writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+                self.post_increment_current_level(); // Increment H2 counter
+            }
         }
 
         // Print Crate Common Traits Section (H2)
@@ -4529,41 +4607,41 @@ impl<'a> Printer<'a> {
         }
 
         // --- Examples Appendix ---
-        // Clone self.examples before iterating to avoid borrow checker issues with mutable self calls
-        let examples_clone = self.examples.clone();
-        if !examples_clone.is_empty() || self.examples_readme_content.is_some() {
-            let examples_section_level = self.get_current_header_level(); // Should be 2
-            let header_prefix = self.get_header_prefix();
-            writeln!(
-                self.output,
-                "\n{} {} Examples Appendix\n",
-                "#".repeat(examples_section_level),
-                header_prefix
-            )
-            .unwrap();
-            self.push_level(); // Push for H3 example headers
-
-            if let Some(readme) = &self.examples_readme_content {
-                let adjusted_readme = adjust_markdown_headers(readme, examples_section_level);
-                writeln!(self.output, "{}\n", adjusted_readme).unwrap();
-            }
-
-            for (filename, content) in &examples_clone {
-                let example_header_level = self.get_current_header_level(); // Should be 3
-                let example_prefix = self.get_header_prefix();
+        if let Some(extra) = &self.crate_extra {
+            if !extra.examples.is_empty() || extra.examples_readme_content.is_some() {
+                let examples_section_level = self.get_current_header_level(); // Should be 2
+                let header_prefix = self.get_header_prefix();
                 writeln!(
                     self.output,
-                    "{} {} `{}`\n",
-                    "#".repeat(example_header_level),
-                    example_prefix,
-                    filename
+                    "\n{} {} Examples Appendix\n",
+                    "#".repeat(examples_section_level),
+                    header_prefix
                 )
                 .unwrap();
-                writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
-                self.post_increment_current_level(); // Increment H3 counter for next example
+                self.push_level(); // Push for H3 example headers
+
+                if let Some(readme) = &extra.examples_readme_content {
+                    let adjusted_readme = adjust_markdown_headers(readme, examples_section_level);
+                    writeln!(self.output, "{}\n", adjusted_readme).unwrap();
+                }
+
+                for (filename, content) in &extra.examples {
+                    let example_header_level = self.get_current_header_level(); // Should be 3
+                    let example_prefix = self.get_header_prefix();
+                    writeln!(
+                        self.output,
+                        "{} {} `{}`\n",
+                        "#".repeat(example_header_level),
+                        example_prefix,
+                        filename
+                    )
+                    .unwrap();
+                    writeln!(self.output, "```rust\n{}\n```\n", content).unwrap();
+                    self.post_increment_current_level(); // Increment H3 counter for next example
+                }
+                self.pop_level(); // Pop H3 example level
+                self.post_increment_current_level(); // Increment H2 counter for next top-level section
             }
-            self.pop_level(); // Pop H3 example level
-            self.post_increment_current_level(); // Increment H2 counter for next top-level section
         }
         self.output
     }
