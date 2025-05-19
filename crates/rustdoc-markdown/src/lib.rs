@@ -27,6 +27,8 @@ use pulldown_cmark_to_cmark::cmark;
 pub const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 
 pub mod cratesio;
+
+#[doc(hidden)]
 pub mod graph;
 
 // --- CrateExtra Structures ---
@@ -205,16 +207,17 @@ pub fn run_rustdoc(
 
     info!("Generating rustdoc JSON using rustdoc-json crate...");
 
+    let crate_name_underscore = crate_name.replace('-', "_");
     let json_output_path = crate_dir
         .join("target/doc")
-        .join(format!("{}.json", crate_name));
+        .join(format!("{}.json", crate_name_underscore));
 
     // Avoid regenerating if exists
     if !json_output_path.exists() {
         let mut builder = Builder::default()
             .manifest_path(manifest_path)
             .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
-            .target_dir(crate_dir.join("target/doc")) // Set the output directory
+            .target_dir(crate_dir.join("target")) // Set the output directory
             .package(crate_name); // Specify the package
 
         // Apply feature flags

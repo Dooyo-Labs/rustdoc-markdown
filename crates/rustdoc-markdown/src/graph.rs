@@ -1469,6 +1469,7 @@ fn dump_node(
 }
 
 /// Dumps a subset of the dependency graph to a writer.
+#[doc(hidden)]
 pub fn dump_graph_subset(
     graph: &IdGraph, // Use the potentially filtered graph
     krate: &Crate,
