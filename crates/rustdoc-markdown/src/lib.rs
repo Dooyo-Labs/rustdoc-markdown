@@ -357,64 +357,55 @@ pub fn run_rustdoc(
         .join("target/doc")
         .join(format!("{}.json", crate_name_underscore));
 
-    // Avoid regenerating if exists
-    if !json_output_path.exists() {
-        let mut builder = Builder::default()
-            .manifest_path(manifest_path)
-            .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
-            .target_dir(crate_dir.join("target")) // Set the output directory
-            .package(crate_name); // Specify the package
+    let mut builder = Builder::default()
+        .manifest_path(manifest_path)
+        .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
+        .target_dir(crate_dir.join("target")) // Set the output directory
+        .package(crate_name); // Specify the package
 
-        // Apply feature flags
-        if let Some(features_str) = features {
-            let feature_list: Vec<String> =
-                features_str.split_whitespace().map(String::from).collect();
-            if !feature_list.is_empty() {
-                info!("Enabling features: {:?}", feature_list);
-                builder = builder.features(feature_list);
-            }
+    // Apply feature flags
+    if let Some(features_str) = features {
+        let feature_list: Vec<String> = features_str.split_whitespace().map(String::from).collect();
+        if !feature_list.is_empty() {
+            info!("Enabling features: {:?}", feature_list);
+            builder = builder.features(feature_list);
         }
+    }
 
-        if no_default_features {
-            info!("Disabling default features.");
-            builder = builder.no_default_features(true);
+    if no_default_features {
+        info!("Disabling default features.");
+        builder = builder.no_default_features(true);
+    }
+
+    // Apply target
+    if let Some(target_str) = target {
+        info!("Setting target: {}", target_str);
+        builder = builder.target(target_str.to_string());
+    }
+
+    // Generate the JSON file
+    match builder.build() {
+        Ok(s) => {
+            info!("Generated rustdoc JSON at: {}", s.display());
         }
+        Err(e) => {
+            // Attempt to read stderr if possible (rustdoc-json might not expose it easily)
+            eprintln!("--- rustdoc-json build failed ---");
+            eprintln!("{:?}", e); // Print the error itself
 
-        // Apply target
-        if let Some(target_str) = target {
-            info!("Setting target: {}", target_str);
-            builder = builder.target(target_str.to_string());
-        }
-
-        // Generate the JSON file
-        match builder.build() {
-            Ok(s) => {
-                info!("Generated rustdoc JSON at: {}", s.display());
-            }
-            Err(e) => {
-                // Attempt to read stderr if possible (rustdoc-json might not expose it easily)
-                eprintln!("--- rustdoc-json build failed ---");
-                eprintln!("{:?}", e); // Print the error itself
-
-                // Try to read potential rustdoc output if the file exists but is invalid
-                if json_output_path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&json_output_path) {
-                        eprintln!(
-                            "\n--- Potential content of {}: ---\n{}",
-                            json_output_path.display(),
-                            content
-                        );
-                    }
+            // Try to read potential rustdoc output if the file exists but is invalid
+            if json_output_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&json_output_path) {
+                    eprintln!(
+                        "\n--- Potential content of {}: ---\n{}",
+                        json_output_path.display(),
+                        content
+                    );
                 }
-
-                bail!("rustdoc-json failed: {}", e);
             }
+
+            bail!("rustdoc-json failed: {}", e);
         }
-    } else {
-        info!(
-            "rustdoc JSON already exists at: {}",
-            json_output_path.display()
-        );
     }
 
     info!("Parsing rustdoc JSON: {}", json_output_path.display());
