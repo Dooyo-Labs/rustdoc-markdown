@@ -2239,7 +2239,7 @@ impl<'a> Printer<'a> {
             && self
                 .crate_extra
                 .as_ref()
-                .map_or(true, |ce| ce.examples.is_empty())
+                .is_none_or(|ce| ce.examples.is_empty())
         {
             return Ok("No items selected for documentation and no examples found.".to_string());
         }

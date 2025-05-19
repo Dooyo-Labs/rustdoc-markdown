@@ -6,7 +6,7 @@ use rustdoc_types::{Crate, Id, ItemEnum};
 use std::collections::HashSet;
 use tracing_subscriber::EnvFilter;
 // Keep this for parse_id
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufWriter, Write as IoWrite}; // Use IoWrite alias
 use std::path::PathBuf;
 use tracing::{info, warn};
