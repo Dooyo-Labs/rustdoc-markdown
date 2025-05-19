@@ -848,7 +848,6 @@ impl Hash for FormattedTraitImpl {
         self.is_unsafe_impl.hash(state);
         self.is_negative.hash(state);
         self.category.hash(state); // Hash category
-                                   // Do not hash formatted_markdown_list_entry or impl_id for common trait grouping
     }
 }
 
@@ -2133,13 +2132,12 @@ impl<'a> Printer<'a> {
     /// Pre-calculates common traits for the entire crate.
     fn calculate_crate_common_traits(
         krate: &Crate,
-        selected_ids: &HashSet<Id>, // Accept any lifetime for the HashSet ref
+        selected_ids: &HashSet<Id>,
         no_common_traits: bool,
-        printer: &Printer, // Pass printer for FormattedTraitImpl::from_impl
+        printer: &Printer,
     ) -> (HashSet<FormattedTraitImpl>, HashSet<Id>) {
         let mut all_type_ids_with_impls = HashSet::new();
         if no_common_traits {
-            // Still calculate all_type_ids_with_impls for other logic if needed
             for item in krate.index.values() {
                 if let ItemEnum::Impl(imp) = &item.inner {
                     if let Some(for_type_id) = get_type_id(&imp.for_) {
@@ -2152,7 +2150,10 @@ impl<'a> Printer<'a> {
             return (HashSet::new(), all_type_ids_with_impls);
         }
 
-        let mut trait_counts: HashMap<FormattedTraitImpl, usize> = HashMap::new();
+        // Trait Path ID -> (FormattedTraitImpl -> Count)
+        let mut trait_format_counts: HashMap<Id, HashMap<FormattedTraitImpl, usize>> =
+            HashMap::new();
+
         for item in krate.index.values() {
             if let ItemEnum::Impl(imp) = &item.inner {
                 if let Some(for_type_id) = get_type_id(&imp.for_) {
@@ -2162,7 +2163,11 @@ impl<'a> Printer<'a> {
                             let norm_impl = FormattedTraitImpl::from_impl(
                                 imp, None, trait_path, krate, printer,
                             );
-                            *trait_counts.entry(norm_impl).or_insert(0) += 1;
+                            *trait_format_counts
+                                .entry(trait_path.id)
+                                .or_default()
+                                .entry(norm_impl)
+                                .or_insert(0) += 1;
                         }
                     }
                 }
@@ -2178,29 +2183,78 @@ impl<'a> Printer<'a> {
             return (common_traits_set, all_type_ids_with_impls);
         }
 
-        let threshold = (all_type_ids_with_impls.len() as f32 * 0.5).ceil() as usize;
+        let type_count_threshold = (all_type_ids_with_impls.len() as f32 * 0.5).ceil() as usize;
         debug!(
-            "Crate common trait threshold: {} (out of {} types)",
-            threshold,
+            "Crate common trait threshold (types implementing): {} (out of {} types)",
+            type_count_threshold,
             all_type_ids_with_impls.len()
         );
 
-        for (norm_impl, count) in trait_counts {
-            if count >= threshold {
-                common_traits_set.insert(norm_impl.clone());
-                debug!(
-                    "Identified crate-common trait: {:?} (implemented by {} of {} types)",
-                    norm_impl.formatted_markdown_list_entry, // Use formatted entry for debug
-                    count,
-                    all_type_ids_with_impls.len()
-                );
-            } else {
+        for (trait_id, format_map) in trait_format_counts {
+            let total_implementations_for_trait = format_map.values().sum::<usize>();
+
+            if total_implementations_for_trait < type_count_threshold {
                 trace!(
-                    "Trait {:?} not common enough ({} of {} types)",
-                    norm_impl.formatted_markdown_list_entry, // Use formatted entry for debug
-                    count,
-                    all_type_ids_with_impls.len()
+                    "Trait ID {:?} not common enough ({} implementations, need {})",
+                    trait_id,
+                    total_implementations_for_trait,
+                    type_count_threshold
                 );
+                continue;
+            }
+
+            // Check for mixed positive/negative implementations
+            let mut has_positive = false;
+            let mut has_negative = false;
+            for f_impl in format_map.keys() {
+                if f_impl.is_negative {
+                    has_negative = true;
+                } else {
+                    has_positive = true;
+                }
+            }
+            if has_positive && has_negative {
+                warn!(
+                    "Trait ID {:?} has mixed positive and negative implementations, cannot be common.",
+                    trait_id
+                );
+                continue;
+            }
+
+            if format_map.len() == 1 {
+                // Only one format for this trait path
+                if let Some(formatted_impl) = format_map.keys().next() {
+                    common_traits_set.insert(formatted_impl.clone());
+                    debug!(
+                        "Identified crate-common trait (single format): {:?} for trait ID {:?}",
+                        formatted_impl.formatted_markdown_list_entry, trait_id
+                    );
+                }
+            } else {
+                // Multiple formats, check if "Simple" is predominant
+                let simple_format_count = format_map
+                    .iter()
+                    .find(|(f_impl, _)| f_impl.category == TraitImplCategory::Simple)
+                    .map_or(0, |(_, count)| *count);
+
+                if simple_format_count * 2 > total_implementations_for_trait {
+                    // Simple format is implemented by >50% of *this trait's* implementors
+                    if let Some(simple_impl) = format_map
+                        .keys()
+                        .find(|f_impl| f_impl.category == TraitImplCategory::Simple)
+                    {
+                        common_traits_set.insert(simple_impl.clone());
+                        debug!(
+                            "Identified crate-common trait (simple format predominant): {:?} for trait ID {:?}",
+                            simple_impl.formatted_markdown_list_entry, trait_id
+                        );
+                    }
+                } else {
+                    trace!(
+                        "Trait ID {:?} has multiple formats, but Simple is not predominant ({} of {}).",
+                        trait_id, simple_format_count, total_implementations_for_trait
+                    );
+                }
             }
         }
         (common_traits_set, all_type_ids_with_impls)
@@ -2213,84 +2267,136 @@ impl<'a> Printer<'a> {
         }
 
         let mut module_common_traits = self.crate_common_traits.clone();
+        let mut module_types_considered = HashSet::new();
 
         if let Some(resolved_mod) = self.resolved_modules.get(module_id) {
-            let mut module_types_considered = HashSet::new();
-            for item_id in &resolved_mod.items {
-                if let Some(item) = self.krate.index.get(item_id) {
+            for item_id_in_mod in &resolved_mod.items {
+                if let Some(item) = self.krate.index.get(item_id_in_mod) {
                     if matches!(
                         item.inner,
                         ItemEnum::Struct(_)
                             | ItemEnum::Enum(_)
                             | ItemEnum::Union(_)
                             | ItemEnum::Primitive(_)
-                    ) && self.selected_ids.contains(item_id)
+                    ) && self.selected_ids.contains(item_id_in_mod)
                     {
                         let has_impls = self.krate.index.values().any(|idx_item| {
                             if let ItemEnum::Impl(imp) = &idx_item.inner {
                                 if let Some(for_id) = get_type_id(&imp.for_) {
-                                    return for_id == *item_id;
+                                    return for_id == *item_id_in_mod;
                                 }
                             }
                             false
                         });
                         if has_impls {
-                            module_types_considered.insert(*item_id);
+                            module_types_considered.insert(*item_id_in_mod);
                         }
                     }
                 }
             }
-            let module_types_with_impls_count = module_types_considered.len();
-            if module_types_with_impls_count <= 1 {
-                return module_common_traits;
-            }
+        }
 
-            let mut trait_counts: HashMap<FormattedTraitImpl, usize> = HashMap::new();
-            for item_id in &module_types_considered {
-                for krate_item in self.krate.index.values() {
-                    if let ItemEnum::Impl(imp) = &krate_item.inner {
-                        if let Some(for_id) = get_type_id(&imp.for_) {
-                            if for_id == *item_id {
-                                if let Some(trait_path) = &imp.trait_ {
-                                    let norm_impl = FormattedTraitImpl::from_impl(
-                                        imp, None, trait_path, self.krate, self,
-                                    );
-                                    *trait_counts.entry(norm_impl).or_insert(0) += 1;
-                                }
+        let module_types_with_impls_count = module_types_considered.len();
+        if module_types_with_impls_count <= 1 {
+            return module_common_traits;
+        }
+
+        let mut trait_format_counts: HashMap<Id, HashMap<FormattedTraitImpl, usize>> =
+            HashMap::new();
+
+        for item_id_in_mod in &module_types_considered {
+            for krate_item in self.krate.index.values() {
+                if let ItemEnum::Impl(imp) = &krate_item.inner {
+                    if let Some(for_id) = get_type_id(&imp.for_) {
+                        if for_id == *item_id_in_mod {
+                            if let Some(trait_path) = &imp.trait_ {
+                                let norm_impl = FormattedTraitImpl::from_impl(
+                                    imp, None, trait_path, self.krate, self,
+                                );
+                                *trait_format_counts
+                                    .entry(trait_path.id)
+                                    .or_default()
+                                    .entry(norm_impl)
+                                    .or_insert(0) += 1;
                             }
                         }
                     }
                 }
             }
+        }
 
-            let threshold = (module_types_with_impls_count as f32 * 0.5).ceil() as usize;
-            debug!(
-                "Module {:?} common trait threshold: {} (out of {} types in module)",
-                module_id, threshold, module_types_with_impls_count
-            );
+        let type_count_threshold = (module_types_with_impls_count as f32 * 0.5).ceil() as usize;
+        debug!(
+            "Module {:?} common trait threshold (types implementing): {} (out of {} types in module)",
+            module_id, type_count_threshold, module_types_with_impls_count
+        );
 
-            for (norm_impl, count) in trait_counts {
-                if count >= threshold {
-                    if module_common_traits.insert(norm_impl.clone()) {
+        for (trait_id, format_map) in trait_format_counts {
+            let total_implementations_for_trait = format_map.values().sum::<usize>();
+
+            if total_implementations_for_trait < type_count_threshold {
+                trace!(
+                    "Module {:?} trait ID {:?} not common enough ({} implementations, need {})",
+                    module_id,
+                    trait_id,
+                    total_implementations_for_trait,
+                    type_count_threshold
+                );
+                continue;
+            }
+
+            let mut has_positive = false;
+            let mut has_negative = false;
+            for f_impl in format_map.keys() {
+                if f_impl.is_negative {
+                    has_negative = true;
+                } else {
+                    has_positive = true;
+                }
+            }
+            if has_positive && has_negative {
+                warn!(
+                    "Module {:?} trait ID {:?} has mixed positive and negative implementations, cannot be common.",
+                    module_id, trait_id
+                );
+                continue;
+            }
+
+            if format_map.len() == 1 {
+                if let Some(formatted_impl) = format_map.keys().next() {
+                    if module_common_traits.insert(formatted_impl.clone()) {
                         debug!(
-                            "Identified module-specific common trait for {:?}: {:?} (implemented by {} of {} module types)",
+                            "Identified module-specific common trait (single format) for {:?}: {:?} for trait ID {:?}",
                             self.krate.paths.get(module_id).map(|p|p.path.join("::")).unwrap_or_default(),
-                            norm_impl.formatted_markdown_list_entry, // Use formatted entry
-                            count,
-                            module_types_with_impls_count
+                            formatted_impl.formatted_markdown_list_entry,
+                            trait_id
                         );
+                    }
+                }
+            } else {
+                let simple_format_count = format_map
+                    .iter()
+                    .find(|(f_impl, _)| f_impl.category == TraitImplCategory::Simple)
+                    .map_or(0, |(_, count)| *count);
+
+                if simple_format_count * 2 > total_implementations_for_trait {
+                    if let Some(simple_impl) = format_map
+                        .keys()
+                        .find(|f_impl| f_impl.category == TraitImplCategory::Simple)
+                    {
+                        if module_common_traits.insert(simple_impl.clone()) {
+                            debug!(
+                                "Identified module-specific common trait (simple format predominant) for {:?}: {:?} for trait ID {:?}",
+                                self.krate.paths.get(module_id).map(|p|p.path.join("::")).unwrap_or_default(),
+                                simple_impl.formatted_markdown_list_entry,
+                                trait_id
+                            );
+                        }
                     }
                 } else {
                     trace!(
-                        "Module {:?} trait {:?} not common enough ({} of {} module types)",
-                        self.krate
-                            .paths
-                            .get(module_id)
-                            .map(|p| p.path.join("::"))
-                            .unwrap_or_default(),
-                        norm_impl.formatted_markdown_list_entry, // Use formatted entry
-                        count,
-                        module_types_with_impls_count
+                        "Module {:?} trait ID {:?} has multiple formats, but Simple is not predominant ({} of {}).",
+                        module_id, trait_id, simple_format_count, total_implementations_for_trait
                     );
                 }
             }
@@ -3466,35 +3572,44 @@ impl<'a> Printer<'a> {
             .unwrap_or_default();
 
         let mut non_common_trait_impls = Vec::new();
-        let mut missing_module_common = module_common_traits.clone();
+        let mut missing_module_common_trait_paths = HashSet::new(); // Store trait_id of common traits
+
+        for common_trait_format in &module_common_traits {
+            missing_module_common_trait_paths.insert(common_trait_format.trait_id);
+        }
 
         for norm_trait in &trait_impl_data {
-            // Critical: Ensure norm_trait.for_type_id matches target_item_id
-            // This check is now part of the construction of trait_impl_data
-            // and in format_trait_list, so it should be correct here.
+            // Check if this trait's path (trait_id) is among the common trait paths
+            if module_common_traits
+                .iter()
+                .any(|ct| ct.trait_id == norm_trait.trait_id)
+            {
+                // It implements a trait that *could* be common. Remove it from missing.
+                missing_module_common_trait_paths.remove(&norm_trait.trait_id);
 
-            let is_module_common = module_common_traits.contains(norm_trait);
-            if is_module_common {
-                missing_module_common.remove(norm_trait);
-            }
-
-            if !is_module_common {
-                non_common_trait_impls.push(norm_trait.clone());
-            } else {
-                // Mark common trait impl as printed (and its items)
-                if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
-                    self.printed_ids.insert(impl_id, self.get_header_prefix());
-                    for assoc_item_id in &trait_impl.items {
-                        if self.selected_ids.contains(assoc_item_id) {
-                            self.printed_ids
-                                .insert(*assoc_item_id, self.get_header_prefix());
+                // Now check if the *specific format* of this impl is common
+                if !module_common_traits.contains(norm_trait) {
+                    // The specific format is not common, so list it individually
+                    non_common_trait_impls.push(norm_trait.clone());
+                } else {
+                    // The specific format *is* common, mark it printed
+                    if let Some((trait_impl, impl_id)) = norm_trait.get_impl_data(self.krate) {
+                        self.printed_ids.insert(impl_id, self.get_header_prefix());
+                        for assoc_item_id in &trait_impl.items {
+                            if self.selected_ids.contains(assoc_item_id) {
+                                self.printed_ids
+                                    .insert(*assoc_item_id, self.get_header_prefix());
+                            }
                         }
                     }
                 }
+            } else {
+                // This trait path was never common, so list this specific impl
+                non_common_trait_impls.push(norm_trait.clone());
             }
         }
 
-        if !non_common_trait_impls.is_empty() || !missing_module_common.is_empty() {
+        if !non_common_trait_impls.is_empty() || !missing_module_common_trait_paths.is_empty() {
             let trait_impl_header_level = self.get_current_header_level();
             let header_prefix = self.get_header_prefix();
             writeln!(
@@ -3506,28 +3621,36 @@ impl<'a> Printer<'a> {
             )
             .unwrap();
 
-            if !missing_module_common.is_empty() {
-                let mut sorted_missing_common_traits: Vec<String> = missing_module_common
-                    .iter()
-                    .map(|nt| {
-                        // Use the pre-formatted entry, but extract the `<code>` part
-                        // This is a bit hacky, ideally we'd have the cleaned path separately
-                        let path_part = nt
-                            .formatted_markdown_list_entry
-                            .split_once("`")
-                            .and_then(|(_, rest)| rest.split_once("`"))
-                            .map(|(path, _)| path)
-                            .unwrap_or(&nt.formatted_markdown_list_entry);
-                        path_part.to_string()
-                    })
-                    .collect();
-                sorted_missing_common_traits.sort_unstable();
-                writeln!(
-                    self.output,
-                    "**(Note: Does not implement `{}`)**\n",
-                    sorted_missing_common_traits.join("`, `")
-                )
-                .unwrap();
+            if !missing_module_common_trait_paths.is_empty() {
+                let mut sorted_missing_common_trait_names: Vec<String> =
+                    missing_module_common_trait_paths
+                        .iter()
+                        .filter_map(|trait_id| {
+                            // Find the corresponding FormattedTraitImpl from module_common_traits
+                            // to get its display name (which should be the simple form)
+                            module_common_traits
+                                .iter()
+                                .find(|ct| ct.trait_id == *trait_id)
+                                .map(|ct| {
+                                    ct.formatted_markdown_list_entry
+                                        .split_once("`")
+                                        .and_then(|(_, rest)| rest.split_once("`"))
+                                        .map(|(path, _)| path.to_string())
+                                        .unwrap_or_else(|| {
+                                            format_id_path_canonical(trait_id, self.krate)
+                                        }) // Fallback
+                                })
+                        })
+                        .collect();
+                sorted_missing_common_trait_names.sort_unstable();
+                if !sorted_missing_common_trait_names.is_empty() {
+                    writeln!(
+                        self.output,
+                        "**(Note: Does not implement common trait(s): `{}`)**\n",
+                        sorted_missing_common_trait_names.join("`, `")
+                    )
+                    .unwrap();
+                }
             }
 
             let formatted_list = self.format_trait_list(&non_common_trait_impls);
