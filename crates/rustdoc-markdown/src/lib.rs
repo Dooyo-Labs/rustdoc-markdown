@@ -184,8 +184,28 @@ pub(crate) fn get_type_id(ty: &Type) -> Option<Id> {
 // --- Formatting Helpers ---
 
 /// Formats a list of attributes, filtering out derive attributes.
-/// Returns a string like `#[attr1] #[attr2] ` (with a trailing space if not empty).
+/// Each attribute is on a new line.
+/// Returns a string like `#[attr1]\n#[attr2]\n` (with a trailing newline if not empty).
 fn format_attributes(attrs: &[String]) -> String {
+    let filtered_attrs: Vec<String> = attrs
+        .iter()
+        .filter(|attr| !attr.starts_with("#[derive("))
+        .cloned()
+        .collect();
+
+    if filtered_attrs.is_empty() {
+        String::new()
+    } else {
+        filtered_attrs
+            .iter()
+            .map(|attr| format!("{}\n", attr))
+            .collect::<String>()
+    }
+}
+
+/// Formats a list of attributes, filtering out derive attributes, for inline display.
+/// Returns a string like `#[attr1] #[attr2] ` (with a trailing space if not empty).
+fn format_attributes_inline(attrs: &[String]) -> String {
     let filtered_attrs: Vec<String> = attrs
         .iter()
         .filter(|attr| !attr.starts_with("#[derive("))
@@ -1286,7 +1306,7 @@ fn generate_item_declaration(item: &Item, krate: &Crate, current_module_path: &[
         ItemEnum::Function(f) => {
             // Simplified version for the header: no where clause, but include attributes
             let mut code = String::new();
-            write!(code, "{}", format_attributes(&item.attrs)).unwrap(); // Add attributes
+            write!(code, "{}", format_attributes_inline(&item.attrs)).unwrap(); // Add attributes
             write!(code, "fn {}", name).unwrap();
             // Include only param generics here
             write!(
@@ -1359,7 +1379,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
     write!(
         code,
         "{}pub struct {}",
-        format_attributes(&item.attrs),
+        format_attributes(&item.attrs), // Use multi-line attributes
         name
     )
     .unwrap();
@@ -1387,7 +1407,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                         writeln!(
                             code,
                             "    {}pub {}: {},",
-                            format_attributes(&field_item.attrs),
+                            format_attributes(&field_item.attrs), // Use multi-line attributes
                             field_name,
                             format_type(field_type, krate)
                         )
@@ -1413,7 +1433,7 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
                             if let ItemEnum::StructField(field_type) = &field_item.inner {
                                 Some(format!(
                                     "{}pub {}",
-                                    format_attributes(&field_item.attrs),
+                                    format_attributes(&field_item.attrs), // Use multi-line attributes
                                     format_type(field_type, krate)
                                 ))
                             } else {
@@ -1443,7 +1463,13 @@ fn generate_struct_code_block(item: &Item, s: &Struct, krate: &Crate) -> String 
 fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Enum item should have a name");
     let mut code = String::new();
-    write!(code, "{}pub enum {}", format_attributes(&item.attrs), name).unwrap();
+    write!(
+        code,
+        "{}pub enum {}",
+        format_attributes(&item.attrs), // Use multi-line attributes
+        name
+    )
+    .unwrap();
     let generics_str = format_generics_full(&e.generics, krate);
     write!(code, "{}", generics_str).unwrap();
     write!(code, " {{").unwrap();
@@ -1480,7 +1506,13 @@ fn generate_enum_code_block(item: &Item, e: &Enum, krate: &Crate) -> String {
 fn generate_union_code_block(item: &Item, u: &Union, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Union item should have a name");
     let mut code = String::new();
-    write!(code, "{}pub union {}", format_attributes(&item.attrs), name).unwrap();
+    write!(
+        code,
+        "{}pub union {}",
+        format_attributes(&item.attrs), // Use multi-line attributes
+        name
+    )
+    .unwrap();
     let generics_str = format_generics_full(&u.generics, krate);
     write!(code, "{}", generics_str).unwrap();
     write!(code, " {{").unwrap();
@@ -1495,7 +1527,7 @@ fn generate_union_code_block(item: &Item, u: &Union, krate: &Crate) -> String {
                 writeln!(
                     code,
                     "    {}pub {}: {},",
-                    format_attributes(&field_item.attrs),
+                    format_attributes(&field_item.attrs), // Use multi-line attributes
                     field_name,
                     format_type(field_type, krate)
                 )
@@ -1515,10 +1547,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
     let name = item.name.as_deref().expect("Trait item should have a name");
     let mut code = String::new();
 
-    // Attributes for the trait itself are not typically shown here, but on the `pub trait` line.
-    // However, `format_attributes` is for non-derive. If other attributes are common, they could be added.
-    // For now, sticking to `pub auto/unsafe trait ...`
-    write!(code, "{}", format_attributes(&item.attrs)).unwrap();
+    write!(code, "{}", format_attributes(&item.attrs)).unwrap(); // Use multi-line attributes
 
     if t.is_auto {
         write!(code, "pub auto ").unwrap();
@@ -1578,7 +1607,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                         write!(
                             code,
                             "    {}const {}: {}",
-                            format_attributes(&assoc_item.attrs),
+                            format_attributes(&assoc_item.attrs), // Use multi-line attributes
                             assoc_item.name.as_deref().unwrap_or("_"),
                             format_type(type_, krate)
                         )
@@ -1594,7 +1623,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                         write!(
                             code,
                             "    {}type {}",
-                            format_attributes(&assoc_item.attrs),
+                            format_attributes(&assoc_item.attrs), // Use multi-line attributes
                             assoc_item.name.as_deref().unwrap_or("_")
                         )
                         .unwrap();
@@ -1622,7 +1651,7 @@ fn generate_trait_code_block(item: &Item, t: &Trait, krate: &Crate) -> String {
                         writeln!(
                             code,
                             "    {};",
-                            generate_function_code_block(assoc_item, f, krate) // Attributes handled by generate_function_code_block
+                            generate_function_code_block(assoc_item, f, krate)
                         )
                         .unwrap();
                     }
@@ -1718,7 +1747,7 @@ fn generate_impl_trait_block(imp: &Impl, krate: &Crate) -> Option<String> {
                     write!(
                         assoc_items_content,
                         "    {}const {}: {}",
-                        format_attributes(&assoc_item.attrs),
+                        format_attributes(&assoc_item.attrs), // Use multi-line attributes
                         assoc_item.name.as_deref().unwrap_or("_"),
                         format_type(type_, krate)
                     )
@@ -1735,7 +1764,7 @@ fn generate_impl_trait_block(imp: &Impl, krate: &Crate) -> Option<String> {
                     write!(
                         assoc_items_content,
                         "    {}type {}",
-                        format_attributes(&assoc_item.attrs),
+                        format_attributes(&assoc_item.attrs), // Use multi-line attributes
                         assoc_item.name.as_deref().unwrap_or("_")
                     )
                     .unwrap();
@@ -1783,7 +1812,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
     let mut code = String::new();
 
     // Attributes/Keywords
-    write!(code, "{}", format_attributes(&item.attrs)).unwrap(); // Add attributes
+    write!(code, "{}", format_attributes_inline(&item.attrs)).unwrap(); // Use inline attributes
     write!(code, "pub ").unwrap();
     if f.header.is_const {
         write!(code, "const ").unwrap();
@@ -1844,7 +1873,7 @@ fn generate_function_code_block(item: &Item, f: &Function, krate: &Crate) -> Str
 /// Formats a single enum variant's definition for the code block.
 fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String {
     let name = item.name.as_deref().unwrap_or("{Unnamed}");
-    let attrs_str = format_attributes(&item.attrs);
+    let attrs_str = format_attributes(&item.attrs); // Use multi-line attributes
     match &v.kind {
         VariantKind::Plain => format!("{}{}", attrs_str, name),
         VariantKind::Tuple(fields) => {
@@ -1858,8 +1887,8 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                         .and_then(|field_item| {
                             if let ItemEnum::StructField(ty) = &field_item.inner {
                                 Some(format!(
-                                    "{}{}", // No pub for tuple variant fields
-                                    format_attributes(&field_item.attrs),
+                                    "{}{}",                               // No pub for tuple variant fields
+                                    format_attributes(&field_item.attrs), // Use multi-line attributes
                                     format_type(ty, krate)
                                 ))
                             } else {
@@ -1879,8 +1908,8 @@ fn format_variant_definition(item: &Item, v: &Variant, krate: &Crate) -> String 
                         if let ItemEnum::StructField(ty) = &field_item.inner {
                             let field_name = field_item.name.as_deref().unwrap_or("_");
                             Some(format!(
-                                "{}{}: {}", // No pub for struct variant fields
-                                format_attributes(&field_item.attrs),
+                                "{}{}: {}",                           // No pub for struct variant fields
+                                format_attributes(&field_item.attrs), // Use multi-line attributes
                                 field_name,
                                 format_type(ty, krate)
                             ))
