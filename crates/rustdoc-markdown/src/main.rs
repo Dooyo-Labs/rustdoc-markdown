@@ -364,7 +364,7 @@ async fn main() -> Result<()> {
                                 .and_then(|v| v.as_ref().as_local().cloned());
                             (
                                 repo_clone_target_dir,
-                                root_manifest,
+                                root_manifest.clone(), // Clone root_manifest here
                                 pkg.name.clone(),
                                 version_from_manifest,
                             )
