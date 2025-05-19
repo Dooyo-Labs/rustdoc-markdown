@@ -13,16 +13,40 @@ struct CratesApiResponse {
     versions: Vec<CrateVersion>,
 }
 
+/// Represents a specific version of a crate from crates.io.
 #[derive(Deserialize, Debug, Clone)]
 pub struct CrateVersion {
+    /// The name of the crate.
     #[serde(rename = "crate")]
     pub crate_name: String,
+    /// The version number string (e.g., "1.2.3").
     pub num: String, // Version number string
+    /// Whether this version has been yanked from crates.io.
     pub yanked: bool,
+    /// The parsed SemVer version, populated after fetching from the API.
     #[serde(skip)]
     pub semver: Option<Version>, // Parsed version, populated later
 }
 
+/// Finds the best matching version of a crate on crates.io based on a version requirement.
+///
+/// It fetches version information from the crates.io API, filters out yanked versions,
+/// optionally filters by pre-release status, and then selects the highest version
+/// that satisfies the given requirement.
+///
+/// # Arguments
+///
+/// * `client`: A `reqwest::Client` for making HTTP requests.
+/// * `crate_name`: The name of the crate to search for.
+/// * `version_req_str`: A SemVer version requirement string (e.g., "1.0", "~1.2.3", "*").
+///   If "*", the latest suitable version is selected.
+/// * `include_prerelease`: If `true`, pre-release versions (e.g., "1.0.0-alpha") are considered.
+///   Otherwise, they are ignored unless explicitly matched by `version_req_str`.
+///
+/// # Returns
+///
+/// A `Result` containing the [`CrateVersion`] of the best matching version, or an error
+/// if no suitable version is found or if API interaction fails.
 pub async fn find_best_version(
     client: &reqwest::Client,
     crate_name: &str,
@@ -117,6 +141,22 @@ pub async fn find_best_version(
     }
 }
 
+/// Downloads a crate from crates.io and unpacks it into the specified build directory.
+///
+/// If the crate has already been downloaded and unpacked to the target location,
+/// this function will skip the download and unpacking steps.
+///
+/// # Arguments
+///
+/// * `client`: A `reqwest::Client` for making HTTP requests.
+/// * `krate`: The [`CrateVersion`] specifying the crate and version to download.
+/// * `build_path`: The base directory where the crate source should be unpacked.
+///   The crate will be unpacked into a subdirectory like `{build_path}/{crate_name}-{version}`.
+///
+/// # Returns
+///
+/// A `Result` containing the [`PathBuf`] to the root directory of the unpacked crate source,
+/// or an error if downloading or unpacking fails.
 pub async fn download_and_unpack_crate(
     client: &reqwest::Client,
     krate: &CrateVersion,

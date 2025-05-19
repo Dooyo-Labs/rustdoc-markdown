@@ -13,16 +13,35 @@ consistent structure.
 As a trade-off that reduces the size of the output, but makes the documentation
 of types more indirect, there is support for rolling up "Common Traits" for the
 crate and for each module so that the list of implemented traits, per-type,
-can be more concise.
+can be more concise. This feature can be disabled.
 
-If a package contain a `README` and `examples/` these are also folded into the
-documentation.
+If a package contains a `README.md` and examples in an `examples/` directory,
+these are also folded into the documentation.
 
 ## Command Line
 
+Generate Markdown for `rustdoc-types` version `0.39.0`:
 ```bash
-cargo run -- rustdoc-types 0.39 --output rustdoc-types-api.md
+cargo run -- print rustdoc-types 0.39.0 --output rustdoc-types-api.md
 ```
+
+Generate Markdown for a local crate:
+```bash
+cargo run -- print my-local-crate --manifest path/to/my-local-crate/Cargo.toml --output my-local-crate-api.md
+```
+
+## Library Usage
+
+`rustdoc-markdown` can also be used as a library to integrate documentation generation
+into other tools.
+
+See the [library documentation](https://docs.rs/rustdoc-markdown) for `rustdoc_markdown::Printer`
+for an example of how to:
+1. Find a crate on crates.io.
+2. Download and unpack it.
+3. Run `rustdoc` to get the `rustdoc_types::Crate` data.
+4. Read extra information like README and examples.
+5. Use the `Printer` to generate the Markdown documentation.
 
 ## Dependencies
 

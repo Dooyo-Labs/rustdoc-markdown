@@ -2,6 +2,112 @@
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::cognitive_complexity)] // Allow complex functions for now
 
+//! `rustdoc-markdown` is a tool to convert Rust crate documentation into a
+//! monolithic Markdown document, primarily designed for consumption by Large
+//! Language Models (LLMs).
+//!
+//! It achieves this by:
+//! 1. Fetching crate information from crates.io (if not using a local manifest).
+//! 2. Downloading and unpacking the crate source.
+//! 3. Running `rustdoc` to generate JSON output (`rustdoc_types::Crate`).
+//! 4. Parsing the `Cargo.toml` of the crate.
+//! 5. Optionally reading extra information like the crate's `README.md` and
+//!    source code examples from the `examples/` directory.
+//! 6. Processing the `rustdoc_types::Crate` and supplementary information.
+//! 7. Rendering a structured Markdown document.
+//!
+//! ## Key Features
+//!
+//! - **LLM-Optimized Output**: The Markdown is structured for clarity and conciseness,
+//!   aiming to provide effective context for LLMs. Header levels might exceed
+//!   standard Markdown (h6) to maintain a consistent hierarchical structure.
+//! - **Comprehensive Documentation**: Includes API documentation, README, and examples.
+//! - **"Common Traits" Summarization**: To reduce output size, frequently implemented
+//!   traits can be summarized at the crate and module levels. This can be disabled.
+//! - **Path Filtering**: Allows generation of documentation for specific modules or items.
+//! - **Template Mode**: Can output template markers instead of actual documentation,
+//!   useful for identifying missing docstrings.
+//!
+//! ## Main Entry Points
+//!
+//! - [`Printer`]: The core struct responsible for orchestrating the documentation
+//!   generation process. It uses a builder pattern for configuration.
+//! - [`run_rustdoc`]: A utility function to execute `rustdoc` and parse its JSON output.
+//! - [`CrateExtraReader`]: Reads supplementary information like READMEs and examples.
+//!
+//! ## Example Usage (Library)
+//!
+//! ```no_run
+//! use anyhow::Result;
+//! use cargo_manifest::Manifest;
+//! use rustdoc_markdown::{Printer, CrateExtraReader, run_rustdoc, cratesio};
+//! use std::path::Path;
+//! use reqwest::Client; // Add this line
+//!
+//! async fn generate_docs_for_crate(
+//!     crate_name: &str,
+//!     version_req: &str,
+//!     output_md_path: &Path,
+//!     build_dir: &Path,
+//! ) -> Result<()> {
+//!     // 1. Setup client and directories
+//!     let client = Client::new();
+//!     std::fs::create_dir_all(build_dir)?;
+//!
+//!     // 2. Find the best version on crates.io
+//!     let target_version = cratesio::find_best_version(
+//!         &client,
+//!         crate_name,
+//!         version_req,
+//!         false, // include_prerelease
+//!     )
+//!     .await?;
+//!
+//!     // 3. Download and unpack the crate
+//!     let crate_dir = cratesio::download_and_unpack_crate(
+//!         &client,
+//!         &target_version,
+//!         build_dir,
+//!     )
+//!     .await?;
+//!
+//!     // 4. Parse the crate's Cargo.toml
+//!     let manifest_path = crate_dir.join("Cargo.toml");
+//!     let manifest = Manifest::from_path(&manifest_path)?;
+//!
+//!     // 5. Run rustdoc to get rustdoc_types::Crate
+//!     let krate_data = run_rustdoc(
+//!         &crate_dir,
+//!         &target_version.crate_name,
+//!         None,    // features
+//!         false,   // no_default_features
+//!         None,    // target
+//!         true,    // allow_rustup (ensure nightly is available)
+//!     )?;
+//!
+//!     // 6. Read extra crate information (README, examples)
+//!     let extra_reader = CrateExtraReader::new(); // Default: reads README and examples
+//!     let crate_extra = extra_reader.read(&crate_dir)?;
+//!
+//!     // 7. Configure and run the Printer
+//!     let printer = Printer::new(&manifest, &krate_data)
+//!         .crate_extra(crate_extra)
+//!         // .paths(&["::my_module".to_string()]) // Optional: filter by path
+//!         // .no_common_traits() // Optional: disable common traits summary
+//!         ;
+//!
+//!     let markdown_content = printer.print()?;
+//!
+//!     // 8. Write to output file
+//!     std::fs::write(output_md_path, markdown_content)?;
+//!
+//!     println!("Successfully generated Markdown for {} v{} at {}",
+//!              crate_name, target_version.num, output_md_path.display());
+//!
+//!     Ok(())
+//! }
+//! ```
+
 use anyhow::{bail, Context, Result}; // Add Context
 use cargo_manifest::{FeatureSet, Manifest as CargoManifest}; // Renamed Manifest to CargoManifest
 use graph::{Edge, IdGraph, ResolvedModule};
@@ -24,6 +130,7 @@ use std::io::BufReader; // Added for reading JSON file
 use pulldown_cmark::{Event, Parser as CmarkParser, Tag, TagEnd}; // Import Tag, TagEnd
 use pulldown_cmark_to_cmark::cmark;
 
+/// The specific nightly Rust toolchain version required by this crate.
 pub const NIGHTLY_RUST_VERSION: &str = "nightly-2025-03-24";
 
 pub mod cratesio;
@@ -34,14 +141,22 @@ pub mod graph;
 // --- CrateExtra Structures ---
 
 /// Holds extra crate information like README and examples.
+///
+/// This data is read from the crate's source directory and can be
+/// included in the generated Markdown documentation.
 #[derive(Debug, Clone, Default)]
 pub struct CrateExtra {
+    /// The content of the crate's main `README.md` or `README` file.
     pub readme_content: Option<String>,
+    /// The content of the `README.md` or `README` file within the `examples/` directory.
     pub examples_readme_content: Option<String>,
+    /// A list of (filename, content) tuples for Rust files found in the `examples/` directory.
     pub examples: Vec<(String, String)>, // Vec of (filename, content)
 }
 
-/// Builder for reading `CrateExtra` data.
+/// Builder for reading [`CrateExtra`] data from a crate's source directory.
+///
+/// Allows selective reading of README files and examples.
 #[derive(Debug, Default)]
 pub struct CrateExtraReader {
     read_readme: bool,
@@ -49,7 +164,8 @@ pub struct CrateExtraReader {
 }
 
 impl CrateExtraReader {
-    /// Creates a new `CrateExtraReader` with default settings (read README and examples).
+    /// Creates a new `CrateExtraReader` with default settings, which will
+    /// attempt to read the main README file and examples from the `examples/` directory.
     pub fn new() -> Self {
         Self {
             read_readme: true,
@@ -57,19 +173,27 @@ impl CrateExtraReader {
         }
     }
 
-    /// Disables reading of the crate's main README file.
+    /// Disables reading of the crate's main README file (`README.md` or `README`).
     pub fn no_readme(mut self) -> Self {
         self.read_readme = false;
         self
     }
 
-    /// Disables reading of examples from the `examples/` directory.
+    /// Disables reading of example files from the `examples/` directory and its README.
     pub fn no_examples(mut self) -> Self {
         self.read_examples = false;
         self
     }
 
-    /// Reads the extra crate information from the given crate directory.
+    /// Reads the extra crate information from the specified crate source directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `crate_dir`: The path to the root directory of the unpacked crate source.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the [`CrateExtra`] data, or an error if reading fails.
     pub fn read(&self, crate_dir: &FilePath) -> Result<CrateExtra> {
         let mut extra = CrateExtra::default();
 
@@ -184,6 +308,27 @@ impl CrateManifestData {
     }
 }
 
+/// Runs `rustdoc` for a given crate and parses the resulting JSON output.
+///
+/// This function uses the `rustdoc-json` crate to invoke `rustdoc` with the
+/// necessary flags to produce JSON output. It requires a specific nightly
+/// Rust toolchain (see [`NIGHTLY_RUST_VERSION`]).
+///
+/// # Arguments
+///
+/// * `crate_dir`: Path to the root directory of the crate.
+/// * `crate_name`: The name of the crate (as it appears in `Cargo.toml`).
+/// * `features`: An optional space-separated string of features to enable.
+/// * `no_default_features`: If `true`, the `default` feature will not be activated.
+/// * `target`: An optional target triple to build documentation for.
+/// * `allow_rustup`: If `true`, the function will attempt to install the required
+///   nightly toolchain using `rustup`. If `false` and the toolchain is not
+///   present, it may fail.
+///
+/// # Returns
+///
+/// A `Result` containing the parsed [`rustdoc_types::Crate`] data, or an error
+/// if `rustdoc` execution or JSON parsing fails.
 pub fn run_rustdoc(
     crate_dir: &FilePath,
     crate_name: &str,
@@ -2111,15 +2256,33 @@ struct ModuleTree {
     top_level_modules: Vec<Id>,
 }
 
-/// `Printer` is responsible for generating Markdown documentation from a `rustdoc_types::Crate`.
+/// `Printer` is responsible for generating Markdown documentation from a [`rustdoc_types::Crate`].
 ///
 /// It uses a builder pattern for configuration. The typical workflow is:
-/// 1. Create a `Printer` with `Printer::new(&manifest, &krate)`.
-/// 2. Configure it using builder methods like `paths()`, `crate_extra()`, etc.
-/// 3. Call `print()` to generate the Markdown string.
 ///
-/// The "Common Traits" feature summarizes traits frequently implemented by types within
-/// the crate or specific modules. This can be disabled using `no_common_traits()`.
+/// 1. Create a `Printer` with `Printer::new(&manifest, &krate)`.
+/// 2. Configure it using builder methods like [`paths()`](Printer::paths),
+///    [`crate_extra()`](Printer::crate_extra), etc.
+/// 3. Call [`print()`](Printer::print) to generate the Markdown string.
+///
+/// ## Features
+///
+/// - **Path Filtering**: Use [`paths()`](Printer::paths) to specify which items
+///   (and their dependencies) should be included in the documentation.
+/// - **README and Examples**: Include the crate's README and examples using
+///   [`crate_extra()`](Printer::crate_extra) with data from [`CrateExtraReader`].
+/// - **"Other" Items**: Control the inclusion of items not fitting standard categories
+///   with [`include_other()`](Printer::include_other).
+/// - **Template Mode**: Generate template markers instead of documentation content
+///   using [`template_mode()`](Printer::template_mode), useful for identifying
+///   missing documentation.
+/// - **Common Traits Summarization**: By default, traits frequently implemented by types
+///   are summarized. This can be disabled with [`no_common_traits()`](Printer::no_common_traits).
+///
+/// ## Example
+///
+/// For a complete example of using `Printer` along with other parts of this crate
+/// to generate documentation, see the [crate-level documentation](crate).
 pub struct Printer<'a> {
     krate: &'a Crate,
     manifest_data: CrateManifestData,
@@ -2148,8 +2311,8 @@ impl<'a> Printer<'a> {
     ///
     /// # Arguments
     ///
-    /// * `manifest`: The parsed `Cargo.toml` data for the crate.
-    /// * `krate`: The `rustdoc_types::Crate` data produced by rustdoc.
+    /// * `manifest`: The parsed `Cargo.toml` data for the crate, as a [`cargo_manifest::Manifest`].
+    /// * `krate`: The [`rustdoc_types::Crate`] data produced by `rustdoc`.
     pub fn new(manifest: &'a CargoManifest, krate: &'a Crate) -> Self {
         Printer {
             krate,
@@ -2176,16 +2339,27 @@ impl<'a> Printer<'a> {
     /// Sets the item path filters for documentation generation.
     ///
     /// Items matching these paths (and their dependencies) will be included.
-    /// Paths starting with `::` imply the root of the current crate (e.g., `::my_module::MyStruct`).
-    /// Paths without `::` are assumed to be relative to the crate root (e.g., `my_module::MyStruct` is treated as `crate_name::my_module::MyStruct`).
-    /// Matches are prefix-based (e.g., "::style" matches "::style::TextStyle").
-    /// If no paths are provided, all items are considered for selection (default behavior).
+    ///
+    /// ## Path Matching Rules:
+    ///
+    /// - Paths starting with `::` (e.g., `::my_module::MyStruct`) are treated as absolute
+    ///   within the current crate.
+    /// - Paths without `::` (e.g., `my_module::MyStruct` or `MyStruct`) are assumed to be
+    ///   relative to the crate root and will be prefixed with the crate name (e.g.,
+    ///   `crate_name::my_module::MyStruct`).
+    /// - Matches are prefix-based. For example, `"::style"` will match `"::style::TextStyle"`
+    ///   and `"::style::Color"`.
+    ///
+    /// If no paths are provided (the default), all items in the crate are considered
+    /// for selection.
     pub fn paths(mut self, paths: &[String]) -> Self {
         self.paths = paths.to_vec();
         self
     }
 
-    /// Adds `CrateExtra` data (README, examples) to be included in the documentation.
+    /// Adds [`CrateExtra`] data (README, examples) to be included in the documentation.
+    ///
+    /// Use [`CrateExtraReader`] to obtain the `CrateExtra` instance.
     pub fn crate_extra(mut self, extra: CrateExtra) -> Self {
         self.crate_extra = Some(extra);
         self
@@ -2193,32 +2367,37 @@ impl<'a> Printer<'a> {
 
     /// Includes items that don't fit standard categories in a final "Other" section.
     ///
-    /// By default, such items are logged as warnings and not included.
-    /// If enabled, these items will appear at the end of the documentation,
-    /// potentially with their source location and graph context.
+    /// By default, such items (e.g., unprinted selected items that are not modules,
+    /// impls, or struct fields) are logged as warnings and not included in the output.
+    /// If this method is called, these items will appear at the end of the documentation,
+    /// potentially with their source location and dependency graph context.
     pub fn include_other(mut self) -> Self {
         self.include_other = true;
         self
     }
 
-    /// Enables template mode.
+    /// Enables template mode for documentation output.
     ///
-    /// In template mode, instead of item documentation, Mustache-like markers
-    /// (e.g., `{{MISSING_DOCS_1_2_1}}`) are inserted where documentation
-    /// for an item would normally appear. This is useful for identifying
-    /// where documentation is present or missing in the source crate.
-    /// The default is `false`.
+    /// In template mode, instead of the actual documentation content for an item,
+    /// Mustache-like markers (e.g., `{{MISSING_DOCS_1_2_1}}`) are inserted.
+    /// This is useful for identifying where documentation is present or missing
+    /// in the source crate when generating documentation for LLM training or analysis.
+    ///
+    /// The default is `false` (template mode disabled).
     pub fn template_mode(mut self) -> Self {
         self.template_mode = true;
         self
     }
 
-    /// Disables the "Common Traits" sections.
+    /// Disables the "Common Traits" summarization sections.
     ///
-    /// By default, traits frequently implemented by types within the crate or
-    /// specific modules are summarized in "Common Traits" sections. If this method
-    /// is called, these summary sections are omitted, and all implemented traits
-    /// for each item will be listed directly with that item.
+    /// By default, traits that are frequently implemented by types within the crate
+    /// or specific modules are summarized in "Common Traits" sections at the crate
+    /// and module levels. This helps to reduce redundancy in the documentation.
+    ///
+    /// If this method is called, these summary sections are omitted, and all
+    /// implemented traits for each item will be listed directly with that item's
+    /// documentation.
     pub fn no_common_traits(mut self) -> Self {
         self.no_common_traits = true;
         self
@@ -2227,6 +2406,19 @@ impl<'a> Printer<'a> {
     /// Generates the Markdown documentation based on the configured options.
     ///
     /// This method consumes the `Printer` and returns the generated Markdown as a `String`.
+    /// It performs several steps:
+    /// 1. Resolves module items (handling `use` statements).
+    /// 2. Selects items based on path filters and builds a dependency graph.
+    /// 3. Calculates common traits for the crate.
+    /// 4. Prints the crate header, README (if any), and common traits.
+    /// 5. Recursively prints modules and their contents.
+    /// 6. Prints any remaining "other" items if configured.
+    /// 7. Appends examples if configured.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the generated Markdown `String`, or an error if
+    /// any step fails.
     pub fn print(mut self) -> Result<String> {
         self.resolved_modules = graph::build_resolved_module_index(self.krate);
         let (selected_ids, graph) =

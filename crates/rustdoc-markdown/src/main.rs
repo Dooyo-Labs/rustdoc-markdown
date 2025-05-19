@@ -35,64 +35,76 @@ enum Command {
 
 #[derive(Parser, Debug)]
 struct PrintCommand {
-    /// Name of the crate on crates.io or from local manifest
+    /// Name of the crate on crates.io or from local manifest.
+    /// If using --manifest, this must match the package name in Cargo.toml.
     crate_name: String,
 
-    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*"). Ignored if --manifest is used.
+    /// Optional version requirement (e.g., "1.0", "1", "~1.2.3", "*").
+    /// Ignored if --manifest is used. Defaults to the latest suitable version.
     #[arg(default_value = "*")]
     crate_version: String,
 
-    /// Include prerelease versions when selecting the latest. Ignored if --manifest is used.
+    /// Include prerelease versions when selecting the latest version from crates.io.
+    /// Ignored if --manifest is used.
     #[arg(long)]
     include_prerelease: bool,
 
-    /// Build directory for crate documentation artifacts
+    /// Build directory for crate documentation artifacts (e.g., downloaded crate source, rustdoc JSON).
     #[arg(long, default_value = ".ai/docs/rust/build")]
     build_dir: String,
 
-    /// Path to write the generated documentation (defaults to stdout)
+    /// Path to write the generated Markdown documentation. Defaults to stdout.
     #[arg(long)]
     output: Option<PathBuf>,
 
-    /// Filter documented items by module path (e.g., "::style", "widgets::Button"). Can be specified multiple times.
-    /// Paths starting with '::' imply the root of the current crate.
-    /// Matches are prefix-based (e.g., "::style" matches "::style::TextStyle").
+    /// Filter documented items by module path (e.g., "::style", "widgets::Button").
+    /// Can be specified multiple times.
+    /// - Paths starting with `::` are absolute within the current crate.
+    /// - Paths without `::` are relative to the crate root (e.g., `my_module` becomes `crate_name::my_module`).
+    /// - Matches are prefix-based (e.g., `::style` matches `::style::TextStyle`).
     #[arg(long = "path")]
     paths: Vec<String>,
 
-    /// Include items that don't fit standard categories in a final 'Other' section.
+    /// Include items that don't fit standard categories (e.g., unprinted selected items)
+    /// in a final 'Other' section. By default, these are logged as warnings and omitted.
     #[arg(long)]
     include_other: bool,
 
-    /// Space-separated list of features to activate
+    /// Space-separated list of features to activate when running rustdoc.
     #[arg(long)]
     features: Option<String>,
 
-    /// Do not activate the `default` feature
+    /// Do not activate the `default` feature when running rustdoc.
     #[arg(long)]
     no_default_features: bool,
 
-    /// Build documentation for the specified target triple
+    /// Build documentation for the specified target triple when running rustdoc.
     #[arg(long)]
     target: Option<String>,
 
-    /// Output mustache template markers (`{{MISSING_DOCS_1_2_...}}`) instead of the actual documentation for items with docstrings.
+    /// Output Mustache-like template markers (e.g., `{{MISSING_DOCS_1_2_1}}`)
+    /// instead of the actual documentation content for items that have docstrings.
+    /// Useful for identifying missing documentation in the source crate.
     #[arg(long)]
     template: bool,
 
-    /// Do not embed the crate's README file in the output.
+    /// Do not embed the crate's README file in the generated Markdown.
     #[arg(long)]
     no_readme: bool,
 
-    /// Do not generate "Common Traits" sections; list all traits for each item.
+    /// Disable the "Common Traits" summarization. If set, all implemented traits
+    /// for each item will be listed directly with that item, instead of being
+    /// summarized at the crate or module level.
     #[arg(long)]
     no_common_traits: bool,
 
-    /// Do not include an "Examples Appendix" section.
+    /// Do not include an "Examples Appendix" section, even if examples are found.
     #[arg(long)]
     no_examples: bool,
 
-    /// Path to the Cargo.toml manifest file. If provided, crates.io will not be queried.
+    /// Path to the Cargo.toml manifest file of a local crate.
+    /// If provided, crates.io will not be queried, and the specified crate will be documented.
+    /// The `crate_name` argument must match the `[package].name` in this manifest.
     #[arg(long)]
     manifest: Option<PathBuf>,
 }
