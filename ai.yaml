@@ -21,3 +21,5 @@ dependencies:
     version_field: pulldown-cmark-to-cmark
   - crate: git2 # Added git2
     version_field: git2
+  - crate: glob # Added glob
+    version_field: glob

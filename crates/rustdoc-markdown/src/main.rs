@@ -302,31 +302,46 @@ async fn main() -> Result<()> {
                         let mut found_member_manifest_path = None;
                         let mut found_member_dir = None;
 
-                        for member_glob in &workspace.members {
-                            // TODO: handle `member_glob` paths like "directory/*"
-                            // For simplicity, we'll just try to resolve direct paths for now.
-                            // A more robust solution would use a glob matching library.
-                            let member_path = repo_clone_target_dir.join(member_glob);
-                            if member_path.is_dir() {
-                                let member_manifest_path = member_path.join("Cargo.toml");
-                                if member_manifest_path.exists() {
-                                    let member_manifest = Manifest::from_path(
-                                        &member_manifest_path,
-                                    )
-                                    .with_context(|| {
-                                        format!(
-                                            "Failed to parse member manifest: {}",
-                                            member_manifest_path.display()
-                                        )
-                                    })?;
-                                    if let Some(pkg) = &member_manifest.package {
-                                        if pkg.name == print_args.crate_name {
-                                            found_member_manifest_path = Some(member_manifest_path);
-                                            found_member_dir = Some(member_path);
-                                            break;
+                        for member_glob_pattern_str in &workspace.members {
+                            let full_glob_pattern = repo_clone_target_dir
+                                .join(member_glob_pattern_str)
+                                .to_string_lossy()
+                                .into_owned();
+                            info!("Searching glob pattern: {}", full_glob_pattern);
+
+                            for entry in glob::glob(&full_glob_pattern).with_context(|| {
+                                format!("Failed to read glob pattern: {}", full_glob_pattern)
+                            })? {
+                                match entry {
+                                    Ok(member_path) => {
+                                        if member_path.is_dir() {
+                                            let member_manifest_path =
+                                                member_path.join("Cargo.toml");
+                                            if member_manifest_path.exists() {
+                                                let member_manifest =
+                                                    Manifest::from_path(&member_manifest_path)
+                                                        .with_context(|| {
+                                                            format!(
+                                                        "Failed to parse member manifest: {}",
+                                                        member_manifest_path.display()
+                                                    )
+                                                        })?;
+                                                if let Some(pkg) = &member_manifest.package {
+                                                    if pkg.name == print_args.crate_name {
+                                                        found_member_manifest_path =
+                                                            Some(member_manifest_path);
+                                                        found_member_dir = Some(member_path);
+                                                        break; // Found the target package
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
+                                    Err(e) => warn!("Error matching glob entry: {:?}", e),
                                 }
+                            }
+                            if found_member_manifest_path.is_some() {
+                                break; // Found in this glob pattern
                             }
                         }
 
