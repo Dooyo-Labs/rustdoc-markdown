@@ -1072,10 +1072,8 @@ impl FormattedTraitImpl {
                             } else {
                                 for_path_args_match_impl_params = false;
                             }
-                        } else {
-                            if !impl_params.is_empty() {
-                                for_path_args_match_impl_params = false;
-                            }
+                        } else if !impl_params.is_empty() {
+                            for_path_args_match_impl_params = false;
                         }
                     } else {
                         for_path_args_match_impl_params = false;
@@ -1113,7 +1111,7 @@ impl FormattedTraitImpl {
                         writeln!(list_entry).unwrap();
                         let full_code_block = format!("```rust\n{}\n```", impl_block_str);
                         let indented_block = indent_string(&full_code_block, 4);
-                        write!(list_entry, "{}\n", indented_block).unwrap(); // Keep trailing newline from indent
+                        writeln!(list_entry, "{}", indented_block).unwrap(); // Keep trailing newline from indent
                     } else {
                         write!(list_entry, "- `{}`", display_path_with_generics).unwrap();
                     }
@@ -1960,8 +1958,8 @@ impl<'a> Printer<'a> {
     }
 
     /// Pre-calculates common traits for the entire crate.
-    fn calculate_crate_common_traits<'krate_lifetime>(
-        krate: &'krate_lifetime Crate,
+    fn calculate_crate_common_traits(
+        krate: &Crate,
         selected_ids: &HashSet<Id>, // Accept any lifetime for the HashSet ref
         no_common_traits: bool,
         printer: &Printer, // Pass printer for FormattedTraitImpl::from_impl
@@ -3505,9 +3503,7 @@ impl<'a> Printer<'a> {
 
         let mut assoc_items_content = String::new();
         let mut has_printable_assoc_items = false;
-        let original_doc_path = self.doc_path.clone(); // Save original path
 
-        self.push_level();
         for assoc_item_id in &imp.items {
             if !self.selected_ids.contains(assoc_item_id) {
                 continue;
@@ -3521,15 +3517,6 @@ impl<'a> Printer<'a> {
                 match &assoc_item.inner {
                     ItemEnum::AssocConst { type_, value, .. } => {
                         has_printable_assoc_items = true;
-                        self.doc_path = original_doc_path.clone(); // Reset for each item
-                        self.doc_path.push(1); // Simulate being under a new header for template marker
-                        let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
-                            format!("\n    // {}", self.get_template_marker())
-                        } else {
-                            "".to_string()
-                        };
-                        self.doc_path.pop(); // Restore
-
                         write!(
                             assoc_items_content,
                             "    {}const {}: {}",
@@ -3539,23 +3526,14 @@ impl<'a> Printer<'a> {
                         )
                         .unwrap();
                         if let Some(val) = value {
-                            write!(assoc_items_content, " = {};{}", val, assoc_item_docs).unwrap();
+                            write!(assoc_items_content, " = {};", val).unwrap();
                         } else {
-                            write!(assoc_items_content, ";{}", assoc_item_docs).unwrap();
+                            write!(assoc_items_content, ";").unwrap();
                         }
                         writeln!(assoc_items_content).unwrap();
                     }
                     ItemEnum::AssocType { bounds, type_, .. } => {
                         has_printable_assoc_items = true;
-                        self.doc_path = original_doc_path.clone();
-                        self.doc_path.push(1);
-                        let assoc_item_docs = if self.template_mode && assoc_item.docs.is_some() {
-                            format!("\n    // {}", self.get_template_marker())
-                        } else {
-                            "".to_string()
-                        };
-                        self.doc_path.pop();
-
                         write!(
                             assoc_items_content,
                             "    {}type {}",
@@ -3575,15 +3553,13 @@ impl<'a> Printer<'a> {
                             write!(assoc_items_content, " = {}", format_type(ty, self.krate))
                                 .unwrap();
                         }
-                        write!(assoc_items_content, ";{}", assoc_item_docs).unwrap();
+                        write!(assoc_items_content, ";").unwrap();
                         writeln!(assoc_items_content).unwrap();
                     }
                     _ => {}
                 }
             }
         }
-        self.pop_level();
-        self.doc_path = original_doc_path; // Restore original path fully
 
         if has_printable_assoc_items {
             if impl_header.contains('\n') && !assoc_items_content.starts_with('\n') {
@@ -3987,9 +3963,7 @@ impl<'a> Printer<'a> {
 
             // Mark module as printed only AFTER printing its header, if not already printed
             // This ensures the first time a module is encountered, its prefix is stored.
-            if !self.printed_ids.contains_key(&module_id) {
-                self.printed_ids.insert(module_id, header_prefix.clone());
-            }
+            self.printed_ids.entry(module_id).or_insert_with(|| header_prefix.clone());
 
             self.push_level();
 
