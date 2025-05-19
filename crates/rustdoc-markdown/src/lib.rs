@@ -18,6 +18,7 @@ use std::path::{Path as FilePath, PathBuf}; // Corrected use statement
 use tracing::{debug, info, trace, warn};
 // Add fs import for CrateExtraReader
 use std::fs;
+use std::io::BufReader; // Added for reading JSON file
 
 // Import pulldown-cmark related items
 use pulldown_cmark::{Event, Parser as CmarkParser, Tag, TagEnd}; // Import Tag, TagEnd
@@ -188,7 +189,7 @@ pub fn run_rustdoc(
     no_default_features: bool,
     target: Option<&str>,
     allow_rustup: bool,
-) -> Result<PathBuf> {
+) -> Result<Crate> {
     let manifest_path = crate_dir.join("Cargo.toml");
     if !manifest_path.exists() {
         bail!(
@@ -209,65 +210,77 @@ pub fn run_rustdoc(
         .join(format!("{}.json", crate_name));
 
     // Avoid regenerating if exists
-    if json_output_path.exists() {
+    if !json_output_path.exists() {
+        let mut builder = Builder::default()
+            .manifest_path(manifest_path)
+            .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
+            .target_dir(crate_dir.join("target/doc")) // Set the output directory
+            .package(crate_name); // Specify the package
+
+        // Apply feature flags
+        if let Some(features_str) = features {
+            let feature_list: Vec<String> =
+                features_str.split_whitespace().map(String::from).collect();
+            if !feature_list.is_empty() {
+                info!("Enabling features: {:?}", feature_list);
+                builder = builder.features(feature_list);
+            }
+        }
+
+        if no_default_features {
+            info!("Disabling default features.");
+            builder = builder.no_default_features(true);
+        }
+
+        // Apply target
+        if let Some(target_str) = target {
+            info!("Setting target: {}", target_str);
+            builder = builder.target(target_str.to_string());
+        }
+
+        // Generate the JSON file
+        match builder.build() {
+            Ok(s) => {
+                info!("Generated rustdoc JSON at: {}", s.display());
+            }
+            Err(e) => {
+                // Attempt to read stderr if possible (rustdoc-json might not expose it easily)
+                eprintln!("--- rustdoc-json build failed ---");
+                eprintln!("{:?}", e); // Print the error itself
+
+                // Try to read potential rustdoc output if the file exists but is invalid
+                if json_output_path.exists() {
+                    if let Ok(content) = std::fs::read_to_string(&json_output_path) {
+                        eprintln!(
+                            "\n--- Potential content of {}: ---\n{}",
+                            json_output_path.display(),
+                            content
+                        );
+                    }
+                }
+
+                bail!("rustdoc-json failed: {}", e);
+            }
+        }
+    } else {
         info!(
             "rustdoc JSON already exists at: {}",
             json_output_path.display()
         );
-        return Ok(json_output_path);
     }
 
-    let mut builder = Builder::default()
-        .manifest_path(manifest_path)
-        .toolchain(NIGHTLY_RUST_VERSION) // Specify the nightly toolchain
-        .target_dir(crate_dir.join("target/doc")) // Set the output directory
-        .package(crate_name); // Specify the package
-
-    // Apply feature flags
-    if let Some(features_str) = features {
-        let feature_list: Vec<String> = features_str.split_whitespace().map(String::from).collect();
-        if !feature_list.is_empty() {
-            info!("Enabling features: {:?}", feature_list);
-            builder = builder.features(feature_list);
-        }
-    }
-
-    if no_default_features {
-        info!("Disabling default features.");
-        builder = builder.no_default_features(true);
-    }
-
-    // Apply target
-    if let Some(target_str) = target {
-        info!("Setting target: {}", target_str);
-        builder = builder.target(target_str.to_string());
-    }
-
-    // Generate the JSON file
-    match builder.build() {
-        Ok(s) => {
-            info!("Generated rustdoc JSON at: {}", s.display());
-            Ok(s)
-        }
-        Err(e) => {
-            // Attempt to read stderr if possible (rustdoc-json might not expose it easily)
-            eprintln!("--- rustdoc-json build failed ---");
-            eprintln!("{:?}", e); // Print the error itself
-
-            // Try to read potential rustdoc output if the file exists but is invalid
-            if json_output_path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&json_output_path) {
-                    eprintln!(
-                        "\n--- Potential content of {}: ---\n{}",
-                        json_output_path.display(),
-                        content
-                    );
-                }
-            }
-
-            bail!("rustdoc-json failed: {}", e);
-        }
-    }
+    info!("Parsing rustdoc JSON: {}", json_output_path.display());
+    let file = fs::File::open(&json_output_path)
+        .with_context(|| format!("Failed to open JSON file: {}", json_output_path.display()))?;
+    let reader = BufReader::new(file);
+    let krate_data: Crate = serde_json::from_reader(reader)
+        .with_context(|| format!("Failed to parse JSON file: {}", json_output_path.display()))?;
+    info!(
+        "Loaded rustdoc JSON for {} v{}",
+        crate_name,
+        krate_data.crate_version.as_deref().unwrap_or("?")
+    );
+    Ok(krate_data)
 }
 
 /// Gets the `Id` associated with a type, if it's a path-based type.

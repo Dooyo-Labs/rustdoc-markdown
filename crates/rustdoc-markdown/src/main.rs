@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use tracing_subscriber::EnvFilter;
 // Keep this for parse_id
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Write as IoWrite}; // Use IoWrite alias
+use std::io::{BufWriter, Write as IoWrite}; // Use IoWrite alias
 use std::path::PathBuf;
 use tracing::{info, warn};
 
@@ -257,7 +257,7 @@ async fn main() -> Result<()> {
                     )
                 };
 
-            let json_output_path = run_rustdoc(
+            let krate: Crate = run_rustdoc(
                 &crate_dir,
                 &actual_crate_name_from_manifest,
                 print_args.features.as_deref(),
@@ -265,20 +265,6 @@ async fn main() -> Result<()> {
                 print_args.target.as_deref(),
                 true,
             )?;
-
-            info!("Parsing rustdoc JSON: {}", json_output_path.display());
-            let file = File::open(&json_output_path).with_context(|| {
-                format!("Failed to open JSON file: {}", json_output_path.display())
-            })?;
-            let reader = BufReader::new(file);
-            let krate: Crate = serde_json::from_reader(reader).with_context(|| {
-                format!("Failed to parse JSON file: {}", json_output_path.display())
-            })?;
-            info!(
-                "Loaded rustdoc JSON for {} v{}",
-                actual_crate_name_from_manifest,
-                krate.crate_version.as_deref().unwrap_or("?")
-            );
 
             let mut printer = Printer::new(&manifest, &krate);
 
@@ -412,7 +398,7 @@ async fn main() -> Result<()> {
                     )
                 };
 
-            let json_output_path = run_rustdoc(
+            let krate: Crate = run_rustdoc(
                 &crate_dir,
                 &actual_crate_name_from_manifest,
                 dump_args.features.as_deref(),
@@ -420,10 +406,6 @@ async fn main() -> Result<()> {
                 dump_args.target.as_deref(),
                 true,
             )?;
-
-            let file = File::open(&json_output_path)?;
-            let reader = BufReader::new(file);
-            let krate: Crate = serde_json::from_reader(reader)?;
 
             let resolved_modules = graph::build_resolved_module_index(&krate);
             let (_, full_graph) = graph::select_items(&krate, &dump_args.paths, &resolved_modules)?;
