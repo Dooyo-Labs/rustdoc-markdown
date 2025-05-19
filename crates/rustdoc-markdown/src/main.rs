@@ -303,7 +303,7 @@ async fn main() -> Result<()> {
                         let mut found_member_dir = None;
 
                         for member_glob in &workspace.members {
-                            // Basic glob handling: assume direct paths or simple wildcards like "*"
+                            // TODO: handle `member_glob` paths like "directory/*"
                             // For simplicity, we'll just try to resolve direct paths for now.
                             // A more robust solution would use a glob matching library.
                             let member_path = repo_clone_target_dir.join(member_glob);
