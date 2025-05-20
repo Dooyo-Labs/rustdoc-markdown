@@ -23,5 +23,5 @@ rustup-toolchain = "0.1"
 cargo-manifest = "0.19"
 pulldown-cmark = "0.13"
 pulldown-cmark-to-cmark = "21"
-git2 = "0.18" # Added git2
-glob = "0.3" # Added glob
+git2 = "0.20"
+glob = "0.3"
