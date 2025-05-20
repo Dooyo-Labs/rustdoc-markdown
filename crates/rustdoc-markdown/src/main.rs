@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
                 )
             })?;
 
-            let (crate_dir, manifest, actual_crate_name_from_manifest, _target_version_num) = {
+            let (package_dir, manifest, actual_crate_name_from_manifest, _target_version_num) = {
                 if let Some(manifest_path) = &print_args.manifest {
                     info!(
                         "Using local manifest: {}",
@@ -430,7 +430,7 @@ async fn main() -> Result<()> {
             };
 
             let krate: Crate = run_rustdoc(
-                &crate_dir,
+                &package_dir, // Use package_dir for rustdoc
                 &actual_crate_name_from_manifest,
                 print_args.features.as_deref(),
                 print_args.no_default_features,
@@ -451,7 +451,7 @@ async fn main() -> Result<()> {
             if print_args.no_examples {
                 extra_reader = extra_reader.no_examples();
             }
-            let crate_extra = extra_reader.read(&crate_dir)?;
+            let crate_extra = extra_reader.read(&manifest, &package_dir)?; // Pass manifest and package_dir
             printer = printer.crate_extra(crate_extra);
 
             if print_args.include_other {

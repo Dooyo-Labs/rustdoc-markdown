@@ -87,7 +87,7 @@
 //!
 //!     // 6. Read extra crate information (README, examples)
 //!     let extra_reader = CrateExtraReader::new(); // Default: reads README and examples
-//!     let crate_extra = extra_reader.read(&crate_dir)?;
+//!     let crate_extra = extra_reader.read(&manifest, &crate_dir)?;
 //!
 //!     // 7. Configure and run the Printer
 //!     let printer = Printer::new(&manifest, &krate_data)
@@ -109,7 +109,7 @@
 //! ```
 
 use anyhow::{bail, Context, Result}; // Add Context
-use cargo_manifest::{FeatureSet, Manifest as CargoManifest}; // Renamed Manifest to CargoManifest
+use cargo_manifest::{FeatureSet, Manifest as CargoManifest, StringOrBool}; // Renamed Manifest to CargoManifest
 use graph::{Edge, IdGraph, ResolvedModule};
 use rustdoc_json::Builder;
 use rustdoc_types::{
@@ -189,37 +189,62 @@ impl CrateExtraReader {
     ///
     /// # Arguments
     ///
-    /// * `crate_dir`: The path to the root directory of the unpacked crate source.
+    /// * `manifest`: A reference to the parsed `Cargo.toml` of the package.
+    /// * `package_dir`: The path to the root directory of the package.
     ///
     /// # Returns
     ///
     /// A `Result` containing the [`CrateExtra`] data, or an error if reading fails.
-    pub fn read(&self, crate_dir: &FilePath) -> Result<CrateExtra> {
+    pub fn read(&self, manifest: &CargoManifest, package_dir: &FilePath) -> Result<CrateExtra> {
         let mut extra = CrateExtra::default();
 
         if self.read_readme {
-            let readme_md_path = crate_dir.join("README.md");
-            let readme_path = crate_dir.join("README");
-            let readme_file_to_read = if readme_md_path.exists() {
-                Some(readme_md_path)
-            } else if readme_path.exists() {
-                Some(readme_path)
-            } else {
-                None
+            let readme_path_from_manifest = manifest
+                .package
+                .as_ref()
+                .and_then(|p| p.readme.as_ref())
+                .and_then(|r| r.as_ref().as_local()); // Get local value of MaybeInherited
+
+            let readme_file_to_read = match readme_path_from_manifest {
+                Some(StringOrBool::String(readme_filename)) => {
+                    Some(package_dir.join(readme_filename))
+                }
+                Some(StringOrBool::Bool(true)) | None => {
+                    // Default to README.md if true or not specified
+                    let default_readme_md = package_dir.join("README.md");
+                    if default_readme_md.exists() {
+                        Some(default_readme_md)
+                    } else {
+                        // Fallback to README if README.md doesn't exist
+                        Some(package_dir.join("README"))
+                    }
+                }
+                Some(StringOrBool::Bool(false)) => {
+                    info!("README explicitly disabled in Cargo.toml.");
+                    None
+                }
             };
 
             if let Some(path) = readme_file_to_read {
-                match fs::read_to_string(&path) {
-                    Ok(content) => extra.readme_content = Some(content),
-                    Err(_) => warn!("Failed to read README at {}", path.display()),
+                if path.exists() {
+                    match fs::read_to_string(&path) {
+                        Ok(content) => extra.readme_content = Some(content),
+                        Err(_) => warn!("Failed to read README at {}", path.display()),
+                    }
+                } else {
+                    info!(
+                        "README file specified in Cargo.toml not found: {}",
+                        path.display()
+                    );
                 }
-            } else {
-                info!("No README found in crate root.");
+            } else if readme_path_from_manifest.is_none() {
+                // This case means readme was not specified, and default README.md/README were not found
+                info!("No README specified in Cargo.toml and no default README found.");
             }
         }
 
         if self.read_examples {
-            let examples_dir = crate_dir.join("examples");
+            let examples_dir = package_dir.join("examples");
             if examples_dir.is_dir() {
                 let ex_readme_md_path = examples_dir.join("README.md");
                 let ex_readme_path = examples_dir.join("README");
